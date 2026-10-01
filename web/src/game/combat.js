@@ -869,7 +869,8 @@ export class World {
     const Dv = statOf(b, p.special ? 'spd' : 'def');
     let base = (((2 * L) / 5 + 2) * p.power * A / Math.max(1, Dv)) / 50 + 2;
     const stab = src && src.types.includes(p.type) ? 1.5 : 1;
-    const eff = typeEffect(p.type, b.types);
+    let eff = typeEffect(p.type, b.types);
+    if (eff === 0 && src && src.team !== 'enemy') eff = 0.25; // the player's moves are never fully blocked (a Gastly run must stay winnable)
     const critChance = (p.crit || 0.0625) + (src?.stages.crit || 0) * 0.125 + (src?.critBonus || 0) + (info.slot && src?.slotCrit?.[info.slot] || 0);
     const crit = this.rand() < critChance;
     let dmg = base * stab * eff * (0.85 + this.rand() * 0.15) * scale * (crit ? 2 : 1);
