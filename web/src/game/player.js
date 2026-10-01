@@ -2,7 +2,7 @@
 import { Input } from '../engine/input.js';
 import { profile } from './moves_rt.js';
 import { moveSpeed, angDiff, setAnim, makeActor } from './combat.js';
-import { allyBrain } from './ai.js';
+import { allyBrain, enemyMoves } from './ai.js';
 import { D } from './data.js';
 import { Sound } from '../audio/sound.js';
 
@@ -70,7 +70,7 @@ export function playerBrain(world, a, dt) {
     if (finisher) act.scaleMul = 1.5;
     if (dashStrike) { act.scaleMul = (act.scaleMul || 1) * 1.3; world.text(a, 'DASH STRIKE', '#ffe080', true, 0.4); }
     // attack cooldown is the move's own; Special and Cast use longer slot cooldowns
-    const cd = slot === 'attack' ? (p.cd || 0.25) : slot === 'special' ? Math.max(0.35, (p.cd || 0.6) * 1.2) : Math.max(2.5, (p.cd || 5));
+    const cd = slot === 'attack' ? (p.cd || 0.25) : slot === 'special' ? Math.max(0.35, (p.cd || 0.6) * 1.2) : 4;
     a.cds[cdKey] = cd * (a.cdMul?.[slot] || 1);
     a.cdMax ??= {}; a.cdMax[cdKey] = a.cds[cdKey];
     if (slot === 'cast') world.hooks.onCast?.(world, a);
@@ -80,7 +80,7 @@ export function playerBrain(world, a, dt) {
   if (Input.down('attack') || Input.pressed('attack')) { if (tryUse('attack')) { Input.consume('attack'); return; } }
   if (Input.down('special') || Input.pressed('special')) { if (tryUse('special')) { Input.consume('special'); return; } }
   if (Input.pressed('cast')) { if (tryUse('cast')) { Input.consume('cast'); return; } }
-  if (Input.pressed('ball')) { Input.consume('ball'); throwBall(world, a, aim); return; }
+  if (Input.pressed('ball') && !world.noBalls) { Input.consume('ball'); throwBall(world, a, aim); return; }
   if (Input.pressed('call')) { Input.consume('call'); callPartner(world, a); return; }
 }
 
@@ -129,15 +129,15 @@ export function updateBalls(world, dt) {
       b.x = b.from.x + (b.to.x - b.from.x) * k; b.y = b.from.y + (b.to.y - b.from.y) * k - Math.sin(k * Math.PI) * 28;
       if (k >= 1) {
         const e = b.target && !b.target.dead ? b.target : world.enemies().find(e => Math.hypot(e.x - b.to.x, e.y - b.to.y) < e.r + 8);
-        if (!e || e.boss || e.trainerMon || e.spawnT > 0) {
+        if (!e || e.boss || e.trainerMon || e.spawnT > 0 || e.captured) {
           b.state = 'miss'; b.t = 0; Sound.playSE('se_ball_bounce_1');
           if (e && (e.boss || e.trainerMon)) world.text(e, e.boss ? "It dodged the ball!" : "Can't catch a trainer's POKéMON!", '#ffffff');
           continue;
         }
         b.state = 'shake'; b.t = 0; b.target = e; b.x = e.x; b.y = e.y - 4;
-        e.captured = true; e.untargetable = true; e.vx = e.vy = 0; world.cancelAction(e);
+        b.shakes = catchShakes(world, e, b.ball); // status bonuses count, so read them first
+        world.cancelAction(e); e.captured = true; e.untargetable = true; e.vx = e.vy = 0; e.status = {}; e.confused = false;
         Sound.playSE('se_ball_open');
-        b.shakes = catchShakes(world, e, b.ball);
       }
     } else if (b.state === 'shake') {
       const e = b.target;
@@ -179,9 +179,10 @@ function callPartner(world, a) {
   if (world.actors.some(x => x.team === 'ally' && !x.dead)) return;
   run.callGauge = 0;
   const pt = run.partner;
-  const ally = makeActor(pt.species, Math.max(pt.level, run.level - 2), 'ally', { x: a.x + Math.cos(a.facing) * 18, y: a.y + Math.sin(a.facing) * 18, moves: pt.moves, hpMul: 3 });
+  const lvl = Math.max(pt.level, run.level - 2);
+  const ally = makeActor(pt.species, lvl, 'ally', { x: a.x + Math.cos(a.facing) * 18, y: a.y + Math.sin(a.facing) * 18, moves: enemyMoves(pt.species, lvl), hpMul: 3 });
   ally.brain = allyBrain; ally.lifeT = 10 + (run.callBonus || 0); ally.spawnT = 0.35; ally.iframes = 99; ally.dmgMul = 0.8 + (run.callPower || 0);
-  if (world.collides(ally.x, ally.y, ally.r, 'walk')) { ally.x = a.x; ally.y = a.y; }
+  if (world.collides(ally.x, ally.y, 6, 'walk')) { ally.x = a.x; ally.y = a.y; }
   world.add(ally);
   world.vfx.push({ kind: 'sendout', x: ally.x, y: ally.y, t: 0, life: 0.5 });
   Sound.playSE('se_ball_open');

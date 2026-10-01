@@ -1,0 +1,10 @@
+
+reached biome (0-4, 5=won): 12 2 0 3 13 26  win rate 46%
+  BROCK     fights 55  won 44 (80%)  avg win time 38s  avg HP lost on win 26%  boss HP left on losses 70,8,61,8,55,15,14,82,18,71,22
+  MISTY     fights 44  won 42 (95%)  avg win time 33s  avg HP lost on win 24%  boss HP left on losses 18,18
+  MAROWAK   fights 42  won 42 (100%)  avg win time 40s  avg HP lost on win 26%  boss HP left on losses 
+  GIOVANNI  fights 40  won 39 (98%)  avg win time 65s  avg HP lost on win 25%  boss HP left on losses 24
+  MEWTWO    fights 38  won 26 (68%)  avg win time 42s  avg HP lost on win 53%  boss HP left on losses 3,30,65,42,97,31,16,22,73,30,44,5
+  combat room time avg 19.3 s
+  damage to player by attack kind: strike:MEWTWO:PSYCHIC 24%  proj/proj 13%  nova 11%  sweep 7%  radial/proj 6%  strike:MEWTWO:FUTURE_SIGHT 5%  swipe 5%  charge 4%  leap 4%  lunge 4%  proj 4%  strike:RHYHORN:ROCK_TOMB 3%  strike:ONIX:ROCK_TOMB 3%  strike:KADABRA:PSYCHIC 2%  strike:GASTLY:NIGHT_SHADE 2%  strike:KADABRA:FUTURE_SIGHT 2%  beam 1%  chain 0%  multi 0%  proj/zone 0%  strike:HAUNTER:NIGHT_SHADE 0%  strike:HYPNO:PSYCHIC 0%  strike:HYPNO:CONFUSION 0%  strike:DROWZEE:CONFUSION 0%
+deaths at bosses: 26 / 30

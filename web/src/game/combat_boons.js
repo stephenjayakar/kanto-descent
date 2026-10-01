@@ -69,12 +69,16 @@ World.prototype.boonMetronome = function (a, mult) {
   const keys = Object.keys(D.moves).filter(k => D.moves[k].power >= 60 && !['SELF_DESTRUCT', 'EXPLOSION', 'STRUGGLE', 'FOCUS_PUNCH'].includes(k));
   const k = keys[Math.floor(this.rand() * keys.length)];
   const p = { ...profile(k), boonProc: true, windup: 0 };
-  this.text(a, p.name, '#f8a8d0');
-  const prev = a.action;
-  a.action = null;
-  const act = this.useMove(a, p, { aim: a.facing, slot: 'boon', windup: 0 });
-  act.power = mult;
-  if (prev && prev !== act) { /* the cast already resolved */ }
+  // fire it once the Cast itself has resolved (never replace the player's own move)
+  let tries = 0;
+  const go = () => {
+    if (a.dead) return;
+    if (a.action && a.action.stage !== 'recover' && tries++ < 20) { this.later(0.08, go); return; }
+    this.text(a, p.name, '#f8a8d0');
+    const act = this.useMove(a, p, { aim: a.facing, slot: 'boon', windup: 0 });
+    act.power = mult;
+  };
+  this.later(0.1, go);
 };
 
 // vortex pull (called each step from the zone loop)

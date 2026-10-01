@@ -5,7 +5,7 @@ export const Engine = {
   canvas: null, ctx: null, scale: 1, time: 0, dt: 0, frame: 0,
   scene: null, overlays: [],
   mouse: { x: -1, y: -1, down: false, clicked: false, rclicked: false, wheel: 0, justPressed: false },
-  keys: new Set(), pressed: new Set(),
+  keys: new Set(), pressed: new Set(), suppressed: new Set(),
   shake: 0, cursor: 'default', hoverAny: false,
   timeScale: 1,
 };
@@ -40,12 +40,15 @@ export function initEngine(canvas) {
   canvas.addEventListener('touchstart', e => { const t = e.touches[0]; toLocal(t); Engine.mouse.down = true; Engine.mouse.justPressed = true; e.preventDefault(); }, { passive: false });
   canvas.addEventListener('touchmove', e => { toLocal(e.touches[0]); e.preventDefault(); }, { passive: false });
   canvas.addEventListener('touchend', e => { Engine.mouse.clicked = true; Engine.mouse.down = false; e.preventDefault(); }, { passive: false });
+  const norm = k => (k.length === 1 ? k.toLowerCase() : k);
   window.addEventListener('keydown', e => {
-    if (!Engine.keys.has(e.key)) Engine.pressed.add(e.key);
-    Engine.keys.add(e.key);
+    const k = norm(e.key);
+    if (e.repeat || Engine.suppressed.has(k)) { if ([' ', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.key)) e.preventDefault(); return; }
+    if (!Engine.keys.has(k)) Engine.pressed.add(k);
+    Engine.keys.add(k);
     if ([' ', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.key)) e.preventDefault();
   });
-  window.addEventListener('keyup', e => Engine.keys.delete(e.key));
+  window.addEventListener('keyup', e => { Engine.keys.delete(norm(e.key)); Engine.suppressed.delete(norm(e.key)); });
   let last = performance.now();
   const loop = (now) => {
     const rawDt = Math.min(0.05, (now - last) / 1000);
@@ -94,6 +97,8 @@ export function setScene(scene) {
 }
 export function pushOverlay(o) { Engine.mouse.clicked = false; Engine.mouse.rclicked = false; Engine.pressed.clear(); Engine.overlays.push(o); o.enter?.(); return o; }
 export function popOverlay(o) {
+  for (const k of ['Enter', 'z', 'e']) if (Engine.keys.has(k)) { Engine.keys.delete(k); Engine.suppressed.add(k); }
+  Engine.pressed.clear(); window.__input?.clear?.();
   const i = o ? Engine.overlays.indexOf(o) : Engine.overlays.length - 1;
   if (i >= 0) { const [x] = Engine.overlays.splice(i, 1); x.exit?.(); }
   Engine.mouse.clicked = false; Engine.pressed.clear();

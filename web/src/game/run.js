@@ -6,6 +6,11 @@ import { BOONS, LEGENDS, CHAOS, RARITY, legendBoonPool, rollRarity, boonInstance
 import { BIOMES, STARTERS, HELD, RESEARCH, SPECIAL_EVOS } from './content.js';
 import { profile, slotFor } from './moves_rt.js';
 
+// Every player POKéMON levels on the same curve, so slow-growing species (DRATINI) aren't behind.
+export const PLAYER_CURVE = 'MEDIUM_SLOW';
+// Moves that hurt the user too much in realtime are never offered to the player.
+export const PLAYER_BANNED = new Set(['EXPLOSION', 'SELF_DESTRUCT', 'DESTINY_BOND', 'MEMENTO', 'PERISH_SONG', 'CURSE', 'SPITE', 'MEAN_LOOK', 'BIDE', 'SKETCH', 'TRANSFORM', 'MIMIC', 'SPLASH', 'TELEPORT', 'FOCUS_PUNCH', 'RAGE', 'COUNTER', 'MIRROR_COAT', 'ENDEAVOR', 'PAIN_SPLIT', 'FLAIL', 'REVERSAL']);
+
 // ---------------------------------------------------------------- meta (localStorage)
 const SAVE_KEY = 'kanto-descent-v1';
 export const G = { meta: null, run: null };
@@ -15,8 +20,10 @@ export function loadMeta() {
   try { m = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { m = null; }
   G.meta = Object.assign({
     stardust: 0, totalStardust: 0, research: {}, badges: [], dex: { seen: {}, caught: {} }, runs: 0, wins: 0, bestTime: null,
-    deaths: 0, bossKills: {}, settings: { music: 0.7, sfx: 0.8, shake: 1 }, history: [], lastStarter: 'CHARMANDER', seenIntro: false,
+    deaths: 0, heat: 0, maxHeatWon: -1, bossKills: {}, settings: { music: 0.7, sfx: 0.8, shake: 1 }, history: [], lastStarter: 'CHARMANDER', seenIntro: false,
   }, m || {});
+  if (G.meta.wins > 0 && (G.meta.maxHeatWon ?? -1) < 0) G.meta.maxHeatWon = 0;
+  for (const r of RESEARCH) if ((G.meta.research[r.key] || 0) > r.max) G.meta.research[r.key] = r.max;
   return G.meta;
 }
 export function saveMeta() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(G.meta)); } catch { /* storage full */ } }
@@ -28,11 +35,13 @@ export function newRun(starterSpecies, seed = randomSeedString()) {
   const kit = STARTERS.find(s => s.species === starterSpecies) || STARTERS[0];
   const rng = new RNG(seed);
   const level = 5 + rank('level') * 2;
+  const heat = G.meta.heat || 0;
   const run = {
-    seed, rng, starter: kit.species, species: kit.species, level, exp: expForLevel(D.species[kit.species].growthRate, level),
-    slots: { ...kit.slots }, known: Object.values(kit.slots), hp: null, maxHpMul: 1 + rank('hp') * 0.06,
-    boons: [], chaos: [], held: null, money: rank('money') * 40, balls: 3 + rank('balls'), ballType: 'poke_ball',
-    partner: null, callGauge: 0, revives: rank('revive'), reviveFrac: 0.5, rerolls: rank('reroll'),
+    seed, rng, starter: kit.species, species: kit.species, level, exp: expForLevel(PLAYER_CURVE, level),
+    slots: { ...kit.slots }, known: Object.values(kit.slots), hp: null, maxHpMul: 1 + rank('hp') * 0.04,
+    boons: [], chaos: [], held: null, money: 50 + rank('money') * 25, balls: 3 + rank('balls'), ballType: 'poke_ball',
+    callBonus: rank('call') * 2, heat,
+    partner: null, callGauge: 0, revives: rank('revive'), reviveFrac: 0.3, rerolls: rank('reroll'),
     biome: 0, roomInBiome: 0, depth: 0, kills: 0, time: 0, stardustGained: 0, caught: [],
     pendingLearn: [], pendingEvo: null, focusUsed: false, visited: {}, lastLayouts: [],
     history: [], over: false, won: false,
@@ -42,7 +51,16 @@ export function newRun(starterSpecies, seed = randomSeedString()) {
   return run;
 }
 
-export function playerStats(run) { return monStats(run.species, run.level, 20); }
+// The player's POKéMON gets floors on HP and defenses (like Hades giving every weapon the same health),
+// so frail picks such as GASTLY or PIKACHU are a different playstyle rather than a handicap.
+export function playerStats(run) {
+  const st = monStats(run.species, run.level, 20);
+  st.hp = Math.max(st.hp, floorStat(run.level, 70, true));
+  st.def = Math.max(st.def, floorStat(run.level, 70));
+  st.spd = Math.max(st.spd, floorStat(run.level, 70));
+  return st;
+}
+function floorStat(level, base, hp) { const c = Math.floor(((2 * base + 20) * level) / 100); return hp ? c + level + 10 : c + 5; }
 export function playerMaxHp(run) {
   let mul = run.maxHpMul;
   for (const c of run.chaos) if (c.active && c.blessing.hp) mul += c.blessing.hp;
@@ -52,12 +70,13 @@ export function playerMaxHp(run) {
 // Build the player actor for a room from the run state.
 export function makePlayer(run, x, y) {
   const a = makeActor(run.species, run.level, 'player', { x, y, iv: 20, hpMul: 3 });
+  a.stats = playerStats(run);
   a.maxHp = playerMaxHp(run); a.hp = Math.min(run.hp, a.maxHp);
   a.ghost = false; // the player never phases through walls
   a.flying = false;
   a.dashCharges = 1 + rank('dash'); a.dashRecharge = 0.55;
   a.slotMul = {}; a.slotCrit = {}; a.cdMul = {}; a.critBonus = 0; a.moneyMul = 1;
-  a.dmgMul = 1 + rank('power') * 0.05;
+  a.dmgMul = 1 + rank('power') * 0.03;
   for (const b of run.boons) BOONS[b.key]?.stat?.(a, boonInstance(run, b));
   for (const c of run.chaos) if (c.active) c.blessing.stat?.(a);
   if (run.held) HELD[run.held]?.stat?.(a);
@@ -72,7 +91,9 @@ export function buildHooks(run, world) {
   const held = run.held;
   const hurtMul = run.chaos.filter(c => !c.active && c.curse.hurt).reduce((m, c) => m * c.curse.hurt, 1);
   const healMul = run.chaos.filter(c => !c.active && c.curse.healMul).reduce((m, c) => m * c.curse.healMul, 1);
-  if (healMul !== 1) { const h = world.heal.bind(world); world.heal = (a, amt) => h(a, a.team === 'player' ? Math.round(amt * healMul) : amt); }
+  // wrap heal once per world (buildHooks runs again on every refresh)
+  world._baseHeal ??= world.heal.bind(world);
+  world.heal = healMul === 1 ? world._baseHeal : (a, amt) => world._baseHeal(a, a.team === 'player' ? Math.round(amt * healMul) : amt);
   return {
     beforeHit(w, info) {
       if (info.src?.team === 'player' && info.src.typeBoost && info.p.type === info.src.typeBoost.type) info.dmg = Math.round(info.dmg * info.src.typeBoost.mult);
@@ -118,7 +139,8 @@ export function buildHooks(run, world) {
       }
       for (const { def, inst } of list) def.onTick?.(w, inst);
     },
-    onRoomStart(w) { each('onRoom', w); for (const c of run.chaos) if (!c.active) c.curse.apply?.(w); },
+    onRoomStart(w) { each('onRoom', w); },
+    onSpawn(w, e) { for (const c of run.chaos) if (!c.active) c.curse.spawn?.(e); },
     onRoomClear(w) { each('onClear', w); },
   };
 }
@@ -126,7 +148,7 @@ export function buildHooks(run, world) {
 // ---------------------------------------------------------------- EXP, levels, evolution
 export function expFor(run, enemy, trainer) {
   const base = Math.floor((enemy.expYield || 50) * enemy.level / 7) * (trainer ? 1.5 : 1);
-  let mul = 1.25 * (1 + rank('exp') * 0.15) * (run.held === 'LUCKY_EGG' ? 1.5 : 1);
+  let mul = 1.25 * (1 + rank('exp') * 0.05) * (run.held === 'LUCKY_EGG' ? 1.5 : 1);
   if (enemy.boss) mul *= 2;
   return Math.max(1, Math.round(base * mul));
 }
@@ -134,14 +156,14 @@ export function expFor(run, enemy, trainer) {
 // returns events [{type:'level', level}] and queues learn/evolve prompts for the next room clear
 export function gainExp(run, amount) {
   const ev = [];
-  const rate = D.species[run.species].growthRate;
+  const rate = PLAYER_CURVE;
   run.exp += amount;
   while (run.level < 100 && run.exp >= expForLevel(rate, run.level + 1)) {
     const beforeMax = playerMaxHp(run);
     run.level++;
     run.hp += playerMaxHp(run) - beforeMax;
     ev.push({ type: 'level', level: run.level });
-    for (const mv of movesLearnedAt(run.species, run.level)) if (!run.known.includes(mv) && !run.pendingLearn.includes(mv)) run.pendingLearn.push(mv);
+    for (const mv of movesLearnedAt(run.species, run.level)) if (!PLAYER_BANNED.has(mv) && !run.known.includes(mv) && !run.pendingLearn.includes(mv)) run.pendingLearn.push(mv);
     checkEvolution(run);
   }
   return ev;
@@ -157,17 +179,21 @@ export function checkEvolution(run) {
 export function evolve(run, into) {
   const beforeMax = playerMaxHp(run);
   run.species = into;
-  run.exp = Math.max(run.exp, expForLevel(D.species[into].growthRate, run.level));
+  run.exp = Math.max(run.exp, expForLevel(PLAYER_CURVE, run.level));
   run.hp += playerMaxHp(run) - beforeMax;
   run.pendingEvo = null;
   for (const mv of movesLearnedAt(into, run.level)) if (!run.known.includes(mv) && !run.pendingLearn.includes(mv)) run.pendingLearn.push(mv);
+  // offer the best move of the new form's own type it could already know (Eevee -> Flareon gets Ember)
+  const types = D.species[into].types;
+  const own = (D.species[into].learnset || []).filter(([l, m]) => l <= run.level && D.moves[m] && types.includes(D.moves[m].type) && D.moves[m].power > 0 && !run.known.includes(m) && !run.pendingLearn.includes(m));
+  if (own.length && !Object.values(run.slots).some(m => types.includes(D.moves[m]?.type))) run.pendingLearn.push(own[own.length - 1][1]);
 }
 export function learnMove(run, move, slot) {
   if (slot) run.slots[slot] = move;
   if (!run.known.includes(move)) run.known.push(move);
 }
 export function expProgress(run) {
-  const rate = D.species[run.species].growthRate;
+  const rate = PLAYER_CURVE;
   const a = expForLevel(rate, run.level), b = expForLevel(rate, run.level + 1);
   return Math.max(0, Math.min(1, (run.exp - a) / Math.max(1, b - a)));
 }
@@ -176,7 +202,7 @@ export function expProgress(run) {
 export const REWARD_INFO = {
   boon: { name: 'Legendary blessing' },
   rare_candy: { name: 'RARE CANDY', icon: 'gfx/items/rare_candy.png', desc: '+2 levels' },
-  hp_up: { name: 'HP UP', icon: 'gfx/items/hp_up.png', desc: '+10% max HP, heal 10%' },
+  hp_up: { name: 'HP UP', icon: 'gfx/items/hp_up.png', desc: '+15% max HP, heal 25%' },
   pp_up: { name: 'PP UP', icon: 'gfx/items/pp_up.png', desc: 'Power up a blessing' },
   money: { name: 'NUGGET', icon: 'gfx/items/nugget.png', desc: 'Money' },
   tm: { name: 'TM', icon: 'gfx/items/tm01.png', desc: 'Learn a new move' },
@@ -211,6 +237,7 @@ export function rollDoors(run, nExits) {
   if (run.boons.length) add('pp_up', 1.4);
   if (run.balls < 3) add('balls', 1.0);
   if (!run.visited.shop?.[run.biome] && next >= 2) add('shop', 2.4);
+  if (!run.visited.center?.[run.biome] && next >= 3 && next <= biome.rooms - 3) add('center', 1.0);
   if (!run.visited.trainer?.[run.biome] && next >= 2 && !biome.trainerOnly) add('trainer', 1.6);
   if (run.depth > 3 && rng.chance(0.25) && !run.chaos.some(c => !c.active)) add('chaos', 1.2);
   if (rng.chance(0.15)) add('star_piece', 0.8);
@@ -244,7 +271,7 @@ export function addBoon(run, choice) {
 
 export function tmChoices(run) {
   const sp = D.species[run.species];
-  const pool = [...new Set([...(sp.tmhm || []), ...(sp.tutor || [])])].filter(m => D.moves[m] && !run.known.includes(m) && !['CUT', 'FLY', 'SURF', 'STRENGTH', 'FLASH', 'ROCK_SMASH', 'WATERFALL', 'DIVE', 'SECRET_POWER', 'FRUSTRATION', 'RETURN', 'HIDDEN_POWER', 'ATTRACT', 'SNORE', 'SUBSTITUTE', 'ROLE_PLAY', 'MIMIC', 'SLEEP_TALK', 'ENDURE', 'CURSE', 'COUNTER', 'MIRROR_COAT', 'NATURE_POWER', 'TORMENT', 'TAUNT', 'FACADE', 'THIEF', 'DEFENSE_CURL', 'SWAGGER', 'DOUBLE_EDGE', 'MEGA_KICK', 'MEGA_PUNCH', 'SOFT_BOILED'].includes(m) || ['DOUBLE_EDGE'].includes(m) && false);
+  const pool = [...new Set([...(sp.tmhm || []), ...(sp.tutor || [])])].filter(m => D.moves[m] && !PLAYER_BANNED.has(m) && !run.known.includes(m) && !['CUT', 'FLY', 'SURF', 'STRENGTH', 'FLASH', 'ROCK_SMASH', 'WATERFALL', 'DIVE', 'SECRET_POWER', 'FRUSTRATION', 'RETURN', 'HIDDEN_POWER', 'ATTRACT', 'SNORE', 'SUBSTITUTE', 'ROLE_PLAY', 'MIMIC', 'SLEEP_TALK', 'ENDURE', 'CURSE', 'COUNTER', 'MIRROR_COAT', 'NATURE_POWER', 'TORMENT', 'TAUNT', 'FACADE', 'THIEF', 'DEFENSE_CURL', 'SWAGGER', 'DOUBLE_EDGE', 'MEGA_KICK', 'MEGA_PUNCH', 'SOFT_BOILED'].includes(m) || ['DOUBLE_EDGE'].includes(m) && false);
   const scored = pool.map(m => { const mv = D.moves[m]; let s = (mv.power || 30) / 40 + (sp.types.includes(mv.type) ? 1 : 0) + run.rng.next(); if (mv.power > 100 && run.biome < 2) s -= 1; return [m, s]; }).sort((a, b) => b[1] - a[1]);
   return scored.slice(0, 6).sort(() => run.rng.next() - 0.5).slice(0, 3).map(x => x[0]);
 }
@@ -261,7 +288,7 @@ export function heldChoices(run, n = 3) {
 export function chaosOffer(run) {
   const rng = run.rng;
   return rng.sample([0, 1, 2], 2).map(() => ({
-    curse: rng.pick(CHAOS.curses), blessing: rng.pick(CHAOS.blessings), rooms: rng.int(2, 4), active: false,
+    curse: rng.pick(CHAOS.curses), blessing: rng.pick(CHAOS.blessings), rooms: rng.int(3, 5), active: false,
   }));
 }
 

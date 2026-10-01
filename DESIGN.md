@@ -109,3 +109,48 @@ Run it with `node serve.cjs 8092` and open http://localhost:8092/.
   into a room.
 * `?hub` skips the title screen.
 * `import('./src/dev/autoplay.js').then(m => m.start({god:true}))` plays a full run.
+
+## Balance (tuned with the headless simulator)
+`node tests/sim/sim.mjs <runs> <starter|all> <skill 0..1> [research 0..1]` plays complete runs through the real
+scenes and combat code in Node. `tests/sim/env.mjs` stubs fetch, Image, audio and timers. The bot aims with the mouse, dodges
+telegraphs (`skill` sets its reaction time and how often it dodges), paths around walls, makes the reward and shop
+choices, and catches partners. The report covers win rate, where runs die, per-boss pass rate, fight length and HP lost, and
+per-starter results, plus a breakdown of damage taken by attack type.
+
+Environment variables:
+
+| Variable | Effect |
+|---|---|
+| `TUNE='{"enemyDmg":..}'` | Overrides `TUNING` in content.js |
+| `HEAT=n` | Sets the HEAT level |
+| `R='{"revive":1}'` | Sets individual research ranks |
+| `START='dev=boss&biome=1&level=24'` | Starts every run at a specific room |
+
+Current targets and measurements (skill 0.7 is a "decent player"; about 40 to 100 runs each):
+
+| Setup | Win rate |
+|---|---|
+| Fresh save | ~29% (no dodging 12%, perfect dodging 33%) |
+| Half of Oak's research | ~74% |
+| Full research | ~79% |
+| Full research, HEAT 5 | ~40% |
+| Full research, HEAT 10 | ~14% |
+
+* **Boss pass rates:** Brock, Misty, Marowak and Giovanni are each passed about 85–95% of the time; Mewtwo about 50%. Combat rooms take about 18s.
+* **Starters:** the spread is now 39–57% when the global tuning is easier (the gap used to be 4% to 71%).
+
+Rules that came out of two adversarial review rounds and the sim:
+* **Telegraphs are readable.** Enemy ground blasts give at least 0.8s of warning (bosses 0.65s), enemy shots fly at 72% speed,
+  and enemy windups are 0.45–0.7s. Dodging measurably changes outcomes.
+* **Boss HP** = target seconds × your sustained DPS. DPS is measured at the level you're expected to have at that boss, with an
+  uptime estimate per move type (melee, aimed or homing). Type matchups are compressed (^0.8), and there's a low floor against
+  status-only kits. Being over-leveled, upgraded or boon-buffed makes boss fights shorter.
+* **Type matchups against the player are compressed:** regular foes ×0.6–1.5, bosses ×0.9–1.1. The player's own moves are never
+  below ×0.5. Matchups matter but never decide a run.
+* **The player has floors on HP, DEF and SP.DEF** (base 70) and levels on one shared EXP curve. Moves that only hurt the user
+  (Explosion and similar) are never offered.
+* **Bosses resist control:** no flinch, short sleep/disable with a 4s immunity window, and paralysis only slows them.
+  Damage-over-time against bosses is weak. Stat stages are capped at ±2 and last 8s.
+* **On-hit boon procs** trigger at most once per target every 0.25s.
+* **HEAT** (pick it from the rival in the lab after your first escape): 10 cumulative rules, each adding foe damage, with
+  +10% STARDUST per level.

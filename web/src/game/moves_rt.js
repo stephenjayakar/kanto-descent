@@ -21,8 +21,8 @@ const P = {
   // ---- Normal / physical basics
   SCRATCH: { kind: 'swipe', range: 22, arc: 1.9, combo: 3, cd: 0.17, fx: 'claw' , sfx: 'se_m_scratch' },
   POUND: { kind: 'swipe', range: 20, arc: 1.6, combo: 3, cd: 0.17, fx: 'impact', sfx: 'se_m_comet_punch' },
-  TACKLE: { kind: 'lunge', dist: 26, range: 14, cd: 0.28, fx: 'impact', sfx: 'se_m_comet_punch' },
-  QUICK_ATTACK: { kind: 'lunge', dist: 56, range: 14, dur: 0.12, cd: 0.32, fx: 'impact', sfx: 'se_m_take_down', iframes: true },
+  TACKLE: { kind: 'lunge', dist: 26, range: 14, cd: 0.23, fx: 'impact', sfx: 'se_m_comet_punch' },
+  QUICK_ATTACK: { kind: 'lunge', dist: 56, range: 14, dur: 0.12, cd: 0.28, fx: 'impact', sfx: 'se_m_take_down' },
   HEADBUTT: { kind: 'lunge', dist: 30, range: 16, cd: 0.4, fx: 'impact', sfx: 'se_m_headbutt' },
   HORN_ATTACK: { kind: 'lunge', dist: 30, range: 16, cd: 0.36, fx: 'impact', sfx: 'se_m_horn_attack' },
   PECK: { kind: 'swipe', range: 22, arc: 0.9, combo: 3, cd: 0.16, fx: 'impact', sfx: 'se_m_horn_attack' },
@@ -54,14 +54,14 @@ const P = {
   ROLLOUT: { kind: 'charge', dist: 110, dur: 0.45, range: 16, cd: 0.6, fx: 'impact', sfx: 'se_m_take_down', roll: true },
   FLAIL: { kind: 'multi', hits: 3, range: 22, arc: 2.4, cd: 0.5, fx: 'impact', sfx: 'se_m_double_slap' },
   STRENGTH: { kind: 'lunge', dist: 26, range: 22, cd: 0.6, fx: 'fist', knock: 240, sfx: 'se_m_strength' },
-  SEISMIC_TOSS: { kind: 'lunge', dist: 20, range: 18, cd: 0.8, fx: 'impact', knock: 220, sfx: 'se_m_vital_throw' },
+  SEISMIC_TOSS: { kind: 'lunge', dist: 20, range: 18, cd: 0.8, fx: 'impact', knock: 220, fixed: 'level', sfx: 'se_m_vital_throw' },
   SUBMISSION: { kind: 'charge', dist: 60, dur: 0.22, range: 18, cd: 0.8, fx: 'impact', recoil: 0.2, sfx: 'se_m_vital_throw' },
   CROSS_CHOP: { kind: 'swipe', range: 26, arc: 1.4, combo: 2, cd: 0.3, crit: 0.3, fx: 'impact', sfx: 'se_m_vital_throw2' },
   DYNAMIC_PUNCH: { kind: 'lunge', dist: 24, range: 20, cd: 0.9, fx: 'fist', status: { kind: 'confuse', chance: 1 }, sfx: 'se_m_mega_kick2' },
   FIRE_PUNCH: { kind: 'swipe', range: 22, arc: 1.4, combo: 3, cd: 0.2, fx: 'fist', sfx: 'se_m_fire_punch' },
   ICE_PUNCH: { kind: 'swipe', range: 22, arc: 1.4, combo: 3, cd: 0.2, fx: 'fist', sfx: 'se_m_comet_punch' },
   THUNDER_PUNCH: { kind: 'swipe', range: 22, arc: 1.4, combo: 3, cd: 0.2, fx: 'fist', sfx: 'se_m_thunder_wave' },
-  LICK: { kind: 'swipe', range: 18, arc: 1.2, combo: 2, cd: 0.25, fx: 'ghost', sfx: 'se_m_lick' },
+  LICK: { kind: 'swipe', range: 20, arc: 1.4, combo: 3, cd: 0.18, fx: 'ghost', sfx: 'se_m_lick' },
   VINE_WHIP: { kind: 'swipe', range: 40, arc: 1.2, combo: 2, cd: 0.22, fx: 'vine', sfx: 'se_m_vicegrip' },
   CLAMP: { kind: 'swipe', range: 20, arc: 1.0, combo: 1, cd: 0.6, fx: 'bite', status: { kind: 'trap', chance: 1 }, sfx: 'se_m_vicegrip' },
   CRABHAMMER: { kind: 'swipe', range: 24, arc: 1.4, combo: 2, cd: 0.32, crit: 0.25, fx: 'impact', sfx: 'se_m_crabhammer' },
@@ -77,13 +77,13 @@ const P = {
   EMBER: { kind: 'proj', speed: 210, size: 5, count: 1, life: 0.8, cd: 0.3, sprite: 'ember', sfx: 'se_m_ember' },
   FLAMETHROWER: { kind: 'stream', dur: 0.7, rate: 0.045, speed: 230, size: 6, life: 0.5, spread: 0.18, cd: 1.2, sprite: 'ember', sfx: 'se_m_flamethrower' },
   FIRE_BLAST: { kind: 'proj', speed: 160, size: 11, count: 1, life: 1.2, cd: 1.6, sprite: 'fireblast', explode: 34, sfx: 'se_m_flame_wheel' },
-  FIRE_SPIN: { kind: 'cloud', radius: 24, dur: 3, at: 'target', cd: 1.6, tick: 0.35, sprite: 'ember', sfx: 'se_m_fire_spin', status: { kind: 'trap', chance: 1 } },
+  FIRE_SPIN: { kind: 'cloud', radius: 24, dur: 3, at: 'target', cd: 1.6, tick: 0.35, sprite: 'ember', sfx: 'se_m_flame_wheel', status: { kind: 'trap', chance: 1 } },
   FLAME_WHEEL: { kind: 'charge', dist: 70, dur: 0.24, range: 16, cd: 0.7, fx: 'fire', sfx: 'se_m_flame_wheel', trail: 'fire' },
   HEAT_WAVE: { kind: 'nova', radius: 50, cd: 1.6, fx: 'fire', sfx: 'se_m_heat_wave' },
   SACRED_FIRE: { kind: 'stream', dur: 0.8, rate: 0.04, speed: 250, size: 7, life: 0.55, spread: 0.24, cd: 1.4, sprite: 'ember', sfx: 'se_m_sacred_fire' },
   OVERHEAT: { kind: 'proj', speed: 170, size: 14, count: 1, life: 1.2, cd: 2.4, sprite: 'fireblast', explode: 44, sfx: 'se_m_sacred_fire2' },
   WATER_GUN: { kind: 'proj', speed: 240, size: 5, count: 1, life: 0.7, cd: 0.3, sprite: 'water', sfx: 'se_m_bubble' },
-  BUBBLE: { kind: 'proj', speed: 120, size: 5, count: 3, spread: 0.6, life: 1.0, cd: 0.5, sprite: 'bubble', wobble: true, sfx: 'se_m_bubble' },
+  BUBBLE: { kind: 'proj', speed: 170, size: 5, count: 3, spread: 0.35, life: 1.0, cd: 0.5, sprite: 'bubble', wobble: true, sfx: 'se_m_bubble' },
   BUBBLE_BEAM: { kind: 'stream', dur: 0.5, rate: 0.06, speed: 190, size: 5, life: 0.6, spread: 0.25, cd: 1.0, sprite: 'bubble', sfx: 'se_m_bubble_beam' },
   HYDRO_PUMP: { kind: 'beam', len: 150, width: 14, windup: 0.35, dur: 0.4, cd: 2.0, fx: 'water', knock: 220, sfx: 'se_m_hydro_pump' },
   SURF: { kind: 'nova', radius: 64, cd: 1.8, fx: 'water', knock: 180, sfx: 'se_m_surf', wave: true },
@@ -109,10 +109,10 @@ const P = {
   CONFUSION: { kind: 'strike', radius: 18, delay: 0.25, count: 1, cd: 0.45, fx: 'psychic', sfx: 'se_m_psybeam' },
   PSYBEAM: { kind: 'beam', len: 130, width: 9, windup: 0.25, dur: 0.3, cd: 0.9, fx: 'psychic', sfx: 'se_m_psybeam2' },
   PSYCHIC: { kind: 'strike', radius: 30, delay: 0.35, count: 1, cd: 1.0, fx: 'psychic', knock: 160, sfx: 'se_m_psybeam' },
-  PSYWAVE: { kind: 'nova', radius: 44, cd: 1.2, fx: 'psychic', sfx: 'se_m_psybeam2', wave: true },
+  PSYWAVE: { kind: 'nova', radius: 44, cd: 1.2, fx: 'psychic', sfx: 'se_m_psybeam2', wave: true, fixed: 'level' },
   DREAM_EATER: { kind: 'strike', radius: 22, delay: 0.3, count: 1, cd: 1.0, fx: 'psychic', drain: 0.5, sfx: 'se_m_nightmare' },
-  SWIFT: { kind: 'proj', speed: 190, size: 4, count: 3, spread: 0.5, life: 1.2, homing: 8, cd: 0.6, sprite: 'star', spin: true, sfx: 'se_m_swift' },
-  NIGHT_SHADE: { kind: 'strike', radius: 18, delay: 0.3, count: 1, cd: 0.7, fx: 'ghost', sfx: 'se_m_nightmare' },
+  SWIFT: { kind: 'proj', speed: 190, size: 4, count: 3, spread: 0.5, life: 1.2, homing: 8, cd: 0.8, sprite: 'star', spin: true, sfx: 'se_m_swift' },
+  NIGHT_SHADE: { kind: 'strike', radius: 18, delay: 0.3, count: 1, cd: 0.7, fx: 'ghost', fixed: 'level', sfx: 'se_m_nightmare' },
   SHADOW_BALL: { kind: 'proj', speed: 170, size: 8, count: 1, life: 1.2, cd: 0.9, sprite: 'shadow', explode: 22, sfx: 'se_m_nightmare' },
   SHADOW_PUNCH: { kind: 'swipe', range: 30, arc: 1.2, combo: 2, cd: 0.25, fx: 'ghost', sfx: 'se_m_comet_punch' },
   ACID: { kind: 'proj', speed: 170, size: 5, count: 2, spread: 0.3, life: 0.8, cd: 0.45, sprite: 'sludge', sfx: 'se_m_bubble3' },
@@ -134,7 +134,7 @@ const P = {
   GUST: { kind: 'proj', speed: 160, size: 9, count: 1, life: 0.8, pierce: 3, cd: 0.6, sprite: 'wind', knock: 120, sfx: 'se_m_gust' },
   RAZOR_WIND: { kind: 'proj', speed: 260, size: 6, count: 3, spread: 0.4, life: 0.6, cd: 1.2, windup: 0.4, sprite: 'wind', pierce: 3, sfx: 'se_m_razor_wind' },
   AEROBLAST: { kind: 'beam', len: 190, width: 18, windup: 0.4, dur: 0.4, cd: 2.0, fx: 'wind', knock: 240, sfx: 'se_m_razor_wind' },
-  TWISTER: { kind: 'nova', radius: 40, cd: 1.0, fx: 'wind', sfx: 'se_m_twister' },
+  TWISTER: { kind: 'swipe', range: 34, arc: 3.0, combo: 2, cd: 0.3, fx: 'wind', sfx: 'se_m_twister' },
   SKY_ATTACK: { kind: 'charge', dist: 130, dur: 0.3, range: 22, windup: 0.6, cd: 2.0, fx: 'wind', sfx: 'se_m_fly' },
   FLY: { kind: 'dig', dur: 0.9, radius: 26, cd: 1.6, fx: 'wind', sfx: 'se_m_fly', air: true },
   DRAGON_RAGE: { kind: 'proj', speed: 190, size: 8, count: 1, life: 0.9, cd: 1.0, sprite: 'dragon', fixed: 40, explode: 20, sfx: 'se_m_dragon_rage' },
@@ -218,6 +218,7 @@ const P = {
   SUBSTITUTE: { kind: 'buff', stat: 'eva', cd: 10, fx: 'shine', sfx: 'se_m_double_team', decoys: 1 },
 };
 
+const VARIABLE_POWER = { MAGNITUDE: 70, LOW_KICK: 60, FLAIL: 60, REVERSAL: 60, SUPER_FANG: 60, FISSURE: 100, GUILLOTINE: 90, HORN_DRILL: 90, SHEER_COLD: 90, COUNTER: 60, MIRROR_COAT: 60, BIDE: 50, ENDEAVOR: 50, PRESENT: 50, RETURN: 70, FRUSTRATION: 70, HIDDEN_POWER: 60, NIGHT_SHADE: 50, SEISMIC_TOSS: 50, PSYWAVE: 50, DRAGON_RAGE: 40, SONIC_BOOM: 30 };
 const SPRITE_FOR_TYPE = { FIRE: 'ember', WATER: 'water', GRASS: 'leaf', ELECTRIC: 'orb_yellow', ICE: 'snow', PSYCHIC: 'orb_psychic', DRAGON: 'dragon', DARK: 'shadow', GHOST: 'shadow', POISON: 'sludge', ROCK: 'rock', GROUND: 'mud', BUG: 'needle', FLYING: 'wind', STEEL: 'star', NORMAL: 'star', FIGHTING: 'fist' };
 const FX_FOR_TYPE = { FIRE: 'fire', WATER: 'water', GRASS: 'vine', ELECTRIC: 'spark', ICE: 'ice', PSYCHIC: 'psychic', DRAGON: 'dragon', DARK: 'bite', GHOST: 'ghost', POISON: 'sludge', ROCK: 'rock', GROUND: 'quake', BUG: 'claw', FLYING: 'wind', STEEL: 'claw', NORMAL: 'impact', FIGHTING: 'fist' };
 
@@ -267,6 +268,7 @@ export function profile(moveKey) {
   const m = D.moves[moveKey] || D.moves.TACKLE;
   const p = { ...(P[moveKey] || derive(m)) };
   p.key = moveKey; p.type = m.type; p.power = m.power || 0; p.name = m.name;
+  if (m.power === 1) p.power = VARIABLE_POWER[moveKey] ?? 50; // Magnitude, Low Kick, OHKO moves... have power 1 in the data
   p.special = isSpecial(m.type);
   p.status ??= statusFromEffect(m);
   p.fx ??= FX_FOR_TYPE[m.type] || 'impact';
@@ -304,15 +306,15 @@ function defaultSfx(p) {
 // Enemy telegraph time (seconds) before the active frames. Players get much shorter windups.
 function defaultWindup(p) {
   switch (p.kind) {
-    case 'swipe': case 'multi': return 0.38;
-    case 'lunge': return 0.45;
-    case 'charge': return 0.6;
-    case 'proj': case 'seed': return 0.4;
-    case 'stream': return 0.45;
-    case 'beam': return 0.6;
-    case 'chain': return 0.45;
-    case 'nova': return 0.55;
-    case 'strike': return 0.1;
+    case 'swipe': case 'multi': return 0.45;
+    case 'lunge': return 0.5;
+    case 'charge': return 0.65;
+    case 'proj': case 'seed': return 0.45;
+    case 'stream': return 0.5;
+    case 'beam': return 0.7;
+    case 'chain': return 0.55;
+    case 'nova': return 0.65;
+    case 'strike': return 0.25;
     case 'cloud': return 0.4;
     default: return 0.3;
   }

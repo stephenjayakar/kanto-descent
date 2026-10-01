@@ -275,4 +275,12 @@ export const Sound = {
 for (const k of ['playBGM', 'fadeOutBGM', 'stopBGM', 'pauseBGM', 'resumeBGM', 'playSE', 'stopSE', 'playFanfare',
   'playCry', 'stopAll', 'setStereo', 'setInterpolation']) Sound[k] = deferred(Sound[k]);
 
+// Game code calls these mid-simulation: an unknown song/cry name must never throw into combat.
+for (const k of ['playSE', 'playCry', 'playBGM', 'playFanfare', 'stopSE']) {
+  const fn = Sound[k];
+  Sound[k] = function (...args) {
+    try { const r = fn.apply(this, args); if (r && r.catch) r.catch(e => console.warn('[sound]', k, args[0], e.message)); return r; }
+    catch (e) { console.warn('[sound]', k, args[0], e.message); return Promise.resolve(false); }
+  };
+}
 export default Sound;

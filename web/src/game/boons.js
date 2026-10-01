@@ -27,13 +27,15 @@ const pct = x => Math.round(x * 100) + '%';
 
 // helper: is a hit from this slot?
 const fromSlot = (info, slot) => info.slot === slot && info.src?.team === 'player';
+// on-hit procs are limited to once per target per 0.25s (stream moves would proc 10x a second otherwise)
+const procOk = (w, info, key, cd = 0.25) => { const t = info.target; t._proc ??= {}; if ((t._proc[key] || -9) + cd > w.time) return false; t._proc[key] = w.time; return true; };
 
 export const BOONS = {
   // ---------------- ZAPDOS
-  Z_ATTACK: { legend: 'ZAPDOS', slot: 'attack', name: 'Thunder Fang', desc: b => `Your Attack calls down lightning on foes for ${v(b, 30)} power.`,
-    onHit: (w, info, b) => { if (fromSlot(info, 'attack') && !info.p.boonProc) w.boonStrike(info.target, { power: v(b, 30), type: 'ELECTRIC', fx: 'lightning', status: b.has('Z_PARA_UP') ? 'para' : null, chance: 0.15 }); } },
+  Z_ATTACK: { legend: 'ZAPDOS', slot: 'attack', name: 'Thunder Fang', desc: b => `Your Attack calls down lightning on foes for ${v(b, 15)} power.`,
+    onHit: (w, info, b) => { if (fromSlot(info, 'attack') && !info.p.boonProc && procOk(w, info, 'zf')) w.boonStrike(info.target, { power: v(b, 15), type: 'ELECTRIC', fx: 'lightning', status: b.has('Z_PARA_UP') ? 'para' : null, chance: 0.15 }); } },
   Z_SPECIAL: { legend: 'ZAPDOS', slot: 'special', name: 'Discharge', desc: b => `Your Special arcs to ${Math.round(v(b, 2, 0.5))} more foes for ${v(b, 25)} power.`,
-    onHit: (w, info, b) => { if (fromSlot(info, 'special') && !info.p.boonProc && !info.chained) w.boonChain(info.target, { power: v(b, 25), jumps: Math.round(v(b, 2, 0.5)) }); } },
+    onHit: (w, info, b) => { if (fromSlot(info, 'special') && !info.p.boonProc && procOk(w, info, 'zd', 0.4)) w.boonChain(info.target, { power: v(b, 25), jumps: Math.round(v(b, 2, 0.5)) }); } },
   Z_DASH: { legend: 'ZAPDOS', slot: 'dash', name: 'Volt Switch', desc: b => `Your Dash zaps nearby foes for ${v(b, 25)} power.`,
     onDash: (w, a, b) => w.boonNova(a, { power: v(b, 25), type: 'ELECTRIC', r: 30, fx: 'spark', delay: 0.15 }) },
   Z_CAST: { legend: 'ZAPDOS', slot: 'cast', name: 'Thunder Cloud', desc: b => `Your Cast also strikes ${Math.round(v(b, 3, 0.4))} foes with Thunder (${v(b, 50)} power).`,
@@ -48,10 +50,10 @@ export const BOONS = {
   // ---------------- ARTICUNO
   A_ATTACK: { legend: 'ARTICUNO', slot: 'attack', name: 'Frost Fang', desc: b => `Your Attack inflicts Chill. 5 Chill freezes a foe. +${pct(v(b, 0.1, 0.3))} damage.`,
     beforeHit: (w, info, b) => { if (fromSlot(info, 'attack')) info.dmg = Math.round(info.dmg * (1 + v(b, 0.1, 0.3))); },
-    onHit: (w, info, b) => { if (fromSlot(info, 'attack')) w.addStatus(info.target, 'chill', info.src, { stacks: info.finisher ? 2 : 1 }); } },
+    onHit: (w, info, b) => { if (fromSlot(info, 'attack') && procOk(w, info, 'af')) w.addStatus(info.target, 'chill', info.src, { stacks: info.finisher ? 2 : 1 }); } },
   A_SPECIAL: { legend: 'ARTICUNO', slot: 'special', name: 'Ice Shard', desc: b => `Your Special inflicts 2 Chill and deals +${pct(v(b, 0.15, 0.3))} damage.`,
     beforeHit: (w, info, b) => { if (fromSlot(info, 'special')) info.dmg = Math.round(info.dmg * (1 + v(b, 0.15, 0.3))); },
-    onHit: (w, info, b) => { if (fromSlot(info, 'special')) w.addStatus(info.target, 'chill', info.src, { stacks: 2 }); } },
+    onHit: (w, info, b) => { if (fromSlot(info, 'special') && procOk(w, info, 'as', 0.4)) w.addStatus(info.target, 'chill', info.src, { stacks: 2 }); } },
   A_DASH: { legend: 'ARTICUNO', slot: 'dash', name: 'Mist Step', desc: b => `Your Dash leaves freezing mist that chills foes for ${v(b, 2, 0.3)}s.`,
     onDash: (w, a, b) => w.addZone({ owner: a, x: a.x, y: a.y, r: 22, dur: v(b, 2, 0.3), team: 'player', tick: 0.4, onEnter: (w2, e) => w2.addStatus(e, 'chill', a), sprite: 'mist', fxColor: '#c8f0ff' }) },
   A_CAST: { legend: 'ARTICUNO', slot: 'cast', name: 'Sheer Cold', desc: b => `Your Cast releases a blast that adds ${Math.round(v(b, 3, 0.3))} Chill to all nearby foes.`,
@@ -59,16 +61,16 @@ export const BOONS = {
   A_ICEBODY: { legend: 'ARTICUNO', slot: 'passive', name: 'Ice Body', req: ['A_ATTACK', 'A_SPECIAL', 'A_DASH', 'A_CAST'], desc: b => `Freezing a foe restores ${pct(v(b, 0.02, 0.3))} of your HP.`,
     onFreeze: (w, e, b) => w.heal(w.player, Math.max(1, Math.round(w.player.maxHp * v(b, 0.02, 0.3)))) },
   A_SHATTER: { legend: 'ARTICUNO', slot: 'passive', name: 'Shatter', req: ['A_ATTACK', 'A_SPECIAL', 'A_DASH', 'A_CAST'], desc: b => `Frozen foes that faint explode for ${v(b, 50)} ICE power.`,
-    onKill: (w, e, b) => { if (e.status.freeze) w.boonNova({ x: e.x, y: e.y, team: 'player', level: w.player.level, stats: w.player.stats, stages: w.player.stages, status: {}, types: w.player.types }, { power: v(b, 50), type: 'ICE', r: 36, fx: 'ice', status: 'chill', delay: 0.05 }); } },
+    onKill: (w, e, b) => { if (e.status.freeze || (e.wasFrozen && w.time - e.wasFrozen < 0.2)) w.boonNova({ x: e.x, y: e.y, team: 'player', level: w.player.level, stats: w.player.stats, stages: w.player.stages, status: {}, types: w.player.types }, { power: v(b, 50), type: 'ICE', r: 36, fx: 'ice', status: 'chill', delay: 0.05 }); } },
   A_MIST: { legend: 'ARTICUNO', slot: 'passive', name: 'Mist Veil', desc: b => `Take ${pct(Math.min(0.5, v(b, 0.15, 0.25)))} less damage from Chilled or Frozen foes.`,
     beforeHurt: (w, ctx, b) => { if (ctx.src && (ctx.src.status.chill || ctx.src.status.freeze)) ctx.dmg = Math.round(ctx.dmg * (1 - Math.min(0.5, v(b, 0.15, 0.25)))); } },
 
   // ---------------- MOLTRES
   M_ATTACK: { legend: 'MOLTRES', slot: 'attack', name: 'Fire Fang', desc: b => `Your Attack Burns foes (stacks up to 5) and deals +${pct(v(b, 0.1, 0.3))} damage.`,
     beforeHit: (w, info, b) => { if (fromSlot(info, 'attack')) info.dmg = Math.round(info.dmg * (1 + v(b, 0.1, 0.3))); },
-    onHit: (w, info, b) => { if (fromSlot(info, 'attack')) w.addStatus(info.target, 'burn', info.src, { power: RARITY[b.rarity].mult }); } },
+    onHit: (w, info, b) => { if (fromSlot(info, 'attack') && procOk(w, info, 'mf')) w.addStatus(info.target, 'burn', info.src, { power: RARITY[b.rarity].mult }); } },
   M_SPECIAL: { legend: 'MOLTRES', slot: 'special', name: 'Flame Burst', desc: b => `Your Special bursts into flames for ${v(b, 25)} power around the target, and Burns.`,
-    onHit: (w, info, b) => { if (fromSlot(info, 'special') && !info.p.boonProc) w.boonNova(info.target, { power: v(b, 25), type: 'FIRE', r: 26, fx: 'fire', status: 'burn', delay: 0.02, team: 'player', src: info.src }); } },
+    onHit: (w, info, b) => { if (fromSlot(info, 'special') && !info.p.boonProc && procOk(w, info, 'ms', 0.4)) w.boonNova(info.target, { power: v(b, 25), type: 'FIRE', r: 26, fx: 'fire', status: 'burn', delay: 0.02, team: 'player', src: info.src }); } },
   M_DASH: { legend: 'MOLTRES', slot: 'dash', name: 'Flame Wheel', desc: b => `Your Dash leaves a trail of fire (${v(b, 20)} power).`,
     onDash: (w, a, b) => { for (let i = 0; i < 4; i++) w.later(i * 0.035, () => w.addZone({ owner: a, x: a.x, y: a.y, r: 11, dur: 2, team: 'player', tick: 0.4, p: w.boonProfile('FIRE', v(b, 20)), dmgFrac: 1, status: { kind: 'burn', chance: 0.5 }, sprite: 'ember', fire: true })); } },
   M_CAST: { legend: 'MOLTRES', slot: 'cast', name: 'Sunny Day', desc: b => `Your Cast makes the sun shine: FIRE damage +${pct(v(b, 0.4, 0.25))} for 7s.`,
@@ -81,12 +83,12 @@ export const BOONS = {
     stat: (p, b) => { p.burnMul = (p.burnMul || 1) + v(b, 0.6, 0.3); } },
 
   // ---------------- MEW
-  MEW_CRIT: { legend: 'MEW', slot: 'attack', name: 'Fake Out', desc: b => `Your Attack has +${pct(v(b, 0.12, 0.3))} critical chance.`,
-    stat: (p, b) => { p.slotCrit.attack = (p.slotCrit.attack || 0) + v(b, 0.12, 0.3); } },
-  MEW_SPCRIT: { legend: 'MEW', slot: 'special', name: 'Psych Up', desc: b => `Your Special has +${pct(v(b, 0.15, 0.3))} critical chance.`,
-    stat: (p, b) => { p.slotCrit.special = (p.slotCrit.special || 0) + v(b, 0.15, 0.3); } },
+  MEW_CRIT: { legend: 'MEW', slot: 'attack', name: 'Fake Out', desc: b => `Your Attack has +${pct(v(b, 0.25, 0.3))} critical chance.`,
+    stat: (p, b) => { p.slotCrit.attack = (p.slotCrit.attack || 0) + v(b, 0.25, 0.3); } },
+  MEW_SPCRIT: { legend: 'MEW', slot: 'special', name: 'Psych Up', desc: b => `Your Special has +${pct(v(b, 0.3, 0.3))} critical chance.`,
+    stat: (p, b) => { p.slotCrit.special = (p.slotCrit.special || 0) + v(b, 0.3, 0.3); } },
   MEW_DASH: { legend: 'MEW', slot: 'dash', name: 'Agility', desc: b => `+1 Dash charge. Dashes recharge ${pct(v(b, 0.2, 0.3))} faster.`,
-    stat: (p, b) => { p.dashCharges += 1; p.dashRecharge *= 1 - Math.min(0.6, v(b, 0.2, 0.3)); } },
+    stat: (p, b) => { p.dashCharges += 1; p.dashRecharge *= 1 - Math.min(0.3, v(b, 0.2, 0.3)); } },
   MEW_SPEED: { legend: 'MEW', slot: 'passive', name: 'Quick Feet', desc: b => `You move ${pct(v(b, 0.15, 0.25))} faster.`,
     stat: (p, b) => { p.speed *= 1 + v(b, 0.15, 0.25); } },
   MEW_DODGE: { legend: 'MEW', slot: 'passive', name: 'Double Team', desc: b => `${pct(Math.min(0.4, v(b, 0.1, 0.25)))} chance to dodge any hit.`,
@@ -98,7 +100,7 @@ export const BOONS = {
 
   // ---------------- LUGIA
   L_ATTACK: { legend: 'LUGIA', slot: 'attack', name: 'Aero Edge', desc: b => `Your Attack knocks foes back hard and deals +${pct(v(b, 0.15, 0.3))} damage. Wall slams hurt.`,
-    beforeHit: (w, info, b) => { if (fromSlot(info, 'attack')) { info.dmg = Math.round(info.dmg * (1 + v(b, 0.15, 0.3))); info.knock = (info.knock || 60) + 160; } },
+    beforeHit: (w, info, b) => { if (fromSlot(info, 'attack')) { info.dmg = Math.round(info.dmg * (1 + v(b, 0.15, 0.3))); info.knock = (info.knock || 60) + 90; } },
     stat: (p) => { p.slamBonus = Math.max(p.slamBonus || 0, 0.6); } },
   L_SPECIAL: { legend: 'LUGIA', slot: 'special', name: 'Aeroblast', desc: b => `Your Special blasts foes away and deals +${pct(v(b, 0.2, 0.3))} damage.`,
     beforeHit: (w, info, b) => { if (fromSlot(info, 'special')) { info.dmg = Math.round(info.dmg * (1 + v(b, 0.2, 0.3))); info.knock = (info.knock || 40) + 200; } },
@@ -120,7 +122,7 @@ export const BOONS = {
     onDash: (w, a, b) => { a.deflect = true; w.later(0.25, () => { a.deflect = false; }); } },
   H_ATTACK: { legend: 'HOOH', slot: 'attack', name: 'Sacred Fire', desc: b => `Your Attack deals +${pct(v(b, 0.2, 0.3))} damage and may Burn.`,
     beforeHit: (w, info, b) => { if (fromSlot(info, 'attack')) info.dmg = Math.round(info.dmg * (1 + v(b, 0.2, 0.3))); },
-    onHit: (w, info, b) => { if (fromSlot(info, 'attack') && w.rand() < 0.3) w.addStatus(info.target, 'burn', info.src); } },
+    onHit: (w, info, b) => { if (fromSlot(info, 'attack') && procOk(w, info, 'hf') && w.rand() < 0.3) w.addStatus(info.target, 'burn', info.src); } },
   H_WING: { legend: 'HOOH', slot: 'passive', name: 'Rainbow Wing', desc: b => `Restore ${pct(v(b, 0.06, 0.3))} HP whenever you clear a room.`,
     onClear: (w, b) => w.heal(w.player, Math.round(w.player.maxHp * v(b, 0.06, 0.3))) },
   H_GUARD: { legend: 'HOOH', slot: 'passive', name: 'Rebirth Shield', desc: b => `The first ${Math.round(v(b, 1, 0.5))} hit(s) you take in each room deal no damage.`,
@@ -130,11 +132,11 @@ export const BOONS = {
     onCast: (w, a, b) => w.heal(a, Math.round(a.maxHp * v(b, 0.05, 0.3))) },
 
   // ---------------- duo boons (MASTER rarity; need one boon from each)
-  DUO_STORM: { legend: 'ZAPDOS', duo: ['ZAPDOS', 'ARTICUNO'], slot: 'passive', name: 'Frozen Storm', desc: () => `Paralyzed foes are also Chilled every second, and Frozen foes take lightning.`,
-    onTick: (w) => { for (const e of w.enemies()) if (e.status.para && w.time % 1 < 1 / 60) w.addStatus(e, 'chill', w.player); } },
+  DUO_STORM: { legend: 'ZAPDOS', duo: ['ZAPDOS', 'ARTICUNO'], slot: 'passive', name: 'Frozen Storm', desc: () => `Paralyzed foes are also Chilled every second, and Frozen foes are struck by lightning (60 power).`,
+    onTick: (w) => { if (w.time % 1 >= 1 / 60) return; for (const e of w.enemies()) { if (e.status.para) w.addStatus(e, 'chill', w.player); if (e.status.freeze) w.boonStrike(e, { power: 60, type: 'ELECTRIC', fx: 'lightning', delay: 0.05 }); } } },
   DUO_STEAM: { legend: 'MOLTRES', duo: ['MOLTRES', 'ARTICUNO'], slot: 'passive', name: 'Steam Burst', desc: () => `When a Burning foe becomes Frozen, it explodes in steam for heavy damage.`,
     onFreeze: (w, e) => { if (e.status.burn) w.boonNova({ x: e.x, y: e.y, team: 'player', level: w.player.level, stats: w.player.stats, stages: w.player.stages, status: {}, types: w.player.types }, { power: 90, type: 'WATER', r: 40, fx: 'water', delay: 0.05 }); } },
-  DUO_PLASMA: { legend: 'ZAPDOS', duo: ['ZAPDOS', 'MOLTRES'], slot: 'passive', name: 'Plasma Fists', desc: () => `Lightning you call down also Burns, and Burn damage arcs to a nearby foe.`,
+  DUO_PLASMA: { legend: 'ZAPDOS', duo: ['ZAPDOS', 'MOLTRES'], slot: 'passive', name: 'Plasma Fists', desc: () => `Lightning you call down also Burns its target.`,
     onHit: (w, info) => { if (info.p.boonProc && info.p.type === 'ELECTRIC') w.addStatus(info.target, 'burn', w.player); } },
   DUO_TIDE: { legend: 'LUGIA', duo: ['LUGIA', 'HOOH'], slot: 'passive', name: 'Tidal Rebirth', desc: () => `Wall slams restore 2% HP. Revives restore 80% HP.`,
     onGain: (run) => { run.reviveFrac = 0.8; }, onSlam: (w) => w.heal(w.player, Math.max(1, Math.round(w.player.maxHp * 0.02))) },
@@ -146,9 +148,9 @@ for (const [k, b] of Object.entries(BOONS)) b.key = k;
 // Chaos (Deoxys) bargains: a curse for N rooms, then a blessing for the rest of the run.
 export const CHAOS = {
   curses: [
-    { key: 'C_SPEED', name: 'Foes move 25% faster', apply: w => { for (const e of w.enemies()) e.speed *= 1.25; } },
-    { key: 'C_HP', name: 'Foes have +30% HP', apply: w => { for (const e of w.enemies()) { e.maxHp = Math.round(e.maxHp * 1.3); e.hp = e.maxHp; } } },
-    { key: 'C_DMG', name: 'You take 20% more damage', hurt: 1.2 },
+    { key: 'C_SPEED', name: 'Foes move 30% faster', spawn: e => { e.speed *= 1.3; } },
+    { key: 'C_HP', name: 'Foes have +60% HP', spawn: e => { e.maxHp = Math.round(e.maxHp * 1.6); e.hp = e.maxHp; } },
+    { key: 'C_DMG', name: 'You take 50% more damage', hurt: 1.5 },
     { key: 'C_NOHEAL', name: 'Healing is halved', healMul: 0.5 },
   ],
   blessings: [

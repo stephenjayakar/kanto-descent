@@ -93,8 +93,8 @@ export class Choice {
     L.forEach((r, i) => { if (inRect(r.x, r.y, r.w, r.h) && (Engine.mouse.x !== this.mx || Engine.mouse.y !== this.my)) this.sel = i; });
     this.mx = Engine.mouse.x; this.my = Engine.mouse.y;
     let pick = -1;
-    if (Input.justPressed('confirm') && this.t > 0.25) pick = this.sel;
-    if (Engine.mouse.clicked && this.t > 0.25) L.forEach((r, i) => { if (inRect(r.x, r.y, r.w, r.h)) pick = i; });
+    if (Input.justPressed('confirm') && this.t > 0.4) pick = this.sel;
+    if (Engine.mouse.clicked && this.t > 0.4) L.forEach((r, i) => { if (inRect(r.x, r.y, r.w, r.h)) pick = i; });
     if (pick >= 0 && !this.cards[pick].disabled) {
       Sound.playSE('se_select');
       popOverlay(this); this.opts.onPick?.(pick, this.cards[pick]);

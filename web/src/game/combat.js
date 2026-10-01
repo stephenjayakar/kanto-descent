@@ -79,7 +79,10 @@ export class World {
 
   add(a) { this.actors.push(a); return a; }
   enemies() { return this.actors.filter(a => a.team === 'enemy' && !a.dead); }
-  foesOf(a) { return this.actors.filter(b => !b.dead && b.spawnT <= 0 && b.team !== a.team && !(a.team !== 'enemy' && b.team !== 'enemy') && !b.untargetable); }
+  foesOf(a) {
+    return this.actors.filter(b => !b.dead && b.spawnT <= 0 && !b.untargetable && !b.captured && b !== a &&
+      (a.confused && a.team === 'enemy' ? true : b.team !== a.team && !(a.team !== 'enemy' && b.team !== 'enemy')));
+  }
   emit(e) { this.events.push(e); }
   rand() { return typeof this.rng === 'function' ? this.rng() : this.rng.next(); }
 
@@ -110,13 +113,25 @@ export class World {
       a.x = Math.max(8, Math.min(R.w * TILE - 8, a.x + dx)); a.y = Math.max(8, Math.min(R.h * TILE - 8, a.y + dy)); return { hitX: false, hitY: false };
     }
     let hitX = false, hitY = false;
+    const r = Math.min(a.r, a.boss ? 8 : 6); // terrain footprint is smaller than the hitbox, so 1-tile gaps fit
     const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 4) || 1;
     for (let i = 0; i < steps; i++) {
       const sx = dx / steps, sy = dy / steps;
-      if (!this.collides(a.x + sx, a.y, a.r, mode)) a.x += sx; else hitX = true;
-      if (!this.collides(a.x, a.y + sy, a.r, mode)) a.y += sy; else hitY = true;
+      if (sx) { if (!this.collides(a.x + sx, a.y, r, mode)) a.x += sx; else { hitX = true; if (!sy) this.slide(a, r, mode, sx, 0); } }
+      if (sy) { if (!this.collides(a.x, a.y + sy, r, mode)) a.y += sy; else { hitY = true; if (!sx) this.slide(a, r, mode, 0, sy); } }
     }
     return { hitX, hitY };
+  }
+  // corner correction: when pushing straight into a corner, slip sideways toward the nearest opening
+  slide(a, r, mode, sx, sy) {
+    for (let k = 1; k <= 7; k++) for (const sg of [1, -1]) {
+      const ox = sy ? sg * k : 0, oy = sx ? sg * k : 0;
+      if (!this.collides(a.x + ox, a.y + oy, r, mode) && !this.collides(a.x + ox + sx, a.y + oy + sy, r, mode)) {
+        const nx = a.x + Math.sign(ox) * Math.min(1.5, Math.abs(ox)), ny = a.y + Math.sign(oy) * Math.min(1.5, Math.abs(oy));
+        if (!this.collides(nx, ny, r, mode)) { a.x = nx; a.y = ny; }
+        return;
+      }
+    }
   }
   lineClear(x0, y0, x1, y1, mode = 'shot') {
     const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 6);
@@ -128,6 +143,23 @@ export class World {
     const c = Math.cos(ang), s = Math.sin(ang);
     for (let d = 4; d < len; d += 4) if (this.blocked(x + c * d, y + s * d, 'shot')) return d;
     return len;
+  }
+  // is this a cell the player can actually reach (and stand on)?
+  reachable(x, y) {
+    const R = this.room, tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    return tx >= 0 && ty >= 0 && tx < R.w && ty < R.h && R.walk[ty * R.w + tx] === 0 && (!R.reach || R.reach[ty * R.w + tx]);
+  }
+  nearestReachable(x, y) {
+    const R = this.room;
+    let best = null, bd = 1e9;
+    for (let ty = 0; ty < R.h; ty++) for (let tx = 0; tx < R.w; tx++) {
+      if (R.walk[ty * R.w + tx] !== 0 || (R.reach && !R.reach[ty * R.w + tx])) continue;
+      const px = tx * TILE + 8, py = ty * TILE + 8;
+      if (this.collides(px, py, 6, 'walk')) continue;
+      const d = Math.hypot(px - x, py - y);
+      if (d < bd) { bd = d; best = { x: px, y: py }; }
+    }
+    return best || { x, y };
   }
   randomOpenPoint(minDistFrom, minD = 0, tries = 200) {
     const R = this.room;
@@ -199,6 +231,12 @@ export class World {
     a.animT += dt;
     if (a.spawnT > 0) { a.spawnT -= dt; return; }
     if (a.dead) { a.deathT += dt; return; }
+    if (a.captured) { a.vx = a.vy = 0; return; }
+    // anti-softlock: a grounded enemy outside the reachable area gets put back after a moment
+    if (a.team === 'enemy' && !a.ghost && !a.flying && !a.untargetable && !a.dashing) {
+      if (!this.reachable(a.x, a.y)) { a.offT = (a.offT || 0) + dt; if (a.offT > 1.5) { const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y; a.offT = 0; } }
+      else a.offT = 0;
+    } else if (a.team === 'enemy' && (a.ghost || a.flying) && (a.x < 0 || a.y < 0 || a.x > this.room.w * TILE || a.y > this.room.h * TILE)) { const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y; }
     for (const k in a.cds) if (a.cds[k] > 0) a.cds[k] -= dt;
     if (a.iframes > 0) a.iframes -= dt;
     if (a.flash > 0) a.flash -= dt;
@@ -221,6 +259,7 @@ export class World {
     if (disabled) { if (a.action && !a.action.uninterruptible) this.cancelAction(a); a.vx = a.vy = 0; return; }
     if (a.action) this.updateAction(a, dt);
     else if (a.brain) a.brain(this, a, dt);
+    if (a.status.trap && !a.dashing) { a.vx = a.vy = 0; }
     if (!a.action || a.action.canMove) {
       // brains / player controller set a.vx, a.vy as desired velocity
       if (a.vx || a.vy) {
@@ -230,8 +269,6 @@ export class World {
       } else if (a.animLock <= 0 && !a.action) setAnim(a, 'Idle');
     }
     a.dir = dirFromAngle(a.facing);
-    // trap/root
-    if (a.status.trap) { a.vx = a.vy = 0; }
   }
 
   separate() {
@@ -253,7 +290,7 @@ export class World {
   addStatus(a, kind, src, opts = {}) {
     if (a.dead || a.boss && ['sleep', 'freeze', 'confuse', 'trap'].includes(kind) && !opts.force) {
       if (a.boss && kind === 'freeze') { a.status.chill = { stacks: 3, t: 3 }; }
-      if (a.boss && kind === 'sleep') { a.stun = Math.max(a.stun, 0.3); }
+      if (a.boss && kind === 'sleep' && (a.stunImmune || 0) < this.time) { a.stun = Math.max(a.stun, 0.4); a.stunImmune = this.time + 4; }
       if (!a.boss) return;
       if (kind !== 'burn' && kind !== 'poison' && kind !== 'toxic' && kind !== 'para' && kind !== 'slow' && kind !== 'chill') return;
     }
@@ -264,7 +301,9 @@ export class World {
     if ((kind === 'poison' || kind === 'toxic') && (a.types.includes('POISON') || a.types.includes('STEEL'))) return;
     if (kind === 'para' && a.types.includes('ELECTRIC')) return;
     if ((kind === 'freeze' || kind === 'chill') && a.types.includes('ICE')) return;
-    if (kind === 'flinch') { this.cancelAction(a); a.stun = Math.max(a.stun, 0.3); return; }
+    if (kind === 'flinch') { if (a.boss) return; this.cancelAction(a); a.stun = Math.max(a.stun, 0.3); return; }
+    if (kind === 'stun' && a.team === 'player') { if (a.iframes > 0 || a.action?.uninterruptible) return; a.stun = Math.max(a.stun, 0.4); this.text(a, 'DISABLED', '#ffb0b0', true); return; }
+    if (kind === 'stun') { if (a.boss && (a.stunImmune || 0) > this.time) return; a.stun = Math.max(a.stun, a.boss ? 0.4 : 1.2); this.cancelAction(a); if (a.boss) a.stunImmune = this.time + 4; return; }
     if (kind === 'chill') {
       const c = a.status.chill || (a.status.chill = { stacks: 0, t: 0 });
       c.stacks = Math.min(5, c.stacks + (opts.stacks || 1)); c.t = 4;
@@ -286,7 +325,7 @@ export class World {
       const dot = (frac, color) => {
         if (s.tick >= 0.5) {
           s.tick -= 0.5;
-          const dmg = Math.max(1, Math.round(a.maxHp * frac * (a.boss ? 0.35 : 1) * (s.power || 1)));
+          const dmg = Math.max(1, Math.round(a.maxHp * frac * (a.boss ? 0.12 : 1) * (s.power || 1)));
           this.applyDamage(s.src && !s.src.dead ? s.src : null, a, { dmg, slot: 'dot', noKnock: true, noFlash: true, color, silent: true });
         }
       };
@@ -294,7 +333,7 @@ export class World {
       if (k === 'poison') dot(0.016 * (a.team === 'player' ? 0.4 : 1), 'purple');
       if (k === 'toxic') { s.power = 1 + (8 - s.t) * 0.25; dot(0.012 * (a.team === 'player' ? 0.4 : 1), 'purple'); }
       if (k === 'trap') dot(0.01, 'white');
-      if (k === 'para' && s.tick > 1.2) { s.tick = 0; if (this.rand() < 0.25) { a.stun = Math.max(a.stun, 0.5); this.text(a, 'PAR', '#f8d030', true); this.cancelAction(a); } }
+      if (k === 'para' && s.tick > 1.2 && !a.boss) { s.tick = 0; if (this.rand() < 0.25) { a.stun = Math.max(a.stun, 0.5); this.text(a, 'PAR', '#f8d030', true); this.cancelAction(a); } }
       if (k === 'confuse' && a.team === 'enemy') a.confused = true;
       if (s.t <= 0) { delete S[k]; if (k === 'confuse') a.confused = false; }
     }
@@ -324,7 +363,8 @@ export class World {
   cancelAction(a) {
     if (!a.action) return;
     if (a.action.tele) a.action.tele.dead = true;
-    a.dashing = false; a.untargetable = false; a.noCollide = false;
+    a.dashing = false; a.noCollide = false; a.burrowed = false; a.speedMul = 1; a.z = 0; a.channeling = null;
+    if (!a.captured) a.untargetable = false;
     a.action = null;
   }
 
@@ -406,7 +446,9 @@ export class World {
         for (let i = 0; i < n; i++) {
           const sc = p.scatter || 0;
           const pt = i === 0 && n === 1 ? tp : { x: tp.x + (this.rand() - 0.5) * sc * 2, y: tp.y + (this.rand() - 0.5) * sc * 2 };
-          this.strikes.push({ owner: a, act, x: pt.x, y: pt.y, r: p.radius || 20, t: -(i * 0.12), delay: p.delay ?? 0.4, p, slot: act.slot, team: a.team });
+          // enemy blasts must be readable: at least ~0.75s between the warning circle and the hit
+          const delay = a.team === 'enemy' ? Math.max(p.delay ?? 0.4, a.boss ? 0.65 : 0.8) : (p.delay ?? 0.4);
+          this.strikes.push({ owner: a, act, x: pt.x, y: pt.y, r: p.radius || 20, t: -(i * 0.12), delay, p, slot: act.slot, team: a.team });
         }
         act.dur = 0.15;
         break;
@@ -424,6 +466,7 @@ export class World {
         if (p.at === 'front') pt = { x: a.x + c * r * 0.6, y: a.y + s * r * 0.6 };
         this.vfx.push({ kind: 'ring', x: pt.x, y: pt.y, r0: 4, r1: r, t: 0, life: 0.35, fx: p.fx || 'sound', type: p.type });
         for (const b of this.foesOf(a)) if (Math.hypot(b.x - pt.x, b.y - pt.y) < r + b.r) {
+          if (b.team === 'player' && b.iframes > 0) continue;
           if (p.stat) this.changeStage(b, p.stat, -(p.stages || 1));
           if (p.status) this.addStatus(b, p.status, a);
         }
@@ -579,7 +622,7 @@ export class World {
         a.x = act.from.x + (act.to.x - act.from.x) * k; a.y = act.from.y + (act.to.y - act.from.y) * k; a.z = Math.sin(k * Math.PI) * 50;
         if (k >= 1) {
           a.z = 0; a.untargetable = false; a.noCollide = false;
-          if (this.collides(a.x, a.y, a.r, this.moveMode(a))) { const pt = this.randomOpenPoint(null); a.x = pt.x; a.y = pt.y; }
+          if (this.collides(a.x, a.y, Math.min(a.r, 8), this.moveMode(a))) { const pt = this.randomOpenPoint(null); a.x = pt.x; a.y = pt.y; }
           this.vfx.push({ kind: 'ring', x: a.x, y: a.y, r0: 6, r1: p.radius || 40, t: 0, life: 0.35, fx: p.fx || 'quake' });
           this.hitCircle(a, act, a.x, a.y, p.radius || 40); this.shake = Math.max(this.shake, 6); Sound.playSE('se_m_earthquake');
           p.onLand?.(this, a, act);
@@ -637,7 +680,7 @@ export class World {
       const d = Math.hypot(b.x - a.x, b.y - a.y); if (d > p.range) continue;
       const da = Math.abs(angDiff(act.aim, Math.atan2(b.y - a.y, b.x - a.x)));
       const score = d * (1 + da * 1.5);
-      if (da < 1.3 && score < best && this.lineClear(a.x, a.y, b.x, b.y)) { best = score; target = b; }
+      if (da < (a.team === 'enemy' ? 0.35 : 1.3) && score < best && this.lineClear(a.x, a.y, b.x, b.y)) { best = score; target = b; }
     }
     if (!target) { // fizzle bolt in the aim direction
       const len = this.rayLength(a.x, a.y - 8, act.aim, p.range * 0.7);
@@ -659,7 +702,7 @@ export class World {
 
   spawnProjectile(a, act, ang, o = {}) {
     const p = act.p;
-    const sp = (p.speed || 200) * (o.small ? 1 : 1);
+    const sp = (p.speed || 200) * (a.team === 'enemy' ? (a.boss ? 0.85 : 0.72) * ((this.run?.heat || 0) >= 5 ? 1.15 : 1) : 1); // enemy shots are slower, so they can be read and side-stepped
     const pr = {
       owner: a, team: a.team, act, p, slot: act.slot, x: a.x + Math.cos(ang) * (a.r + 2), y: a.y - 6 + Math.sin(ang) * (a.r + 2), z: 0,
       vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, ang, r: (p.size || 5) * (o.small ? 0.8 : 1), life: p.life || 0.8, t: 0,
@@ -785,7 +828,7 @@ export class World {
         const owner = s.owner;
         for (const b of this.actors) {
           if (b.dead || b.spawnT > 0 || b.untargetable) continue;
-          if (s.team === 'enemy' ? b.team === 'enemy' : b.team !== 'enemy') continue;
+          if ((s.team === 'enemy' ? b.team === 'enemy' : b.team !== 'enemy') && !(s.owner?.confused && b !== s.owner)) continue;
           if (Math.hypot(b.x - s.x, b.y - s.y) < s.r + b.r) this.hit(owner, b, fake, { ang: Math.atan2(b.y - s.y, b.x - s.x), scale: s.scale || 1 });
         }
         if (s.onHit) s.onHit(this, s);
@@ -823,20 +866,20 @@ export class World {
   // ---- damage
   changeStage(a, stat, n) {
     const before = a.stages[stat] || 0;
-    a.stages[stat] = Math.max(-6, Math.min(6, before + n));
+    a.stages[stat] = Math.max(-2, Math.min(2, before + n));
     if (a.stages[stat] === before) return;
     const names = { atk: 'ATK', def: 'DEF', spa: 'SP.ATK', spd: 'SP.DEF', spe: 'SPEED', acc: 'ACC', eva: 'EVASION', crit: 'CRIT' };
     this.text(a, `${names[stat] || stat} ${n > 0 ? '↑' : '↓'}`, n > 0 ? '#80c8ff' : '#ff9090', true);
     Sound.playSE(n > 0 ? 'se_m_stat_increase' : 'se_m_stat_decrease');
     a.stageTimers ??= {};
-    a.stageTimers[stat] = a.team === 'player' ? 12 : 10;
+    a.stageTimers[stat] = 8;
   }
 
   // a move hits a target
   hit(src, b, act, o = {}) {
     if (!b || b.dead || b.untargetable) return;
     const p = act.p;
-    if (b.protect > 0 && b.team !== 'enemy' || b.protect > 0 && b.boss) { this.text(b, 'PROTECTED', '#c0e0ff'); Sound.playSE('se_m_detect'); return; }
+    if (b.protect > 0) { this.text(b, 'PROTECTED', '#c0e0ff'); Sound.playSE('se_m_detect'); return; }
     if (b.iframes > 0 && b.team === 'player') return;
     // accuracy vs evasion (stat stages only; positional aiming does the rest)
     if (src && ((src.stages.acc || 0) < 0 || (b.stages.eva || 0) > 0)) {
@@ -863,6 +906,15 @@ export class World {
 
   calcDamage(src, b, p, info) {
     const scale = info.scale ?? 1;
+    if (p.fixed === 'level') { // Night Shade / Seismic Toss: damage equals the user's level (scaled for realtime)
+      const e0 = typeEffect(p.type, b.types);
+      if (e0 === 0 && src?.team === 'enemy') return { dmg: 0, crit: false, eff: 0 };
+      if (src?.team === 'enemy') return { dmg: Math.max(1, Math.round((src.level || 10) * 0.5 * Math.sqrt((src.dmgScale ?? 0.55) / 0.55) * scale)), crit: false, eff: 1 };
+      const crit = this.rand() < (p.crit || 0.0625) + (src?.critBonus || 0) + (info.slot && src?.slotCrit?.[info.slot] || 0);
+      let d = (src?.level || 10) * 1.4 * scale * (src?.dmgMul || 1) * (crit ? 2 : 1) * (src?.slotMul?.[info.slot] || 1);
+      if (b.status.freeze) d *= 1.5; if (b.vulnerable > 0) d *= 1.5;
+      return { dmg: Math.max(1, Math.round(d)), crit, eff: 1 };
+    }
     if (p.fixed) return { dmg: Math.max(1, Math.round(p.fixed * scale * (src?.team === 'enemy' ? 0.5 : 1) * (src?.level || 10) / 20)), crit: false, eff: 1 };
     const L = src?.level || 10;
     const A = src ? statOf(src, p.special ? 'spa' : 'atk') : 20;
@@ -870,7 +922,9 @@ export class World {
     let base = (((2 * L) / 5 + 2) * p.power * A / Math.max(1, Dv)) / 50 + 2;
     const stab = src && src.types.includes(p.type) ? 1.5 : 1;
     let eff = typeEffect(p.type, b.types);
-    if (eff === 0 && src && src.team !== 'enemy') eff = 0.25; // the player's moves are never fully blocked (a Gastly run must stay winnable)
+    // against the player, type matchups are compressed: they matter, but never decide a run
+    if (src?.team === 'enemy' && b.team === 'player' && eff > 0) eff = src.boss ? Math.max(0.9, Math.min(1.1, eff)) : Math.max(0.6, Math.min(1.5, eff)); // type weaknesses sting but don't decide runs
+    if (eff === 0 && src && src.team !== 'enemy') eff = 0.5; // the player's moves are never fully blocked (a Gastly run must stay winnable)
     const critChance = (p.crit || 0.0625) + (src?.stages.crit || 0) * 0.125 + (src?.critBonus || 0) + (info.slot && src?.slotCrit?.[info.slot] || 0);
     const crit = this.rand() < critChance;
     let dmg = base * stab * eff * (0.85 + this.rand() * 0.15) * scale * (crit ? 2 : 1);
@@ -902,7 +956,7 @@ export class World {
     b.hp -= dmg;
     if (!o.noFlash) b.flash = 0.12;
     if (b.status.sleep && o.slot !== 'dot') delete b.status.sleep;
-    if (b.status.freeze && o.slot !== 'dot' && o.slot !== 'env') { delete b.status.freeze; this.vfx.push({ kind: 'shatter', x: b.x, y: b.y - 8, t: 0, life: 0.4 }); Sound.playSE('se_ice_break'); }
+    if (b.status.freeze && o.slot !== 'dot' && o.slot !== 'env') { b.wasFrozen = this.time; delete b.status.freeze; this.vfx.push({ kind: 'shatter', x: b.x, y: b.y - 8, t: 0, life: 0.4 }); Sound.playSE('se_ice_break'); }
     // numbers
     const col = o.color || (b.team === 'player' ? 'red' : o.crit ? 'gold' : o.eff > 1 ? 'orange' : o.eff < 1 ? 'gray' : 'white');
     this.texts.push({ str: String(dmg) + (o.crit ? '!' : ''), x: b.x + (this.rand() - 0.5) * 8, y: b.y - 18 - b.r, t: 0, life: 0.7, color: col, big: o.crit || o.eff > 1 });
@@ -915,7 +969,7 @@ export class World {
       b.slamDmg = src?.slamBonus ? Math.round(dmg * src.slamBonus) : 0;
     }
     if (b.team === 'enemy' && o.slot !== 'dot' && !b.boss && !b.poise && !b.action?.uninterruptible) {
-      if (b.action && b.action.stage === 'windup' && (dmg > b.maxHp * 0.12 || o.crit)) { this.cancelAction(b); b.stun = Math.max(b.stun, 0.25); }
+      if (b.action && b.action.stage === 'windup' && (dmg > b.maxHp * 0.25 || o.crit)) { if (b.action.move) b.cds[b.action.move] = Math.min(b.cds[b.action.move] || 0, 0.8); this.cancelAction(b); b.stun = Math.max(b.stun, 0.25); }
       setAnim(b, 'Hurt', true); b.animLock = 0.2;
     }
     if (b.team === 'player' && o.slot !== 'dot') {
@@ -936,7 +990,7 @@ export class World {
   }
 
   kill(b, src, o = {}) {
-    if (b.team === 'player' || b.team === 'ally') {
+    if ((b.team === 'player' || b.team === 'ally') && !this.forceDeath) {
       const ctx = { target: b, prevent: false };
       this.hooks.beforeDeath?.(this, ctx);
       if (ctx.prevent) return;
@@ -978,7 +1032,7 @@ export class World {
       if (a.vulnerable > 0) a.vulnerable -= dt;
       if (a.seeded) {
         a.seeded.t -= dt; a.seeded.tick = (a.seeded.tick || 0) + dt;
-        if (a.seeded.tick > 1) { a.seeded.tick = 0; const d = this.applyDamage(a.seeded.src, a, { dmg: Math.max(1, Math.round(a.maxHp * (a.boss ? 0.01 : 0.04))), slot: 'dot', noKnock: true, color: 'green', silent: true }); if (a.seeded.src && !a.seeded.src.dead) this.heal(a.seeded.src, Math.max(1, Math.round(d * 0.5))); }
+        if (a.seeded.tick > 1) { a.seeded.tick = 0; const d = this.applyDamage(a.seeded.src, a, { dmg: Math.max(1, Math.round(a.maxHp * (a.boss ? 0.005 : 0.04))), slot: 'dot', noKnock: true, color: 'green', silent: true }); if (a.seeded.src && !a.seeded.src.dead) this.heal(a.seeded.src, Math.max(1, Math.round(d * 0.5))); }
         if (a.seeded.t <= 0) a.seeded = null;
       }
       if (a.stageTimers) for (const k in a.stageTimers) { a.stageTimers[k] -= dt; if (a.stageTimers[k] <= 0) { delete a.stageTimers[k]; a.stages[k] = 0; } }

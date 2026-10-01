@@ -94,8 +94,8 @@ export class RoomScene {
     const run = this.run, B = BIOMES[run.biome];
     const nw = run.rng.int(B.waves[0], B.waves[1]);
     for (let i = 0; i < nw; i++) {
-      const n = run.rng.int(B.perWave[0], B.perWave[1]) + Math.floor(run.roomInBiome / 3);
-      this.waves.push(rollWave(run, n).map(e => ({ ...e, elite: run.depth > 2 && run.rng.chance(0.08 + run.biome * 0.03) })));
+      const n = run.rng.int(B.perWave[0], B.perWave[1]) + Math.floor(run.roomInBiome / 3) + (run.heat >= 7 ? 1 : 0);
+      this.waves.push(rollWave(run, n).map(e => ({ ...e, elite: run.depth > 2 && run.rng.chance(0.08 + run.biome * 0.03 + (run.heat >= 4 ? 0.1 : 0)) })));
     }
     this.waveT = 0.9; this.waveI = 0;
     preloadPmd([...new Set(this.waves.flat().map(e => D.species[e.species].dex))]);
@@ -180,6 +180,7 @@ export class RoomScene {
       a.trainerMon = !!e.trainerMon;
       a.facing = Math.atan2(p.y - a.y, p.x - a.x);
       w.add(a);
+      w.hooks.onSpawn?.(w, a);
       G.meta.dex.seen[e.species] = true;
       if (e.trainerMon) w.vfx.push({ kind: 'sendout', x: a.x, y: a.y, t: 0, life: 0.5 });
       else w.vfx.push({ kind: 'custom', t: 0, life: 0.5, draw: (ctx, v, k) => { drawBA(ctx, 'leaf', a.x + Math.cos(k * 9) * 10 * (1 - k), a.y - k * 10, k, { anim: true, alpha: 1 - k }); } });
@@ -226,7 +227,8 @@ export class RoomScene {
       const rewards = rollDoors(run, this.room.exits.length);
       this.doors = rewards.map((r, i) => ({ ...this.room.exits[i % this.room.exits.length], reward: r }));
     }
-    for (const d of this.doors) { d.t = 0; if (d.reward.kind === 'boon') preloadPmd([LEGENDS[d.reward.legend].dex]); }
+    const pl = this.world.player;
+    for (const d of this.doors) { d.t = 0; d.armed = Math.hypot(d.x - pl.x, d.y - pl.y) > 16; if (d.reward.kind === 'boon') preloadPmd([LEGENDS[d.reward.legend].dex]); }
     Sound.playSE('se_door');
   }
 
@@ -272,7 +274,7 @@ export class RoomScene {
     }
     if (this.spec.kind === 'hub' || this.cleared) this.interactions();
     if (this.doorsOpen) this.checkDoors(dt);
-    if (w.player.dead && !this.dying) this.die();
+    if (w.player.dead && !this.dying && !this.bossDone) this.die();
   }
 
   onEvent(e) {
@@ -313,12 +315,12 @@ export class RoomScene {
     for (const d of this.doors) {
       d.t += dt;
       const dd = Math.hypot(d.x - p.x, d.y - p.y);
-      if (dd > 26) d.armed = true;
+      if (dd > 16) d.armed = true;
       if (dd < 22) this.nearDoor = d;
       if (dd < 10 && d.armed && this.state === 'play' && !d.used && !topOverlay()) { d.used = true; this.leave(d.reward); return; }
     }
     // Itemfinder reroll
-    if (this.nearDoor && Input.justPressed('ball') && this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory'].includes(this.nearDoor.reward.kind)) {
+    if (this.nearDoor && Input.justPressed('interact') && !Input.down('dash') && !this.nearNpc && this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind)) {
       this.run.rerolls--;
       const r = rollDoors(this.run, 3).find(x => x.kind !== this.nearDoor.reward.kind && x.kind !== 'boss' && x.kind !== 'center');
       if (r) { this.nearDoor.reward = r; Sound.playSE('se_itemfinder'); if (r.kind === 'boon') preloadPmd([LEGENDS[r.legend].dex]); }
@@ -388,7 +390,7 @@ export class RoomScene {
     if (this.nearNpc && !topOverlay()) this.prompt(ctx, `E: ${this.nearNpc.verb || 'Talk'}`, this.nearNpc.x, this.nearNpc.y - 40);
     if (this.nearDoor && this.doorsOpen) {
       const info = R.rewardLabel(this.nearDoor.reward);
-      this.prompt(ctx, info + (this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory'].includes(this.nearDoor.reward.kind) ? `   (R: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
+      this.prompt(ctx, info + (this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind) ? `   (E: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
     }
     if (this.doorsOpen && this.spec.kind !== 'hub') this.drawDoorArrows(ctx);
     if (this.spec.kind !== 'hub' || this.run) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub' });

@@ -1,5 +1,8 @@
 // Biomes, starters, held items and shop stock.
 
+// Global difficulty knobs (tuned with tests/sim: a decent player with no research should win ~1 run in 4).
+export const TUNING = { enemyDmg: 2.4, bossDmg: 2.1, bossSecs: 1.75 };
+
 export const BIOMES = [
   {
     key: 'forest', name: 'VIRIDIAN FOREST', music: 'mus_viridian_forest', rooms: 6, vignette: 0.25,
@@ -11,21 +14,21 @@ export const BIOMES = [
   {
     key: 'mtmoon', name: 'MT. MOON', music: 'mus_mt_moon', rooms: 7, vignette: 0.45,
     pools: [['LAYOUT_MT_MOON_1F', [0, 1, 2, 3, 4]], ['LAYOUT_MT_MOON_B1F', [0]], ['LAYOUT_MT_MOON_B2F', [0, 1, 2, 3]]],
-    encounters: ['MAP_MT_MOON_1F', 'MAP_MT_MOON_B1F', 'MAP_MT_MOON_B2F'], trainerMaps: ['MAP_MT_MOON_1F', 'MAP_MT_MOON_B2F'], levelBonus: [1, 4],
+    encounters: ['MAP_MT_MOON_1F', 'MAP_MT_MOON_B1F', 'MAP_MT_MOON_B2F'], trainerMaps: ['MAP_MT_MOON_1F', 'MAP_MT_MOON_B2F'], levelBonus: [4, 8],
     boss: 'MISTY', bossRoom: ['LAYOUT_CERULEAN_CITY_GYM', 0], waves: [2, 2], perWave: [3, 5], maxAttackers: 2,
     intro: 'A dark cave said to hold fallen stars. Team Rocket is digging for fossils.',
   },
   {
     key: 'tower', name: 'POKéMON TOWER', music: 'mus_poke_tower', rooms: 7, vignette: 0.6, dark: true,
     pools: [['LAYOUT_POKEMON_TOWER_1F', [0, 1]], ['LAYOUT_POKEMON_TOWER_2F', [0, 1]], ['LAYOUT_POKEMON_TOWER_3F', [0, 1]], ['LAYOUT_POKEMON_TOWER_4F', [0, 1]], ['LAYOUT_POKEMON_TOWER_5F', [0, 1]]],
-    encounters: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F', 'MAP_POKEMON_TOWER_6F'], trainerMaps: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F'], levelBonus: [1, 4],
+    encounters: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F', 'MAP_POKEMON_TOWER_6F'], trainerMaps: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F'], levelBonus: [3, 7],
     boss: 'MAROWAK', bossRoom: ['LAYOUT_POKEMON_TOWER_6F', 0], waves: [2, 3], perWave: [3, 5], maxAttackers: 3,
     intro: 'Lavender\'s resting place for departed POKéMON. Something restless haunts the upper floors.',
   },
   {
     key: 'silph', name: 'SILPH CO.', music: 'mus_silph', rooms: 7, vignette: 0.2,
     pools: [['LAYOUT_SILPH_CO_2F', [0]], ['LAYOUT_SILPH_CO_3F', [0]], ['LAYOUT_SILPH_CO_4F', [0]], ['LAYOUT_SILPH_CO_5F', [0]], ['LAYOUT_SILPH_CO_6F', [0]], ['LAYOUT_SILPH_CO_7F', [0]], ['LAYOUT_SILPH_CO_8F', [0]], ['LAYOUT_SILPH_CO_9F', [0]]],
-    encounters: [], trainerMaps: ['MAP_SILPH_CO_2F', 'MAP_SILPH_CO_3F', 'MAP_SILPH_CO_4F', 'MAP_SILPH_CO_5F', 'MAP_SILPH_CO_6F', 'MAP_SILPH_CO_7F', 'MAP_SILPH_CO_8F', 'MAP_SILPH_CO_9F', 'MAP_SILPH_CO_10F'], levelBonus: [0, 3],
+    encounters: [], trainerMaps: ['MAP_SILPH_CO_2F', 'MAP_SILPH_CO_3F', 'MAP_SILPH_CO_4F', 'MAP_SILPH_CO_5F', 'MAP_SILPH_CO_6F', 'MAP_SILPH_CO_7F', 'MAP_SILPH_CO_8F', 'MAP_SILPH_CO_9F', 'MAP_SILPH_CO_10F'], levelBonus: [3, 6],
     boss: 'GIOVANNI', bossRoom: ['LAYOUT_SILPH_CO_11F', 0], waves: [2, 3], perWave: [3, 4], maxAttackers: 3, trainerOnly: true,
     intro: 'Team Rocket has seized the SILPH CO. tower in Saffron.',
   },
@@ -45,12 +48,12 @@ export const STARTERS = [
   { species: 'SQUIRTLE', slots: { attack: 'TACKLE', special: 'BUBBLE', cast: 'WITHDRAW' }, blurb: 'Tough shell, lunging tackles, bubble spreads.' },
   { species: 'PIKACHU', slots: { attack: 'QUICK_ATTACK', special: 'THUNDER_SHOCK', cast: 'THUNDER_WAVE' }, blurb: 'Fast. Dashing strikes and chain lightning.', unlock: 'BROCK' },
   { species: 'EEVEE', slots: { attack: 'TACKLE', special: 'SWIFT', cast: 'SAND_ATTACK' }, blurb: 'Homing stars. Picks an evolution at level 20.', unlock: 'MISTY' },
-  { species: 'GASTLY', slots: { attack: 'LICK', special: 'NIGHT_SHADE', cast: 'HYPNOSIS' }, blurb: 'Fragile ghost. Night Shade ignores defenses.', unlock: 'MAROWAK' },
-  { species: 'DRATINI', slots: { attack: 'WRAP', special: 'TWISTER', cast: 'THUNDER_WAVE' }, blurb: 'Slow to start, a dragon by the end.', unlock: 'GIOVANNI' },
+  { species: 'GASTLY', slots: { attack: 'SHADOW_PUNCH', special: 'NIGHT_SHADE', cast: 'HYPNOSIS' }, blurb: 'Fragile ghost. Night Shade ignores defenses.', unlock: 'MAROWAK' },
+  { species: 'DRATINI', slots: { attack: 'TWISTER', special: 'DRAGON_RAGE', cast: 'THUNDER_WAVE' }, blurb: 'Slow to start, a dragon by the end.', unlock: 'GIOVANNI' },
 ];
 // Starters that evolve by stone or trade evolve at these levels in this game.
 export const SPECIAL_EVOS = {
-  PIKACHU: [30, 'RAICHU'], HAUNTER: [38, 'GENGAR'], KADABRA: [38, 'ALAKAZAM'], MACHOKE: [38, 'MACHAMP'], GRAVELER: [38, 'GOLEM'],
+  PIKACHU: [30, 'RAICHU'], DRAGONAIR: [42, 'DRAGONITE'], HAUNTER: [38, 'GENGAR'], KADABRA: [38, 'ALAKAZAM'], MACHOKE: [38, 'MACHAMP'], GRAVELER: [38, 'GOLEM'],
 };
 export const EEVEE_CHOICES = ['VAPOREON', 'JOLTEON', 'FLAREON'];
 
@@ -78,18 +81,35 @@ for (const [k, h] of Object.entries(HELD)) { h.key = k; if (h.type) h.desc = `${
 
 // Oak's research (Mirror of Night). cost[rank] in STARDUST.
 export const RESEARCH = [
-  { key: 'hp', name: 'HP UP study', desc: r => `+${r * 6}% max HP`, max: 5, cost: [15, 30, 50, 75, 100], icon: 'hp_up' },
-  { key: 'power', name: 'PROTEIN study', desc: r => `+${r * 5}% damage`, max: 5, cost: [20, 40, 60, 90, 120], icon: 'protein' },
-  { key: 'revive', name: 'REVIVAL HERB', desc: r => `${r} Revive${r === 1 ? '' : 's'} per run (rise with 50% HP)`, max: 2, cost: [60, 200], icon: 'revival_herb' },
-  { key: 'level', name: "OAK's training", desc: r => `Start runs at Lv. ${5 + r * 2}`, max: 3, cost: [30, 70, 130], icon: 'rare_candy' },
-  { key: 'dash', name: 'QUICK FEET', desc: r => r ? '+1 Dash charge' : 'Unlock a second Dash charge', max: 1, cost: [150], icon: 'quick_claw' },
-  { key: 'money', name: 'AMULET COIN', desc: r => `Start runs with ¥${r * 40}`, max: 4, cost: [15, 25, 40, 60], icon: 'amulet_coin' },
+  { key: 'hp', name: 'HP UP study', desc: r => `+${r * 4}% max HP`, max: 5, cost: [15, 30, 50, 75, 100], icon: 'hp_up' },
+  { key: 'power', name: 'PROTEIN study', desc: r => `+${r * 3}% damage`, max: 5, cost: [20, 40, 60, 90, 120], icon: 'protein' },
+  { key: 'revive', name: 'REVIVAL HERB', desc: r => r ? '1 Revive per run (rise with 30% HP)' : 'A Revive each run', max: 1, cost: [160], icon: 'revival_herb' },
+  { key: 'level', name: "OAK's training", desc: r => `Start runs at Lv. ${5 + r * 2}`, max: 2, cost: [40, 90], icon: 'rare_candy' },
+  { key: 'dash', name: 'QUICK FEET', desc: r => r ? '+1 Dash charge' : 'Unlock a second Dash charge', max: 1, cost: [200], icon: 'quick_claw' },
+  { key: 'money', name: 'AMULET COIN', desc: r => `Start runs with ¥${50 + r * 25}`, max: 4, cost: [15, 25, 40, 60], icon: 'amulet_coin' },
   { key: 'balls', name: 'BALL POUCH', desc: r => `Start with ${3 + r} POKé BALLS`, max: 3, cost: [20, 40, 70], icon: 'poke_ball' },
-  { key: 'exp', name: 'LUCKY EGG', desc: r => `+${r * 15}% EXP`, max: 3, cost: [25, 50, 90], icon: 'lucky_egg' },
+  { key: 'exp', name: 'LUCKY EGG', desc: r => `+${r * 5}% EXP`, max: 3, cost: [25, 50, 90], icon: 'lucky_egg' },
   { key: 'luck', name: 'SHINY CHARM', desc: r => `Rarer boons more often (+${r * 6}%)`, max: 3, cost: [40, 80, 140], icon: 'star_piece' },
-  { key: 'reroll', name: 'ITEMFINDER', desc: r => `${r} door reroll${r === 1 ? '' : 's'} per run (press R at a door)`, max: 3, cost: [50, 100, 160], icon: 'itemfinder' },
+  { key: 'reroll', name: 'ITEMFINDER', desc: r => `${r} door reroll${r === 1 ? '' : 's'} per run (press E at a door)`, max: 3, cost: [40, 80, 130], icon: 'itemfinder' },
   { key: 'call', name: 'EXP. SHARE', desc: r => `Partner stays ${r * 2}s longer, gauge fills ${r * 20}% faster`, max: 3, cost: [30, 60, 100], icon: 'exp_share' },
 ];
+
+// HEAT (Hades' Pact of Punishment): unlocked by escaping once. Each level adds one rule, cumulative,
+// raises foe damage a further 3%, and raises STARDUST earned by 10%.
+export const HEAT = [
+  null,
+  'Foes deal 15% more damage',
+  'Foes have 15% more HP',
+  'Bosses have 15% more HP and attack faster',
+  'Elite foes appear more often',
+  'Foes\' projectiles fly 15% faster',
+  'NURSE JOY heals 25% less',
+  'One more foe in every wave',
+  'Foes deal another 25% more damage',
+  'Bosses deal 30% more damage',
+  'MEWTWO is enraged from the start',
+];
+export const heatAt = (run, n) => (run?.heat || 0) >= n;
 
 export const BOSS_UNLOCK_TEXT = {
   BROCK: 'PIKACHU can now be chosen at the lab!',

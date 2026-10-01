@@ -2,12 +2,12 @@
 import { D, defaultMoves } from './data.js';
 import { makeActor } from './combat.js';
 import { wildBrain, enemyMoves } from './ai.js';
-import { BIOMES } from './content.js';
+import { BIOMES, TUNING, heatAt } from './content.js';
 import { profile } from './moves_rt.js';
 
 const CLASS_SPRITE = {
   'BUG CATCHER': 'bug_catcher', HIKER: 'hiker', 'TEAM ROCKET': 'rocket_m', CHANNELER: 'channeler', SCIENTIST: 'scientist',
-  'SUPER NERD': 'super_nerd', LASS: 'lass', YOUNGSTER: 'youngster', BURGLAR: 'man', ROCKER: 'rocker', JUGGLER: 'balding_man',
+  'SUPER NERD': 'poke_maniac', LASS: 'lass', YOUNGSTER: 'youngster', BURGLAR: 'man', ROCKER: 'rocker', JUGGLER: 'balding_man',
   'POKéMANIAC': 'poke_maniac', 'COOLTRAINER': 'cooltrainer_m', GENTLEMAN: 'gentleman', ENGINEER: 'worker_m', FISHERMAN: 'fisher',
   CAMPER: 'camper', PICNICKER: 'picnicker', BEAUTY: 'beauty', BIKER: 'biker', 'BLACK BELT': 'black_belt', PSYCHIC: 'youngster', RIVAL: 'blue',
   'GAMER': 'balding_man', TAMER: 'balding_man', BIRD_KEEPER: 'man', 'BIRD KEEPER': 'man', SAILOR: 'sailor', SWIMMER: 'swimmer_m_land',
@@ -36,13 +36,21 @@ export function enemyLevel(run, base) {
   return Math.max(2, Math.round(base + b.levelBonus[0] + (b.levelBonus[1] - b.levelBonus[0]) * k));
 }
 
+// enemy damage multiplier per area (realtime hits land far more often than turn-based ones)
+export const ENEMY_DMG = biome => (0.8 + 0.05 * biome) * TUNING.enemyDmg;
+
 export function makeEnemy(world, speciesKey, level, opts = {}) {
   const moves = opts.moves?.filter(m => D.moves[m]) || enemyMoves(speciesKey, level);
   const a = makeActor(speciesKey, level, 'enemy', { ...opts, moves, hpMul: opts.hpMul ?? 1.7 });
   a.brain = opts.brain || wildBrain;
   a.spawnT = opts.spawnT ?? 0.7; a.spawnMax = a.spawnT;
-  if (opts.elite) { a.maxHp = Math.round(a.maxHp * 1.8); a.hp = a.maxHp; a.dmgScale = 0.7; a.poise = 1; a.coolBase = 0.8; }
-  a.dmgScale ??= 0.55 + 0.03 * (world.run?.biome || 0);
+  if (opts.elite) { a.maxHp = Math.round(a.maxHp * 1.8); a.hp = a.maxHp; a.dmgScale = ENEMY_DMG(world.run?.biome || 0) * 1.3; a.poise = 1; a.coolBase = 0.8; }
+  a.dmgScale ??= ENEMY_DMG(world.run?.biome || 0);
+  const run = world.run;
+  if (heatAt(run, 1)) a.dmgScale *= 1.15;
+  if (heatAt(run, 8)) a.dmgScale *= 1.25;
+  a.dmgScale *= 1 + 0.03 * (run?.heat || 0); // every HEAT level also sharpens foes a little
+  if (heatAt(run, 2)) { a.maxHp = Math.round(a.maxHp * 1.15); a.hp = a.maxHp; }
   return a;
 }
 
@@ -50,9 +58,12 @@ export function makeEnemy(world, speciesKey, level, opts = {}) {
 export function rollWave(run, n) {
   const biome = BIOMES[run.biome];
   const pool = wildPool(biome);
-  const out = [];
+  const out = [], count = {};
+  const cap = Math.max(1, Math.ceil(n * 0.4)); // no species above ~40% of a wave, for variety
   for (let i = 0; i < n; i++) {
-    const s = run.rng.weighted(pool, x => x.rate);
+    const ok = pool.filter(x => (count[x.species] || 0) < cap);
+    const s = run.rng.weighted(ok.length ? ok : pool, x => x.rate);
+    count[s.species] = (count[s.species] || 0) + 1;
     out.push({ species: s.species, level: enemyLevel(run, run.rng.int(s.min, s.max)) });
   }
   return out;

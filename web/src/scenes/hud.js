@@ -80,6 +80,7 @@ export function drawHud(ctx, world, run, opts = {}) {
   text(ctx, `¥${run.money}`, 12, 8, { color: 'gold' });
   const B = BIOMES[run.biome];
   if (B && !opts.hub) text(ctx, `${B.name} ${Math.min(run.roomInBiome + 1, B.rooms + 1)}/${B.rooms + 1}`, 150, 10, { font: 'small', color: 'whiteSoft', align: 'right' });
+  if (run.heat) text(ctx, `HEAT ${run.heat}`, 12, H - 74, { font: 'small', color: ['#ff6040', '#301000'] });
   let by = 30;
   for (const b of run.boons) {
     const def = BOONS[b.key]; const L = LEGENDS[def.legend];

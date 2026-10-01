@@ -8,7 +8,10 @@ import { TYPE_COLORS } from './data.js';
 import { TILE } from './combat.js';
 
 let BA = null; // battle anim manifest
-export function setBattleAnimManifest(m) { BA = m; }
+export function setBattleAnimManifest(m) {
+  BA = m;
+  for (const [tag, e] of Object.entries(m)) for (const [size, sub] of Object.entries(e.subSheets || {})) BA[`${tag}__${size}`] ??= { ...sub, anim: null };
+}
 const baPath = tag => `gfx/battle_anims/${tag}.png`;
 
 // sprite key -> battle anim tag (+ draw params)
@@ -176,7 +179,7 @@ export function drawActor(ctx, a, w) {
   else if (a.status.burn && Math.floor(w.time * 6) % 2 === 0) { tint = '#ff6020'; tintA = 0.25; }
   else if (a.status.poison || a.status.toxic) { tint = '#a040c0'; tintA = 0.18; }
   const loop = !['Attack', 'Strike', 'Shoot', 'Hurt', 'Pose'].includes(a.anim);
-  const z = a.flying ? 4 + Math.sin(w.time * 4 + a.id) * 2 : 0;
+  const z = a.flying || a.hover ? 4 + Math.sin(w.time * 4 + a.id) * 2 : 0;
   const frozen = a.status.freeze || a.status.sleep;
   const speed = a.action?.stage === 'windup' && a.anim === 'Charge' ? 1 : (a.status.para ? 0.5 : 1);
   drawPmd(ctx, a.dex, a.x, a.y - 4 - z - (a.z || 0), { anim: a.status.sleep ? 'Sleep' : a.anim, dir: a.dir, t: frozen ? 0 : t, loop, alpha, tint, tintA, scale: a.scale, speed });
@@ -209,7 +212,7 @@ function drawActorBar(ctx, a) {
   ctx.fillRect(x, y, Math.ceil(w * frac), 2);
   if (a.elite) { ctx.fillStyle = '#f8d030'; ctx.fillRect(x - 3, y - 1, 2, 4); ctx.fillRect(x + w + 1, y - 1, 2, 4); }
   // catchable hint
-  if (a.team === 'enemy' && !a.trainerMon && frac <= 0.35) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x + w + 2, y - 1, 3, 3); ctx.fillStyle = '#e83030'; ctx.fillRect(x + w + 2, y - 1, 3, 1); }
+  if (a.team === 'enemy' && !a.trainerMon && frac <= 0.45) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x + w + 2, y - 1, 3, 3); ctx.fillStyle = '#e83030'; ctx.fillRect(x + w + 2, y - 1, 3, 1); }
   // status icon
   const st = Object.keys(a.status).find(k => STATUS_ICON[k]);
   if (st) { const im = img(`gfx/ui/battle/status_${STATUS_ICON[st]}.png`); if (ready(im)) ctx.drawImage(im, x + w / 2 - 12, y - 9); }

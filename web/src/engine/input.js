@@ -7,14 +7,14 @@
 import { Engine } from './core.js';
 
 const KEYMAP = {
-  up: ['w', 'W', 'ArrowUp'], down: ['s', 'S', 'ArrowDown'], left: ['a', 'A', 'ArrowLeft'], right: ['d', 'D', 'ArrowRight'],
-  attack: ['j', 'J'], special: ['k', 'K'], dash: [' ', 'Shift'], cast: ['q', 'Q', 'l', 'L'],
-  call: ['f', 'F'], ball: ['r', 'R'], interact: ['e', 'E', 'Enter'], pause: ['Escape', 'p', 'P'],
-  confirm: ['Enter', ' ', 'z', 'Z', 'e', 'E', 'j', 'J'], back: ['Escape', 'x', 'X', 'Backspace'], dex: ['Tab'],
+  up: ['w', 'ArrowUp'], down: ['s', 'ArrowDown'], left: ['a', 'ArrowLeft'], right: ['d', 'ArrowRight'],
+  attack: ['j'], special: ['k'], dash: [' ', 'Shift'], cast: ['q', 'l'],
+  call: ['f'], ball: ['r'], interact: ['e', 'Enter'], pause: ['Escape', 'p'],
+  confirm: ['Enter', 'z', 'e'], back: ['Escape', 'x', 'Backspace'], dex: ['Tab'],
 };
 // Standard gamepad mapping indices
 const PADMAP = {
-  attack: [2], special: [3], dash: [0, 5], cast: [1], call: [4], ball: [7], interact: [0], pause: [9],
+  attack: [2], special: [3], dash: [5, 6], cast: [1], call: [4], ball: [7], interact: [0], pause: [9],
   confirm: [0], back: [1], up: [12], down: [13], left: [14], right: [15], dex: [8],
 };
 const BUFFER_FRAMES = 8; // a press stays "pressed" this many frames unless consumed (input buffering)

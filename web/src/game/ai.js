@@ -39,7 +39,7 @@ function attackersBusy(world) {
 
 // Generic wild/trainer Pokémon brain driven by its moveset.
 export function wildBrain(world, a, dt) {
-  const ai = a.ai || (a.ai = { cool: 0.8 + world.rand() * 1.2, strafe: world.rand() < 0.5 ? -1 : 1, strafeT: 0, wander: 0, think: 0 });
+  const ai = a.ai || (a.ai = { cool: 0.3 + world.rand() * 0.6, strafe: world.rand() < 0.5 ? -1 : 1, strafeT: 0, wander: 0, think: 0 });
   ai.cool -= dt; ai.strafeT -= dt; ai.think -= dt;
   const tgt = pickTarget(world, a);
   if (!tgt) { a.vx = a.vy = 0; return; }
@@ -87,7 +87,7 @@ export function wildBrain(world, a, dt) {
   // movement
   let mx = 0, my = 0;
   if (d > wantD + 8 || !los) {
-    if (los || mode !== 'walk') { mx = dx / d; my = dy / d; }
+    if (los || mode === 'ghost') { mx = dx / d; my = dy / d; }
     else { const f = world.flowDir(a.x, a.y); if (f) { mx = f.x; my = f.y; } else { mx = dx / d; my = dy / d; } }
   } else if (d < wantD - 16 && ranged) { mx = -dx / d; my = -dy / d; }
   // strafe around the target when in range
