@@ -1,0 +1,14 @@
+rom/
+pokefirered/
+node_modules/
+web/assets/
+*.wav
+test-results/
+tests/out/
+tests/out/
+tools/gfx_verify/
+tools/maps_verify/
+tools/pmd_verify/
+tools/battle_anims_verify/
+tools/.pmd_cache/
+tools/__pycache__/

@@ -1,0 +1,92 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>PMD sprite test</title>
+<style>
+ body{background:#22262e;color:#ddd;font:13px monospace;margin:12px}
+ canvas{image-rendering:pixelated;background:#3a404c;margin:2px}
+ .row{display:flex;align-items:center;gap:4px} .lbl{width:90px}
+ #portraits img{width:80px;image-rendering:pixelated;margin:2px}
+</style></head>
+<body>
+<div>dex <select id="dex"></select> scale <select id="scale"><option>2</option><option>3</option><option>1</option></select>
+ <span id="info"></span></div>
+<div class="row"><span class="lbl"></span><span id="dirs"></span></div>
+<div id="anims"></div>
+<div id="portraits"></div>
+<pre id="credits"></pre>
+<script>
+const BASE = 'assets/pmd/';
+const SHOW = ['Walk', 'Attack', 'Hurt', 'Idle', 'Sleep', 'Shoot'];
+const CELL = 96;
+let index, cur = null;
+const imgCache = {};
+const loadImg = src => imgCache[src] ||= new Promise((ok, err) => { const i = new Image(); i.onload = () => ok(i); i.onerror = err; i.src = src; });
+
+// frame index at time t (ticks @60fps) for a looping anim
+function frameAt(durations, tick) {
+  const total = durations.reduce((a, b) => a + b, 0);
+  let t = tick % total;
+  for (let i = 0; i < durations.length; i++) { if (t < durations[i]) return i; t -= durations[i]; }
+  return durations.length - 1;
+}
+
+async function select(dex) {
+  const meta = await (await fetch(`${BASE}${dex}/anim.json`)).json();
+  const scale = +document.getElementById('scale').value;
+  document.getElementById('info').textContent = `${meta.name} shadowSize=${meta.shadowSize}`;
+  document.getElementById('dirs').innerHTML = meta.directions.map(d => `<span style="display:inline-block;width:${CELL * scale + 4}px">${d}</span>`).join('');
+  const box = document.getElementById('anims'); box.innerHTML = '';
+  const rows = [];
+  for (const name of SHOW) {
+    const a = meta.anims[name]; if (!a) continue;
+    const img = await loadImg(`${BASE}${dex}/${a.file}`);
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<span class="lbl">${name}${a.copyOf ? '→' + a.copyOf : ''}<br>${a.frameW}x${a.frameH}<br>${a.frames}f ${a.rows}r</span>`;
+    const ctxs = [];
+    for (let d = 0; d < 8; d++) {
+      const c = document.createElement('canvas'); c.width = c.height = CELL * scale; row.appendChild(c);
+      const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = false; ctxs.push(ctx);
+    }
+    box.appendChild(row);
+    rows.push({ name, a, img, ctxs });
+  }
+  document.getElementById('portraits').innerHTML = (index[dex].portraits || []).map(p => `<img title="${p}" src="${BASE}${dex}/portrait_${p}.png">`).join('');
+  document.getElementById('credits').textContent = await (await fetch(`${BASE}${dex}/credits.txt`)).text();
+  cur = { dex, meta, rows, scale, t0: performance.now() };
+  window.__pmd = { dex, ready: true, anims: rows.map(r => r.name), draws: 0 };
+}
+
+function draw(now) {
+  requestAnimationFrame(draw);
+  if (!cur) return;
+  const tick = (now - cur.t0) * 60 / 1000;
+  const s = cur.scale;
+  for (const { a, img, ctxs } of cur.rows) {
+    const f = frameAt(a.durations, tick);
+    for (let d = 0; d < 8; d++) {
+      const ctx = ctxs[d], W = ctx.canvas.width;
+      ctx.clearRect(0, 0, W, W);
+      // all anims of a species share the frame CENTRE as anchor (body centre); feet/shadow sit a few px below it
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.beginPath(); ctx.ellipse(W / 2, W / 2 + 6 * s, (6 + 4 * cur.meta.shadowSize) * s, (3 + 2 * cur.meta.shadowSize) * s, 0, 0, 7); ctx.fill();
+      const row = a.rows === 8 ? d : 0;
+      const dw = a.frameW * s, dh = a.frameH * s;
+      ctx.drawImage(img, f * a.frameW, row * a.frameH, a.frameW, a.frameH, (W - dw) / 2, (W - dh) / 2, dw, dh);
+      if (f === a.hitFrame && a.hitFrame !== a.returnFrame) { ctx.strokeStyle = '#f44'; ctx.strokeRect(1, 1, W - 2, W - 2); }
+    }
+  }
+  window.__pmd.draws++;
+}
+
+(async () => {
+  index = await (await fetch(BASE + 'index.json')).json();
+  const sel = document.getElementById('dex');
+  for (const [dex, e] of Object.entries(index)) if (!e.missing) sel.add(new Option(`#${dex} ${e.name}`, dex));
+  const want = new URLSearchParams(location.search).get('dex') || '25';
+  sel.value = want;
+  sel.onchange = () => select(sel.value);
+  document.getElementById('scale').onchange = () => select(sel.value);
+  await select(sel.value);
+  requestAnimationFrame(draw);
+})();
+</script>
+</body></html>

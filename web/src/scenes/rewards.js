@@ -1,0 +1,607 @@
+// Room flow helpers: rewards, prompts (level-up moves, evolution), shop, center, Deoxys, hub,
+// pause, death, victory and moving between rooms.
+import { Engine, W, H, setScene, pushOverlay, popOverlay } from '../engine/core.js';
+import { img, ready } from '../engine/assets.js';
+import { text, measure, wrap } from '../engine/font.js';
+import { pixBox, rect, windowFrame } from '../engine/ui.js';
+import { Input } from '../engine/input.js';
+import { Sound } from '../audio/sound.js';
+import { D, TYPE_COLORS } from '../game/data.js';
+import { TILE, setAnim } from '../game/combat.js';
+import { profile, slotFor } from '../game/moves_rt.js';
+import { G, newRun, makePlayer, buildHooks, gainExp, evolve, learnMove, boonChoices, addBoon, tmChoices, heldChoices, chaosOffer, saveMeta, rank, playerMaxHp, REWARD_INFO, starterUnlocked } from '../game/run.js';
+import { BOONS, LEGENDS, RARITY, SLOT_NAMES, boonInstance } from '../game/boons.js';
+import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT } from '../game/content.js';
+import { BOSSES } from '../game/bosses.js';
+import { candidates } from '../game/rooms.js';
+import { preloadPmd, drawPmd } from '../game/pmd.js';
+import { say, choose, Banner, drawPortrait, ICON, drawOW, Choice } from './ui.js';
+import { drawBA } from '../game/render.js';
+
+let RoomSceneRef = null;
+export function registerRoomScene(cls) { RoomSceneRef = cls; }
+const go = spec => setScene(new RoomSceneRef(spec));
+
+// ---------------------------------------------------------------- moving between rooms
+function pickRoom(run) {
+  const B = BIOMES[run.biome];
+  const opts = [];
+  for (const [layout, idxs] of B.pools) for (const i of idxs) if (candidates(layout)[i]) opts.push({ layout, cropIndex: i });
+  const fresh = opts.filter(o => !run.lastLayouts.includes(o.layout + o.cropIndex));
+  const pick = run.rng.pick(fresh.length ? fresh : opts);
+  run.lastLayouts = [...run.lastLayouts.slice(-3), pick.layout + pick.cropIndex];
+  return pick;
+}
+
+export function goNext(scene, reward) {
+  const run = G.run;
+  if (scene.spec.kind === 'hub') {
+    run.biome = 0; run.roomInBiome = 0; run.depth = 0;
+    G.meta.runs++; saveMeta();
+    return go({ kind: 'combat', ...pickRoom(run), reward: { kind: 'boon', legend: run.rng.pick(['ZAPDOS', 'ARTICUNO', 'MOLTRES', 'MEW', 'LUGIA', 'HOOH']) }, first: true });
+  }
+  run.depth++;
+  if (reward.kind === 'victory') return victory();
+  if (reward.kind === 'next') {
+    run.biome++; run.roomInBiome = 0; run.focusUsed = false;
+    return go({ kind: 'combat', ...pickRoom(run), reward: { kind: 'boon', legend: run.rng.pick(['ZAPDOS', 'ARTICUNO', 'MOLTRES', 'MEW', 'LUGIA', 'HOOH']) }, first: true });
+  }
+  run.roomInBiome++;
+  const B = BIOMES[run.biome];
+  switch (reward.kind) {
+    case 'boss': return go({ kind: 'boss', layout: B.bossRoom[0], cropIndex: B.bossRoom[1], boss: B.boss });
+    case 'center': return go({ kind: 'center', layout: 'LAYOUT_POKEMON_CENTER_1F', cropIndex: 0, preBoss: run.roomInBiome >= B.rooms - 1, shopRoom: true });
+    case 'shop': (run.visited.shop ??= {})[run.biome] = true; return go({ kind: 'shop', layout: 'LAYOUT_MART', cropIndex: 0, shopRoom: true });
+    case 'chaos': return go({ kind: 'chaos', ...pickRoom(run) });
+    case 'trainer': (run.visited.trainer ??= {})[run.biome] = true; return go({ kind: 'trainer', ...pickRoom(run), reward: { kind: 'held' } });
+    default: return go({ kind: 'combat', ...pickRoom(run), reward });
+  }
+}
+
+export function rewardLabel(r) {
+  if (r.kind === 'boon') return `${LEGENDS[r.legend].name}'s blessing`;
+  if (r.kind === 'next') return `Onward to ${BIOMES[G.run.biome + 1]?.name || '...'}`;
+  if (r.kind === 'victory') return 'Leave CERULEAN CAVE';
+  if (r.kind === 'boss') return `${BIOMES[G.run.biome].name}: the boss awaits`;
+  return REWARD_INFO[r.kind]?.name + (REWARD_INFO[r.kind]?.desc ? ` - ${REWARD_INFO[r.kind].desc}` : '');
+}
+
+export function drawDoor(ctx, scene, d) {
+  const t = d.t || 0, pulse = 0.5 + 0.5 * Math.sin(t * 4);
+  const col = d.reward.kind === 'boss' ? '255,80,60' : d.reward.kind === 'boon' ? hexToRgb(LEGENDS[d.reward.legend].color) : d.reward.kind === 'chaos' ? '208,80,160' : '255,240,160';
+  ctx.fillStyle = `rgba(${col},${0.25 + 0.2 * pulse})`;
+  ctx.beginPath(); ctx.ellipse(d.x, d.y, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = `rgba(${col},0.9)`; ctx.beginPath(); ctx.ellipse(d.x, d.y, 9 + pulse * 3, 6 + pulse * 2, 0, 0, Math.PI * 2); ctx.stroke();
+  // light pillar
+  const g = ctx.createLinearGradient(0, d.y - 40, 0, d.y);
+  g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(1, `rgba(${col},0.35)`);
+  ctx.fillStyle = g; ctx.fillRect(d.x - 7, d.y - 40, 14, 40);
+  // icon
+  const iy = d.y - 30 + Math.sin(t * 3) * 2;
+  pixBox(ctx, d.x - 11, iy - 11, 22, 22, 'rgba(16,20,32,0.85)', `rgb(${col})`, 3);
+  const r = d.reward;
+  if (r.kind === 'boon') { const im = img(ICON.portrait(LEGENDS[r.legend].dex)); if (ready(im)) ctx.drawImage(im, d.x - 9, iy - 9, 18, 18); }
+  else if (r.kind === 'chaos') { const im = img(ICON.portrait(386)); if (ready(im)) ctx.drawImage(im, d.x - 9, iy - 9, 18, 18); }
+  else if (r.kind === 'boss' || r.kind === 'next' || r.kind === 'victory') { const im = img('gfx/misc/emotes/double_exclamation.png'); if (ready(im)) ctx.drawImage(im, 0, 0, 16, 16, d.x - 8, iy - 8, 16, 16); }
+  else { const ic = REWARD_INFO[r.kind]?.icon; const im = ic && img(ic); if (im && ready(im)) ctx.drawImage(im, d.x - 12, iy - 12); }
+}
+const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(',');
+
+// ---------------------------------------------------------------- rewards in the room
+export function spawnReward(scene, reward, at) {
+  const w = scene.world;
+  const info = REWARD_INFO[reward.kind] || {};
+  const pt = w.blocked(at.x, at.y) ? scene.room.center : at;
+  const k = { x: pt.x, y: pt.y, z: 20, vz: 60, t: 0, magnet: false, reward, icon: reward.kind === 'boon' ? ICON.portrait(LEGENDS[reward.legend].dex) : reward.kind === 'held' ? 'gfx/items/leftovers.png' : info.icon };
+  if (reward.kind === 'boon') { k.icon = null; k.boon = reward.legend; }
+  w.pickups.push(k);
+  scene.rewardPickup = k;
+  // a boon pickup is drawn as a glowing orb with the legend's portrait
+  if (k.boon) w.vfx.push({ kind: 'custom', t: 0, life: 9999, pick: k, draw: (ctx) => { if (k.dead) return; const y = k.y - 12 + Math.sin(w.time * 3) * 2; const L = LEGENDS[k.boon]; ctx.fillStyle = L.color + '55'; ctx.beginPath(); ctx.arc(k.x, y, 14, 0, Math.PI * 2); ctx.fill(); const im = img(ICON.portrait(L.dex)); if (ready(im)) ctx.drawImage(im, Math.round(k.x - 10), Math.round(y - 10), 20, 20); drawBA(ctx, 'sparkle_2', k.x + Math.cos(w.time * 2) * 14, y + Math.sin(w.time * 2) * 10, w.time, { anim: true, scale: 0.5 }); } });
+  Sound.playSE('se_ball_bounce_1');
+}
+
+export async function onPickup(scene, k) {
+  if (!k.reward) return;
+  for (const v of scene.world.vfx) if (v.pick === k) v.gone = true;
+  await applyReward(scene, k.reward);
+  scene.openDoors();
+}
+
+export async function applyReward(scene, r) {
+  const run = G.run, w = scene.world;
+  const mm = w.player.moneyMul || 1;
+  switch (r.kind) {
+    case 'boon': await offerBoons(scene, r.legend); break;
+    case 'rare_candy': {
+      Sound.playFanfare('mus_level_up');
+      const target = run.level + 2;
+      const rate = D.species[run.species].growthRate;
+      const { expForLevel } = await import('../game/data.js');
+      gainExp(run, expForLevel(rate, target) - run.exp);
+      await say([`${D.species[run.species].name} grew to Lv. ${run.level}!`]);
+      refreshPlayer(scene);
+      await levelPrompts(scene);
+      break;
+    }
+    case 'hp_up': run.maxHpMul += 0.1; refreshPlayer(scene); w.heal(w.player, Math.round(w.player.maxHp * 0.1)); Sound.playSE('se_m_stat_increase'); await say(['Max HP rose by 10%!']); break;
+    case 'pp_up': await ppUp(scene); break;
+    case 'money': { const n = Math.round((60 + run.biome * 35 + run.rng.int(0, 30)) * mm); run.money += n; Sound.playSE('se_shop'); scene.banners.push(new Banner(`¥${n}`, 'You sold the NUGGET.', { life: 1.4, color: '#f8d030' })); break; }
+    case 'tm': await offerTMs(scene); break;
+    case 'stardust': case 'star_piece': { const n = r.kind === 'star_piece' ? 40 + run.biome * 8 : run.rng.int(10, 16) + run.biome * 4; G.meta.stardust += n; G.meta.totalStardust += n; run.stardustGained += n; saveMeta(); Sound.playSE('se_shiny'); scene.banners.push(new Banner(`+${n} STARDUST`, "Bring it to PROF. OAK.", { life: 1.4, color: '#c0e0ff' })); break; }
+    case 'balls': run.balls += 3; Sound.playSE('se_ball_tray_ball'); scene.banners.push(new Banner('+3 POKé BALLS', '', { life: 1.2 })); break;
+    case 'held': await offerHeld(scene); break;
+  }
+}
+
+async function offerBoons(scene, legend) {
+  const run = G.run, L = LEGENDS[legend];
+  Sound.playCry(L.cry);
+  const ch = boonChoices(run, legend);
+  if (!ch.length) { await say([{ text: `${L.name} has nothing more to offer. It leaves you a RARE CANDY.`, portrait: L.dex }]); await applyReward(scene, { kind: 'rare_candy' }); return; }
+  const cards = ch.map(c => boonCard(run, c));
+  const i = await choose(`${L.name}`, cards, {
+    header: (ctx, y) => {
+      drawPortrait(ctx, L.dex, W / 2 - 150, y - 56, 'Normal');
+      text(ctx, L.name, W / 2 - 100, y - 54, { color: [L.color, '#202020'], scale: 2 });
+      text(ctx, L.title + ' offers you its power.', W / 2 - 100, y - 24, { color: 'whiteSoft', font: 'small' });
+    },
+    footer: 'One blessing per slot: a new legend replaces the old one in that slot.',
+  });
+  if (i >= 0) {
+    addBoon(run, ch[i]);
+    refreshPlayer(scene);
+    Sound.playSE('se_m_stat_increase');
+  }
+}
+
+function boonCard(run, c) {
+  const def = BOONS[c.key], L = LEGENDS[def.legend], rar = RARITY[c.rarity];
+  const inst = boonInstance(run, c);
+  const replacing = def.slot !== 'passive' ? run.boons.find(b => BOONS[b.key].slot === def.slot) : null;
+  return {
+    title: def.name, sub: SLOT_NAMES[def.slot], desc: def.desc(inst) + (replacing ? `  (Replaces ${BOONS[replacing.key].name})` : ''),
+    portrait: L.dex, badge: rar.name + (def.duo ? ' DUO' : ''), badgeColor: { poke: '#606878', great: '#3060c0', ultra: '#b08000', master: '#8030c0' }[rar.key], accent: L.color,
+  };
+}
+
+async function ppUp(scene) {
+  const run = G.run;
+  if (!run.boons.length) return;
+  const opts = run.rng.sample(run.boons, Math.min(3, run.boons.length));
+  const cards = opts.map(b => { const def = BOONS[b.key]; const next = { ...b, level: b.level + 1 }; return { title: `${def.name} Lv${b.level} → ${b.level + 1}`, desc: def.desc(boonInstance(run, next)), portrait: LEGENDS[def.legend].dex, accent: LEGENDS[def.legend].color }; });
+  const i = await choose('PP UP', cards, { footer: 'Choose a blessing to power up.' });
+  if (i >= 0) { opts[i].level++; refreshPlayer(scene); Sound.playSE('se_m_stat_increase'); }
+}
+
+async function offerTMs(scene) {
+  const run = G.run;
+  const tms = tmChoices(run);
+  if (!tms.length) { await applyReward(scene, { kind: 'money' }); return; }
+  const cards = tms.map(m => moveCard(m));
+  const i = await choose('Choose a TM', cards, { canSkip: true, footer: 'X: skip' });
+  if (i >= 0) await assignMove(scene, tms[i], `${D.species[run.species].name} can learn ${D.moves[tms[i]].name}!`);
+}
+
+export function moveCard(m, extra = {}) {
+  const mv = D.moves[m], p = profile(m);
+  const kindName = { swipe: 'melee combo', lunge: 'lunge', charge: 'charge', multi: 'flurry', proj: 'projectile', stream: 'stream', beam: 'beam', chain: 'chain lightning', nova: 'burst around you', strike: 'targeted blast', cloud: 'lingering cloud', debuff: 'lowers foe stats', buff: 'raises your stats', heal: 'heals you', protect: 'blocks attacks', teleport: 'teleport', seed: 'drain seed', dig: 'burrow & erupt', metronome: 'random move' }[p.kind] || p.kind;
+  return {
+    title: mv.name, sub: `${mv.type} · ${mv.power ? mv.power + ' power' : 'status'} · ${kindName}`, subColor: [TYPE_COLORS[mv.type], '#202020'],
+    desc: mv.desc, icon: ICON.type(mv.type), accent: TYPE_COLORS[mv.type], ...extra,
+  };
+}
+
+async function assignMove(scene, move, title) {
+  const run = G.run;
+  const best = slotFor(move);
+  const order = [best, ...['attack', 'special', 'cast'].filter(s => s !== best)];
+  const cards = order.map(s => {
+    const cur = run.slots[s];
+    return { ...moveCard(cur || 'STRUGGLE'), title: `${SLOT_NAMES[s]}: replace ${cur ? D.moves[cur].name : '-'}`, sub: s === best ? '(suggested)' : '', subColor: 'green' };
+  });
+  cards.push({ title: `Don't learn ${D.moves[move].name}`, desc: 'Keep your current moves.', accent: '#808080' });
+  const i = await choose(title, cards, { cardH: 50, header: (ctx, y) => { const c = moveCard(move); text(ctx, title, W / 2, y - 50, { align: 'center', color: 'white' }); text(ctx, c.sub, W / 2, y - 32, { align: 'center', color: c.subColor, font: 'small' }); } });
+  if (i >= 0 && i < 3) { learnMove(run, move, order[i]); Sound.playFanfare('mus_level_up'); refreshPlayer(scene); }
+  else if (!run.known.includes(move)) run.known.push(move);
+}
+
+async function offerHeld(scene) {
+  const run = G.run;
+  const ks = heldChoices(run);
+  const cards = ks.map(k => ({ title: HELD[k].name, desc: HELD[k].desc, icon: ICON.item(k), accent: '#c0a040', sub: run.held ? `replaces ${HELD[run.held].name}` : '' }));
+  const i = await choose('Choose an item to hold', cards, { canSkip: true, footer: 'Held items stay with you for the run. X: skip' });
+  if (i >= 0) { run.held = ks[i]; refreshPlayer(scene); Sound.playSE('se_m_stat_increase'); }
+}
+
+export function refreshPlayer(scene) {
+  const run = G.run, w = scene.world, old = w.player;
+  const np = makePlayer(run, old.x, old.y);
+  np.hp = Math.min(np.maxHp, Math.max(1, run.hp)); np.facing = old.facing; np.brain = old.brain; np.pc = old.pc; np.cds = old.cds; np.cdMax = old.cdMax;
+  np.status = old.status; np.stages = old.stages; np.iframes = old.iframes; np.id = old.id;
+  if (np.pc) np.pc.dashLeft = Math.min(np.pc.dashLeft, np.dashCharges);
+  w.actors[w.actors.indexOf(old)] = np; w.player = np;
+  w.hooks = buildHooks(run, w);
+  preloadPmd([np.dex]);
+}
+
+// ---------------------------------------------------------------- level-up prompts (at room clear)
+export async function levelPrompts(scene) {
+  const run = G.run;
+  if (run.pendingEvo) await evolutionSequence(scene);
+  while (run.pendingLearn.length) {
+    const mv = run.pendingLearn.shift();
+    if (run.known.includes(mv) || !D.moves[mv]) continue;
+    await assignMove(scene, mv, `${D.species[run.species].name} wants to learn ${D.moves[mv].name}!`);
+  }
+}
+
+async function evolutionSequence(scene) {
+  const run = G.run;
+  let into = run.pendingEvo;
+  if (into === 'CHOICE') {
+    const i = await choose('EEVEE is ready to evolve!', EEVEE_CHOICES.map(s => ({ title: D.species[s].name, desc: D.species[s].dexText, portrait: D.species[s].dex, accent: TYPE_COLORS[D.species[s].types[0]] })), {});
+    into = EEVEE_CHOICES[Math.max(0, i)];
+  }
+  const fromDex = D.species[run.species].dex, toDex = D.species[into].dex;
+  await preloadPmd([toDex]);
+  await new Promise(res => pushOverlay(new EvolutionOverlay(fromDex, toDex, run.species, into, res)));
+  evolve(run, into);
+  refreshPlayer(scene);
+}
+
+class EvolutionOverlay {
+  constructor(fromDex, toDex, from, to, done) { this.f = fromDex; this.tdex = toDex; this.from = from; this.to = to; this.done = done; this.t = 0; this.stage = 0; }
+  enter() { Sound.playBGM('mus_evolution'); Sound.playCry(this.from); }
+  update(dt) {
+    Input.poll();
+    this.t += dt;
+    if (this.stage === 0 && this.t > 5) { this.stage = 1; this.t = 0; Sound.playFanfare('mus_evolved'); Sound.playCry(this.to); }
+    if (this.stage === 1 && this.t > 0.6 && (Input.justPressed('confirm') || Engine.mouse.clicked || this.t > 4)) { popOverlay(this); Sound.playBGM(BIOMES[G.run.biome]?.music || 'mus_pallet'); this.done(); }
+  }
+  draw(ctx) {
+    const im = img('gfx/misc/evolution/static_bg.png');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    if (ready(im)) ctx.drawImage(im, (W - 480) / 2, (H - 320) / 2, 480, 320);
+    const cx = W / 2, cy = H / 2 + 10;
+    if (this.stage === 0) {
+      // alternate silhouettes faster and faster
+      const freq = 1 + this.t * this.t * 0.8;
+      const showTo = this.t > 1 && Math.sin(this.t * freq * 3) > 0;
+      ctx.save(); ctx.scale(3, 3);
+      drawPmd(ctx, showTo ? this.tdex : this.f, cx / 3, cy / 3, { anim: 'Idle', t: this.t, tint: '#ffffff', tintA: this.t > 0.8 ? 1 : this.t / 0.8 });
+      ctx.restore();
+      windowFrame(ctx, (W - 520) / 2, H - 70, 520, 56, 'std');
+      text(ctx, `What? ${D.species[this.from].name} is evolving!`, (W - 520) / 2 + 16, H - 58, { color: 'dark' });
+    } else {
+      ctx.save(); ctx.scale(3, 3);
+      drawPmd(ctx, this.tdex, cx / 3, cy / 3, { anim: 'Idle', t: this.t, tint: '#ffffff', tintA: Math.max(0, 1 - this.t * 2) });
+      ctx.restore();
+      windowFrame(ctx, (W - 520) / 2, H - 70, 520, 56, 'std');
+      text(ctx, `Congratulations! Your ${D.species[this.from].name}`, (W - 520) / 2 + 16, H - 62, { color: 'dark' });
+      text(ctx, `evolved into ${D.species[this.to].name}!`, (W - 520) / 2 + 16, H - 46, { color: 'dark' });
+    }
+  }
+}
+
+// ---------------------------------------------------------------- catching
+export async function onCatch(scene, a, ball) {
+  const run = G.run;
+  const first = !G.meta.dex.caught[a.species];
+  G.meta.dex.caught[a.species] = true; G.meta.dex.seen[a.species] = true;
+  const prev = run.partner;
+  run.partner = { species: a.species, level: a.level, moves: a.moves.slice() };
+  run.caught.push(a.species);
+  Sound.playFanfare('mus_caught');
+  scene.banners.push(new Banner(`Gotcha! ${a.name} was caught!`, prev ? `${D.species[prev.species].name} was sent to the PC. ${a.name} is your partner now (F).` : `${a.name} is your partner! Press F to call it.`, { life: 2.8, color: '#f8f8f8' }));
+  if (first) { G.meta.stardust += 5; G.meta.totalStardust += 5; run.stardustGained += 5; scene.world.text(scene.world.player, 'New DEX entry! +5 STARDUST', '#c0e0ff'); }
+  run.callGauge = Math.max(run.callGauge, 0.5);
+  saveMeta();
+}
+
+// ---------------------------------------------------------------- shop / center / deoxys
+function shopStock(run) {
+  const b = run.biome;
+  const all = [
+    { key: 'POTION', name: 'POTION', price: 30 + b * 15, desc: 'Restore 25% HP.', buy: (s) => healPct(s, 0.25) },
+    { key: 'SUPER_POTION', name: 'SUPER POTION', price: 60 + b * 25, desc: 'Restore 50% HP.', buy: (s) => healPct(s, 0.5) },
+    { key: 'RARE_CANDY', name: 'RARE CANDY', price: 100 + b * 40, desc: '+2 levels.', buy: (s) => applyReward(s, { kind: 'rare_candy' }) },
+    { key: 'PP_UP', name: 'PP UP', price: 120 + b * 40, desc: 'Power up a blessing.', buy: (s) => applyReward(s, { kind: 'pp_up' }), need: r => r.boons.length > 0 },
+    { key: 'POKE_BALL', name: 'POKé BALL ×3', price: 40 + b * 10, desc: 'Weaken a wild POKéMON, then throw (R).', buy: () => { run.balls += 3; } },
+    { key: 'GREAT_BALL', name: 'GREAT BALL ×2', price: 90 + b * 15, desc: 'Better catch rate. Upgrades your balls.', buy: () => { run.balls += 2; if (run.ballType === 'poke_ball') run.ballType = 'great_ball'; } },
+    { key: 'ULTRA_BALL', name: 'ULTRA BALL ×2', price: 150 + b * 20, desc: 'Best catch rate.', buy: () => { run.balls += 2; run.ballType = 'ultra_ball'; }, need: () => b >= 2 },
+    { key: 'HP_UP', name: 'HP UP', price: 130 + b * 30, desc: '+10% max HP.', buy: (s) => applyReward(s, { kind: 'hp_up' }) },
+    { key: 'TM01', name: 'TM', price: 110 + b * 30, desc: 'Teach a new move.', buy: (s) => applyReward(s, { kind: 'tm' }) },
+    { key: 'LEFTOVERS', name: 'HELD ITEM', price: 150 + b * 30, desc: 'Choose an item to hold.', buy: (s) => applyReward(s, { kind: 'held' }) },
+    { key: 'SACRED_ASH', name: 'SACRED ASH', price: 260 + b * 40, desc: '+1 Revive this run.', buy: () => { run.revives++; } },
+    { key: 'STAR_PIECE', name: 'STAR PIECE', price: 90, desc: '+25 STARDUST for Oak.', buy: () => { G.meta.stardust += 25; G.meta.totalStardust += 25; run.stardustGained += 25; saveMeta(); } },
+  ];
+  const always = all.filter(x => ['POTION', 'POKE_BALL'].includes(x.key));
+  const rest = run.rng.sample(all.filter(x => !always.includes(x) && (!x.need || x.need(run))), 5);
+  return [...always, ...rest];
+}
+function healPct(scene, f) { const p = scene.world.player; scene.world.heal(p, Math.round(p.maxHp * f)); G.run.hp = p.hp; Sound.playSE('se_use_item'); }
+
+export async function openShop(scene) {
+  const run = G.run;
+  scene.stock ??= shopStock(run);
+  await say([{ text: 'Hi there! May I help you?', name: 'CLERK' }]);
+  while (true) {
+    const cards = scene.stock.map(s => ({ title: s.name, sub: s.sold ? 'SOLD' : `¥${s.price}`, subColor: run.money >= s.price ? 'green' : 'red', desc: s.desc, icon: ICON.item(s.key), accent: '#3070c0', disabled: s.sold || run.money < s.price }));
+    const i = await choose(`POKé MART   ¥${run.money}`, cards, { cardH: 40, canSkip: true, footer: 'X: leave' });
+    if (i < 0) break;
+    const s = scene.stock[i];
+    run.money -= s.price; s.sold = true; Sound.playSE('se_shop');
+    await s.buy(scene);
+  }
+}
+
+export async function nurse(scene) {
+  const run = G.run, p = scene.world.player;
+  if (scene.healed) { await say([{ text: 'We hope to see you again!', name: 'NURSE JOY' }]); return; }
+  await say([{ text: 'Welcome to our POKéMON CENTER! We restore your tired POKéMON to full health.', name: 'NURSE JOY' }]);
+  scene.healed = true;
+  Sound.playFanfare('mus_heal');
+  const amt = Math.round(p.maxHp * (scene.spec.preBoss ? 0.6 : 0.5));
+  scene.world.heal(p, amt); p.status = {}; run.hp = p.hp;
+  scene.world.vfx.push({ kind: 'heal', x: p.x, y: p.y, t: 0, life: 1 });
+  await say([{ text: "Thank you for waiting. We've restored your POKéMON. We hope to see you again!", name: 'NURSE JOY' }]);
+}
+
+export async function chaosBargain(scene) {
+  const run = G.run;
+  if (scene.bargained) return;
+  Sound.playCry('DEOXYS');
+  const offers = chaosOffer(run);
+  const cards = offers.map(o => ({ title: o.blessing.name, sub: `after ${o.rooms} rooms`, desc: `CURSE until then: ${o.curse.name}.`, portrait: 386, accent: '#d050a0', badge: 'CHAOS', badgeColor: '#a03080' }));
+  cards.push({ title: 'Leave it be', desc: 'Walk away from the strange visitor.', accent: '#808080' });
+  const i = await choose('DEOXYS', cards, { header: (ctx, y) => { drawPortrait(ctx, 386, W / 2 - 150, y - 56); text(ctx, 'DEOXYS', W / 2 - 100, y - 54, { color: 'pink', scale: 2 }); text(ctx, 'It offers a bargain. Accepting costs 15% of your HP.', W / 2 - 100, y - 24, { color: 'whiteSoft', font: 'small' }); } });
+  scene.bargained = true;
+  if (i >= 0 && i < offers.length) {
+    const p = scene.world.player;
+    p.hp = Math.max(1, p.hp - Math.round(p.maxHp * 0.15)); run.hp = p.hp;
+    run.chaos.push(offers[i]);
+    Sound.playSE('se_deoxys_move');
+    scene.world.shake = 6;
+  }
+  scene.npcs = scene.npcs.filter(n => n.dex !== 386);
+  scene.world.vfx.push({ kind: 'ring', x: scene.room.center.x, y: scene.room.center.y, r0: 30, r1: 2, t: 0, life: 0.4, fx: 'psychic' });
+}
+
+// ---------------------------------------------------------------- bosses
+export async function bossDefeated(scene) {
+  if (scene.bossDone) return;
+  scene.bossDone = true; scene.cleared = true;
+  const run = G.run, def = BOSSES[scene.bossKey], key = scene.bossKey;
+  Sound.playBGM(key === 'MEWTWO' || key === 'MAROWAK' ? 'mus_victory_wild' : 'mus_victory_gym_leader');
+  const name = def.sprite ? (D.trainers[def.trainer]?.name || key) : key === 'MAROWAK' ? 'MAROWAK' : 'MEWTWO';
+  await new Promise(r => setTimeout(r, 900));
+  const tr = def.trainer && D.trainers[def.trainer];
+  await say(def.outro.map(t => ({ text: t, name: key === 'MAROWAK' || key === 'MEWTWO' ? '' : name })), { pic: tr ? `gfx/trainers/${tr.pic}.png` : null });
+  const first = !G.meta.badges.includes(key);
+  const dust = first ? 60 + run.biome * 20 : 25 + run.biome * 8;
+  G.meta.stardust += dust; G.meta.totalStardust += dust; run.stardustGained += dust;
+  G.meta.bossKills[key] = (G.meta.bossKills[key] || 0) + 1;
+  if (first) G.meta.badges.push(key);
+  saveMeta();
+  Sound.playFanfare('mus_obtain_badge');
+  const lines = [`You obtained the ${def.badge}! +${dust} STARDUST.`];
+  if (first && BOSS_UNLOCK_TEXT[key]) lines.push(BOSS_UNLOCK_TEXT[key]);
+  await say(lines);
+  // heal a bit between areas, like reaching a new town
+  const p = scene.world.player; scene.world.heal(p, Math.round(p.maxHp * 0.25)); run.hp = p.hp;
+  await levelPrompts(scene);
+  scene.openDoors();
+  Sound.playBGM(BIOMES[run.biome]?.music || 'mus_pallet');
+}
+
+// ---------------------------------------------------------------- pause
+export function openPause(scene) { pushOverlay(new PauseOverlay(scene)); }
+class PauseOverlay {
+  constructor(scene) { this.scene = scene; this.sel = 0; }
+  enter() { Input.clear(); Sound.playSE('se_win_open'); }
+  update() {
+    Input.poll();
+    const items = this.items();
+    if (Input.justPressed('up')) this.sel = (this.sel + items.length - 1) % items.length;
+    if (Input.justPressed('down')) this.sel = (this.sel + 1) % items.length;
+    if (Input.justPressed('pause') || Input.justPressed('back')) { popOverlay(this); return; }
+    if (Input.justPressed('confirm')) items[this.sel].fn();
+  }
+  items() {
+    return [
+      { label: 'Resume', fn: () => popOverlay(this) },
+      { label: `Music ${Math.round(G.meta.settings.music * 10)}/10`, fn: () => { G.meta.settings.music = (Math.round(G.meta.settings.music * 10) + 2) % 12 / 10; Sound.setMusicVolume(G.meta.settings.music); saveMeta(); } },
+      { label: `Sound ${Math.round(G.meta.settings.sfx * 10)}/10`, fn: () => { G.meta.settings.sfx = (Math.round(G.meta.settings.sfx * 10) + 2) % 12 / 10; Sound.setSfxVolume(G.meta.settings.sfx); saveMeta(); } },
+      { label: `Screen shake ${G.meta.settings.shake ? 'ON' : 'OFF'}`, fn: () => { G.meta.settings.shake = G.meta.settings.shake ? 0 : 1; saveMeta(); } },
+      ...(this.scene.spec.kind === 'hub' ? [] : [{ label: 'Give up the run', fn: () => { popOverlay(this); this.scene.world.player.hp = 0; this.scene.world.kill(this.scene.world.player, null); } }]),
+    ];
+  }
+  draw(ctx) {
+    const run = G.run;
+    ctx.fillStyle = 'rgba(8,10,20,0.78)'; ctx.fillRect(0, 0, W, H);
+    text(ctx, 'PAUSED', 24, 16, { color: 'white', scale: 2 });
+    this.items().forEach((it, i) => { if (i === this.sel) { const im = img('gfx/ui/cursors/red_arrow.png'); if (ready(im)) ctx.drawImage(im, 24, 58 + i * 18); } text(ctx, it.label, 36, 56 + i * 18, { color: i === this.sel ? 'gold' : 'white' }); });
+    // controls
+    const ctl = ['WASD / arrows: move', 'J or Left click: ATTACK', 'K or Right click: SPECIAL', 'Q: CAST (status move)', 'SPACE / SHIFT: DASH', 'R: throw POKé BALL (weak wild foes)', 'F: call your partner', 'E: talk / interact', 'Mouse aims when moved; gamepad works too'];
+    ctl.forEach((c, i) => text(ctx, c, 24, 170 + i * 13, { font: 'small', color: 'whiteSoft' }));
+    // boons + moves
+    let x = 300, y = 20;
+    text(ctx, `${D.species[run.species].name}  Lv${run.level}`, x, y, { color: 'white' }); y += 18;
+    for (const s of ['attack', 'special', 'cast']) { const m = run.slots[s]; text(ctx, `${SLOT_NAMES[s]}: ${m ? D.moves[m].name : '-'}`, x, y, { font: 'small', color: m ? [TYPE_COLORS[D.moves[m].type], '#101010'] : 'gray' }); y += 12; }
+    if (run.held) { text(ctx, `HELD: ${HELD[run.held].name} - ${HELD[run.held].desc}`, x, y, { font: 'small', color: 'gold' }); y += 12; }
+    if (run.partner) { text(ctx, `PARTNER: ${D.species[run.partner.species].name} Lv${run.partner.level}`, x, y, { font: 'small', color: 'whiteSoft' }); y += 12; }
+    y += 6;
+    text(ctx, 'BLESSINGS', x, y, { color: 'white' }); y += 16;
+    for (const b of run.boons) {
+      const def = BOONS[b.key], L = LEGENDS[def.legend];
+      text(ctx, `${def.name} (${SLOT_NAMES[def.slot]}) Lv${b.level}`, x, y, { font: 'small', color: [L.color, '#101010'] }); y += 11;
+      for (const ln of wrap(def.desc(boonInstance(run, b)), 440, 'small').slice(0, 2)) { text(ctx, ln, x + 8, y, { font: 'small', color: 'whiteSoft' }); y += 11; }
+      if (y > H - 20) break;
+    }
+    for (const c of run.chaos) { text(ctx, c.active ? `DEOXYS: ${c.blessing.name}` : `DEOXYS curse: ${c.curse.name} (${c.rooms} rooms)`, x, y, { font: 'small', color: 'pink' }); y += 12; }
+  }
+}
+
+// ---------------------------------------------------------------- death & victory
+export async function gameOver(scene) {
+  const run = G.run;
+  G.meta.deaths++;
+  G.meta.history.unshift({ starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: false, kills: run.kills, dust: run.stardustGained });
+  G.meta.history = G.meta.history.slice(0, 20);
+  saveMeta();
+  Sound.stopBGM();
+  pushOverlay(new SummaryOverlay(false));
+}
+function victory() {
+  const run = G.run;
+  G.meta.wins++;
+  if (!G.meta.bestTime || run.time < G.meta.bestTime) G.meta.bestTime = Math.round(run.time);
+  G.meta.history.unshift({ starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: true, kills: run.kills, dust: run.stardustGained });
+  saveMeta();
+  setScene(new VictoryScene());
+}
+
+class SummaryOverlay {
+  constructor(won) { this.won = won; this.t = 0; }
+  enter() { Input.clear(); }
+  update(dt) { Input.poll(); this.t += dt; if (this.t > 1.2 && (Input.justPressed('confirm') || Engine.mouse.clicked)) { popOverlay(this); toHub(); } }
+  draw(ctx) {
+    const run = G.run, k = Math.min(1, this.t * 2);
+    ctx.fillStyle = `rgba(0,0,0,${0.85 * k})`; ctx.fillRect(0, 0, W, H);
+    text(ctx, `${D.species[run.species].name} fainted!`, W / 2, 80, { align: 'center', color: 'white', scale: 2 });
+    text(ctx, 'You blacked out... and woke up in PROF. OAK\'s lab.', W / 2, 120, { align: 'center', color: 'whiteSoft' });
+    const lines = [
+      `Reached: ${BIOMES[run.biome].name}, room ${run.roomInBiome + 1}`, `Level ${run.level}   KOs ${run.kills}   Time ${fmtTime(run.time)}`,
+      `STARDUST earned: ${run.stardustGained}  (total ${G.meta.stardust})`, `Blessings: ${run.boons.map(b => BOONS[b.key].name).join(', ') || 'none'}`,
+    ];
+    lines.forEach((l, i) => text(ctx, l, W / 2, 170 + i * 20, { align: 'center', color: 'white', font: i === 3 ? 'small' : 'normal' }));
+    if (this.t > 1.2) text(ctx, 'Press ENTER', W / 2, H - 50, { align: 'center', color: 'gold', alpha: 0.5 + 0.5 * Math.sin(this.t * 4) });
+  }
+}
+export const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+class VictoryScene {
+  constructor() { this.t = 0; }
+  enter() { Sound.playBGM('mus_hall_of_fame'); Input.clear(); }
+  update(dt) { Input.poll(); this.t += dt; if (this.t > 3 && (Input.justPressed('confirm') || Engine.mouse.clicked)) toHub(); }
+  draw(ctx) {
+    const run = G.run;
+    const im = img('gfx/misc/hall_of_fame/bg.png');
+    ctx.fillStyle = '#101828'; ctx.fillRect(0, 0, W, H);
+    if (ready(im)) ctx.drawImage(im, (W - 480) / 2, 20, 480, 320);
+    ctx.save(); ctx.scale(3, 3); drawPmd(ctx, D.species[run.species].dex, W / 6, 50, { anim: 'Idle', t: this.t }); ctx.restore();
+    if (run.partner) { ctx.save(); ctx.scale(2, 2); drawPmd(ctx, D.species[run.partner.species].dex, W / 4 + 60, 85, { anim: 'Idle', t: this.t }); ctx.restore(); }
+    text(ctx, 'HALL OF FAME', W / 2, 24, { align: 'center', color: 'gold', scale: 2 });
+    text(ctx, `${D.species[run.species].name} calmed MEWTWO and escaped CERULEAN CAVE!`, W / 2, H - 110, { align: 'center', color: 'white' });
+    text(ctx, `Level ${run.level}   Time ${fmtTime(run.time)}   KOs ${run.kills}   Wins ${G.meta.wins}`, W / 2, H - 88, { align: 'center', color: 'whiteSoft' });
+    if (this.t > 3) text(ctx, 'Press ENTER to return to the lab', W / 2, H - 50, { align: 'center', color: 'gold', alpha: 0.5 + 0.5 * Math.sin(this.t * 4) });
+  }
+}
+
+// ---------------------------------------------------------------- hub (Oak's lab)
+export function toHub() {
+  newRun(G.meta.lastStarter || 'CHARMANDER');
+  go({ kind: 'hub', layout: 'LAYOUT_PALLET_TOWN_PROFESSOR_OAKS_LAB', cropIndex: 0, entry: { x: 7, y: 5 }, shopRoom: true });
+}
+
+export function setupHub(scene) {
+  const crop = scene.room.crop;
+  const at = (x, y) => ({ tx: x - crop.x, ty: y - crop.y });
+  scene.addNpc({ sprite: 'prof_oak', ...at(6, 3), dir: 'down', name: 'PROF. OAK', label: 'RESEARCH', range: 30, onTalk: () => oakResearch(scene) });
+  const ballNpc = (x, label) => scene.addNpc({ ...at(x, 4), name: 'POKé BALL', label, verb: 'Choose POKéMON', range: 34, onTalk: () => chooseStarter(scene) });
+  ballNpc(8, ''); ballNpc(9, 'STARTERS'); ballNpc(10, '');
+  scene.addNpc({ sprite: 'scientist', ...at(11, 10), dir: 'left', name: 'AIDE', label: 'RECORDS', onTalk: () => records(scene) });
+  scene.addNpc({ sprite: 'worker_f', ...at(2, 10), dir: 'right', name: 'AIDE', label: 'HOW TO PLAY', onTalk: () => tutorial(scene) });
+  scene.addNpc({ sprite: 'blue', ...at(5, 4), dir: 'down', name: 'RIVAL', onTalk: () => say([{ text: rivalLine(), name: 'RIVAL' }]) });
+  // the lab door is the way out
+  const ex = scene.room.exits[0];
+  scene.doors = [{ ...ex, reward: { kind: 'start' }, t: 0 }];
+  scene.doorsOpen = true; scene.cleared = true;
+  scene.world.player.brain = hubBrain(scene.world.player.brain);
+  if (!G.meta.seenIntro) { G.meta.seenIntro = true; saveMeta(); setTimeout(() => tutorial(scene, true), 600); }
+}
+function hubBrain(inner) {
+  return (w, a, dt) => { inner(w, a, dt); };
+}
+function rivalLine() {
+  const d = G.meta.deaths, wins = G.meta.wins;
+  if (wins) return `Smell ya later! ...Wait, you actually beat MEWTWO? ${wins} time${wins > 1 ? 's' : ''}?! No way!`;
+  if (d > 5) return `Fainted again? I've been to CERULEAN CAVE ${d + 3} times. Just kidding. Keep at it.`;
+  return 'Gramps keeps talking about some POKéMON in CERULEAN CAVE. I\'ll get there before you!';
+}
+
+export function drawHubHints(ctx, scene) {
+  text(ctx, `STARDUST: ${G.meta.stardust}`, W - 12, 10, { align: 'right', color: [ '#c0e0ff', '#203040' ] });
+  text(ctx, 'Walk out the door to begin. ESC: pause/controls', W - 12, 26, { align: 'right', font: 'small', color: 'whiteSoft' });
+}
+
+async function chooseStarter(scene) {
+  const cards = STARTERS.map(s => {
+    const sp = D.species[s.species], ok = starterUnlocked(s);
+    return { title: sp.name, sub: ok ? sp.types.join('/') : 'LOCKED', subColor: ok ? 'blue' : 'red', desc: ok ? `${s.blurb}  ${D.moves[s.slots.attack].name} / ${D.moves[s.slots.special].name} / ${D.moves[s.slots.cast].name}` : `Defeat ${s.unlock} to unlock.`, portrait: ok ? sp.dex : null, icon: ok ? null : 'gfx/overworld/misc/item_ball.png', accent: ok ? TYPE_COLORS[sp.types[0]] : '#606060', disabled: !ok };
+  });
+  const i = await choose('Choose your partner POKéMON', cards, { cardH: 46, canSkip: true, footer: 'X: cancel' });
+  if (i < 0) return;
+  const s = STARTERS[i];
+  G.meta.lastStarter = s.species; saveMeta();
+  newRun(s.species);
+  Sound.playCry(s.species);
+  refreshPlayer(scene);
+  scene.world.player.brain = hubBrain(scene.world.player.brain);
+}
+
+async function oakResearch(scene) {
+  await say([{ text: "Ah, the STARDUST you collect lets me study POKéMON further. What should I research?", name: 'PROF. OAK' }]);
+  while (true) {
+    const cards = RESEARCH.map(r => {
+      const rk = rank(r.key), maxed = rk >= r.max, cost = r.cost[rk];
+      return { title: `${r.name}  ${'★'.repeat(rk)}${'·'.repeat(r.max - rk)}`, sub: maxed ? 'DONE' : `${cost} dust`, subColor: maxed ? 'gray' : G.meta.stardust >= cost ? 'green' : 'red', desc: `Now: ${rk ? r.desc(rk) : 'nothing'}${maxed ? '' : `   Next: ${r.desc(rk + 1)}`}`, icon: ICON.item(r.icon), accent: '#40a060', disabled: maxed || G.meta.stardust < cost };
+    });
+    const i = await choose(`OAK's RESEARCH   STARDUST: ${G.meta.stardust}`, cards, { cardH: 32, canSkip: true, footer: 'X: done' });
+    if (i < 0) break;
+    const r = RESEARCH[i];
+    G.meta.stardust -= r.cost[rank(r.key)];
+    G.meta.research[r.key] = rank(r.key) + 1;
+    saveMeta();
+    Sound.playFanfare('mus_obtain_item');
+  }
+  newRun(G.meta.lastStarter); refreshPlayer(scene); scene.world.player.brain = hubBrain(scene.world.player.brain);
+}
+
+async function records(scene) {
+  const m = G.meta;
+  const seen = Object.keys(m.dex.seen).length, caught = Object.keys(m.dex.caught).length;
+  const last = m.history[0];
+  await say([
+    { text: `Runs: ${m.runs}   Escapes: ${m.wins}   Best time: ${m.bestTime ? fmtTime(m.bestTime) : '--'}`, name: 'AIDE' },
+    { text: `POKéDEX: seen ${seen}, caught ${caught}. Bosses beaten: ${m.badges.join(', ') || 'none yet'}.`, name: 'AIDE' },
+    ...(last ? [{ text: `Last run: ${D.species[last.species]?.name} Lv${last.level}, reached ${BIOMES[last.biome].name} (${last.won ? 'ESCAPED!' : 'fainted'}).`, name: 'AIDE' }] : []),
+  ]);
+}
+
+async function tutorial(scene, first) {
+  await say([
+    { text: first ? 'Welcome to PROF. OAK\'s lab! Every night, your partner heads out toward CERULEAN CAVE.' : 'Here\'s how it works.', name: 'AIDE' },
+    { text: 'Move with WASD. Attack with J or left click, SPECIAL with K or right click, CAST your status move with Q, and DASH with SPACE.', name: 'AIDE' },
+    { text: 'Clear each area, then pick a door. The icon shows the reward: LEGENDARY blessings, RARE CANDY, TMs, items...', name: 'AIDE' },
+    { text: 'Weaken a wild POKéMON and throw a POKé BALL with R. It becomes your partner. Call it with F when the gauge is full!', name: 'AIDE' },
+    { text: 'If you faint, you wake up here. Bring STARDUST to PROF. OAK for permanent upgrades. Beat bosses to unlock new partners.', name: 'AIDE' },
+  ]);
+}
+
+export { STARTERS };
+
+// ---------------------------------------------------------------- dev / test entry points
+// ?dev=combat|boss|shop|center|chaos|trainer&biome=N&starter=X&level=L
+export function devStart(q) {
+  const run = newRun(q.get('starter') || G.meta.lastStarter || 'CHARMANDER', q.get('seed') || undefined);
+  run.biome = +(q.get('biome') || 0); run.roomInBiome = +(q.get('room') || 1); run.depth = run.biome * 7 + run.roomInBiome;
+  const lvl = +(q.get('level') || 0);
+  if (lvl) { run.level = lvl; run.exp = 0; run.hp = playerMaxHp(run); }
+  if (q.get('boons')) for (const k of q.get('boons').split(',')) addBoon(run, { key: k, rarity: 1, level: 1 });
+  const kind = q.get('dev');
+  if (kind === 'boss') { run.roomInBiome = BIOMES[run.biome].rooms; return goNext({ spec: { kind: 'x' } }, { kind: 'boss' }) || run; }
+  run.roomInBiome--; run.depth--;
+  goNext({ spec: { kind: 'x' } }, kind === 'combat' ? { kind: 'rare_candy' } : { kind });
+}

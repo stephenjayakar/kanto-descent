@@ -1,0 +1,442 @@
+// The main gameplay scene: one room of a run (or the hub). Loads a real FireRed map crop, runs the
+// combat World, handles waves, rewards, doors, NPCs, prompts and transitions.
+import { Engine, W, H, setScene, pushOverlay, topOverlay } from '../engine/core.js';
+import { img, ready } from '../engine/assets.js';
+import { text, measure } from '../engine/font.js';
+import { pixBox, rect } from '../engine/ui.js';
+import { Input } from '../engine/input.js';
+import { Sound } from '../audio/sound.js';
+import { D, TYPE_COLORS } from '../game/data.js';
+import { World, STEP, TILE, makeActor, setAnim } from '../game/combat.js';
+import '../game/combat_boons.js';
+import { loadLayout, buildRoom, candidates, drawTileAnims, mapIndex } from '../game/rooms.js';
+import { drawWorld, drawVignette, drawBA } from '../game/render.js';
+import { playerBrain, updateBalls, updateAllies } from '../game/player.js';
+import { G, makePlayer, buildHooks, gainExp, expFor, rollDoors, saveMeta, REWARD_INFO, playerMaxHp, rank } from '../game/run.js';
+import { BIOMES } from '../game/content.js';
+import { LEGENDS } from '../game/boons.js';
+import { rollWave, makeEnemy, rollTrainer, trainerParty, trainerSprite } from '../game/spawn.js';
+import { BOSSES, spawnBoss, bossDirector, bossesDefeated } from '../game/bosses.js';
+import { preloadPmd, drawPmd } from '../game/pmd.js';
+import { drawHud } from './hud.js';
+import { Banner, say, drawOW, ICON } from './ui.js';
+import * as R from './rewards.js';
+
+const VIEW_W = W / 2, VIEW_H = H / 2;
+
+export class RoomScene {
+  // spec: { kind: 'combat'|'trainer'|'boss'|'shop'|'center'|'chaos'|'hub', layout, crop, reward:{kind,legend}, first }
+  constructor(spec) {
+    this.spec = spec; this.state = 'loading'; this.fade = 1; this.t = 0; this.acc = 0;
+    this.banners = []; this.npcs = []; this.waves = []; this.doors = []; this.cam = { x: 0, y: 0 };
+    this.run = G.run;
+  }
+
+  async enter() {
+    const spec = this.spec;
+    try {
+      const L = await loadLayout(spec.layout);
+      const crop = spec.crop || candidates(spec.layout)[spec.cropIndex || 0] || { x: 0, y: 0, w: L.meta.w, h: L.meta.h };
+      this.room = buildRoom(L, crop, { exits: spec.kind === 'boss' || spec.kind === 'hub' ? 1 : 3, waterWalk: false, entry: spec.entry, exitAtWarps: !!spec.shopRoom });
+    } catch (e) { console.error('room load failed', spec, e); }
+    const run = this.run;
+    const world = this.world = new World(this.room, { rng: run.rng });
+    world.run = run;
+    world.maxAttackers = BIOMES[run.biome]?.maxAttackers ?? 2;
+    const ent = this.room.entry;
+    const p = world.player = makePlayer(run, ent.x, ent.y);
+    p.brain = playerBrain; p.facing = -Math.PI / 2;
+    world.add(p);
+    world.hooks = buildHooks(run, world);
+    this.layoutMap = Object.values(mapIndex().maps).find(m => m.layout === spec.layout);
+    // preload sprites we'll need
+    const dexes = [p.dex];
+    if (run.partner) dexes.push(D.species[run.partner.species].dex);
+    await preloadPmd(dexes);
+    this.setup();
+    world.hooks.onRoomStart?.(world);
+    this.snapCamera();
+    this.state = 'intro';
+    window.__room = this; // debugging / tests
+  }
+
+  // ---- content per room kind
+  setup() {
+    const spec = this.spec, run = this.run, w = this.world, B = BIOMES[run.biome];
+    const music = B?.music || 'mus_pallet';
+    if (spec.kind === 'combat' || spec.kind === 'trainer') {
+      Sound.playBGM(music);
+      if (spec.first) this.banners.push(new Banner(B.name, B.intro, { life: 3.2 }));
+      if (spec.kind === 'trainer' || (B.trainerOnly && run.rng.chance(0.6))) this.setupTrainer();
+      else this.setupWaves();
+    } else if (spec.kind === 'boss') {
+      this.setupBoss();
+    } else if (spec.kind === 'shop') {
+      Sound.playBGM('mus_poke_center');
+      this.addNpc({ sprite: 'clerk', ...this.at(2, 3), dir: 'right', name: 'CLERK', label: 'SHOP', range: 40, onTalk: () => R.openShop(this) });
+      this.clearRoom(true);
+    } else if (spec.kind === 'center') {
+      Sound.playBGM('mus_poke_center');
+      this.addNpc({ sprite: 'nurse', ...this.at(7, 2), dir: 'down', name: 'NURSE JOY', label: 'HEAL', range: 40, onTalk: () => R.nurse(this) });
+      if (spec.preBoss) this.addNpc({ sprite: 'clerk', ...this.at(12, 5), dir: 'left', name: 'CLERK', label: 'SHOP', range: 30, onTalk: () => R.openShop(this) });
+      this.clearRoom(true);
+    } else if (spec.kind === 'chaos') {
+      Sound.playBGM('mus_encounter_deoxys');
+      const c = this.room.center;
+      this.addNpc({ dex: 386, x: c.x, y: c.y - 10, name: 'DEOXYS', onTalk: () => R.chaosBargain(this) });
+      this.clearRoom(true);
+    } else if (spec.kind === 'hub') {
+      this.setupHub();
+    }
+  }
+
+  setupWaves() {
+    const run = this.run, B = BIOMES[run.biome];
+    const nw = run.rng.int(B.waves[0], B.waves[1]);
+    for (let i = 0; i < nw; i++) {
+      const n = run.rng.int(B.perWave[0], B.perWave[1]) + Math.floor(run.roomInBiome / 3);
+      this.waves.push(rollWave(run, n).map(e => ({ ...e, elite: run.depth > 2 && run.rng.chance(0.08 + run.biome * 0.03) })));
+    }
+    this.waveT = 0.9; this.waveI = 0;
+    preloadPmd([...new Set(this.waves.flat().map(e => D.species[e.species].dex))]);
+  }
+
+  setupTrainer() {
+    const run = this.run;
+    const t = rollTrainer(run, new Set(run.trainersBeaten || []));
+    if (!t) return this.setupWaves();
+    run.trainersBeaten = [...(run.trainersBeaten || []), t.key];
+    this.trainer = t;
+    const party = trainerParty(run, t, this.spec.kind === 'trainer' ? 2 : 0);
+    // the trainer stands at the far exit
+    const ex = this.room.exits[0] || this.room.center;
+    const npc = this.addNpc({ sprite: trainerSprite(t), x: ex.x, y: ex.y + 8, dir: 'down', name: `${t.className} ${t.name}`, trainer: true });
+    // two at a time
+    for (let i = 0; i < party.length; i += 2) this.waves.push(party.slice(i, i + 2).map(e => ({ ...e, trainerMon: true, elite: this.spec.kind === 'trainer' })));
+    // small parties get backup from the area's other POKéMON
+    if (party.length < 3) this.waves.push(rollWave(run, 2 + Math.floor(run.roomInBiome / 3)).map(e => ({ ...e, trainerMon: true })));
+    this.waveT = 99; this.waveI = 0;
+    preloadPmd(party.map(e => D.species[e.species].dex));
+    this.pendingIntro = async () => {
+      Sound.playBGM(t.encounterSong ? t.encounterSong.toLowerCase() : 'mus_encounter_boy');
+      npc.emote = 1.0;
+      await say([`${t.className} ${t.name} would like to battle!`], { pic: `gfx/trainers/${t.pic}.png` });
+      Sound.playBGM('mus_vs_trainer');
+      this.waveT = 0.2;
+    };
+  }
+
+  setupBoss() {
+    const run = this.run, key = this.spec.boss, def = BOSSES[key];
+    const c = this.room.exits[0] ? { x: this.room.center.x, y: (this.room.center.y + this.room.exits[0].y) / 2 } : this.room.center;
+    this.bossKey = key;
+    const dexes = def.mons.map(m => D.species[m.species].dex);
+    if (def.adds) dexes.push(D.species[def.adds.species].dex);
+    if (def.finale) dexes.push(D.species[def.finale.species].dex);
+    preloadPmd(dexes);
+    Sound.playBGM(key === 'MAROWAK' ? 'mus_poke_tower' : key === 'MEWTWO' ? 'mus_rocket_hideout' : 'mus_gym');
+    if (def.sprite) this.addNpc({ sprite: def.sprite, x: c.x, y: c.y - 30, dir: 'down', name: D.trainers[def.trainer]?.name || key, trainer: true });
+    this.bossSpawnAt = c;
+    this.pendingIntro = async () => {
+      const name = def.sprite ? (D.trainers[def.trainer]?.name || key) : key === 'MAROWAK' ? 'GHOST' : 'MEWTWO';
+      if (key === 'MEWTWO') { Sound.playCry('MEWTWO'); }
+      const tr = def.trainer && D.trainers[def.trainer];
+      await say(def.intro.map(t => ({ text: t, name })), { portrait: def.sprite ? null : (key === 'MEWTWO' ? 150 : null), pic: tr ? `gfx/trainers/${tr.pic}.png` : null });
+      Sound.playBGM(def.music);
+      this.banners.push(new Banner(name === 'GHOST' ? 'GHOST' : name, def.title, { color: '#ff5050' }));
+      const list = spawnBoss(this.world, key, this.bossSpawnAt);
+      for (const b of list) { b.spawnT = 0.8; b.spawnMax = 0.8; Sound.playCry(b.species); }
+      if (def.sprite) Sound.playSE('se_ball_open');
+      this.bossLive = true;
+    };
+  }
+
+  setupHub() {
+    Sound.playBGM('mus_oak_lab');
+    R.setupHub(this);
+  }
+
+  at(x, y) { return { tx: x - this.room.crop.x, ty: y - this.room.crop.y }; }
+
+  addNpc(n) {
+    if (n.tx !== undefined) { n.x = n.tx * TILE + 8; n.y = n.ty * TILE + 16; }
+    n.emote = 0;
+    if (n.dex) preloadPmd([n.dex]);
+    this.npcs.push(n);
+    return n;
+  }
+
+  // ---- waves
+  spawnWave(list) {
+    const w = this.world, p = w.player;
+    for (const e of list) {
+      const pt = w.randomOpenPoint(p, 90);
+      let at = pt;
+      if (this.trainer && this.npcs[0]) { // trainer mons pop out near the trainer
+        const n = this.npcs[0];
+        at = w.randomOpenPoint(null); for (let k = 0; k < 30; k++) { const q = w.randomOpenPoint(null); if (Math.hypot(q.x - n.x, q.y - n.y) < Math.hypot(at.x - n.x, at.y - n.y) && Math.hypot(q.x - p.x, q.y - p.y) > 60) at = q; }
+      }
+      const a = makeEnemy(w, e.species, e.level, { x: at.x, y: at.y, moves: e.moves, elite: e.elite, shiny: this.run.rng.chance(1 / 200) });
+      a.trainerMon = !!e.trainerMon;
+      a.facing = Math.atan2(p.y - a.y, p.x - a.x);
+      w.add(a);
+      G.meta.dex.seen[e.species] = true;
+      if (e.trainerMon) w.vfx.push({ kind: 'sendout', x: a.x, y: a.y, t: 0, life: 0.5 });
+      else w.vfx.push({ kind: 'custom', t: 0, life: 0.5, draw: (ctx, v, k) => { drawBA(ctx, 'leaf', a.x + Math.cos(k * 9) * 10 * (1 - k), a.y - k * 10, k, { anim: true, alpha: 1 - k }); } });
+    }
+    if (list.some(e => e.trainerMon)) Sound.playSE('se_ball_open'); else Sound.playSE('se_m_razor_wind2');
+    this.world.maxAttackers = Math.max(BIOMES[this.run.biome]?.maxAttackers ?? 2, 1);
+  }
+
+  updateWaves(dt) {
+    if (this.waveI >= this.waves.length) return;
+    const alive = this.world.enemies().length;
+    if (alive <= (this.waveI > 0 ? 1 : 0)) this.waveT -= dt;
+    if (this.waveT <= 0) {
+      this.spawnWave(this.waves[this.waveI++]);
+      this.waveT = 1.0;
+    }
+  }
+
+  // ---- room cleared: prompts, then the reward, then the doors
+  async clearRoom(quiet = false) {
+    if (this.cleared) return;
+    this.cleared = true;
+    const run = this.run, w = this.world;
+    if (!quiet) {
+      if (this.trainer) { Sound.playBGM('mus_victory_trainer'); const prize = Math.round(D.trainerClasses?.[this.trainer.class]?.money || 10) * 4 + 20; run.money += Math.round(prize * (w.player.moneyMul || 1)); this.banners.push(new Banner(`Defeated ${this.trainer.className} ${this.trainer.name}!`, `Got ¥${Math.round(prize * (w.player.moneyMul || 1))} for winning!`, { life: 2.2 })); }
+      else Sound.playSE('se_success');
+      w.hooks.onRoomClear?.(w);
+      for (const c of run.chaos) if (!c.active) { c.rooms--; if (c.rooms <= 0) { c.active = true; this.banners.push(new Banner('DEOXYS\'s curse lifts!', c.blessing.name, { color: '#d050a0' })); } }
+    }
+    await R.levelPrompts(this);
+    if (this.spec.reward && !quiet && this.spec.kind !== 'boss') R.spawnReward(this, this.spec.reward, this.lastKillAt || this.room.center);
+    else this.openDoors();
+  }
+
+  openDoors() {
+    if (this.doorsOpen) return;
+    this.doorsOpen = true;
+    const run = this.run;
+    if (this.spec.kind === 'hub') return;
+    if (this.spec.kind === 'boss') {
+      const last = run.biome >= BIOMES.length - 1;
+      this.doors = [{ ...this.room.exits[0], reward: { kind: last ? 'victory' : 'next' } }];
+    } else {
+      const rewards = rollDoors(run, this.room.exits.length);
+      this.doors = rewards.map((r, i) => ({ ...this.room.exits[i % this.room.exits.length], reward: r }));
+    }
+    for (const d of this.doors) { d.t = 0; if (d.reward.kind === 'boon') preloadPmd([LEGENDS[d.reward.legend].dex]); }
+    Sound.playSE('se_door');
+  }
+
+  // ---- main loop
+  update(dt) {
+    this.t += dt;
+    Input.poll();
+    if (this.state === 'loading') return;
+    const w = this.world;
+    // mouse in world coordinates
+    Input.mouseWorld = { x: Engine.mouse.x / 2 + this.cam.x, y: Engine.mouse.y / 2 + this.cam.y };
+    if (this.state === 'intro') { this.fade = Math.max(0, this.fade - dt * 3); if (this.fade <= 0) { this.state = 'play'; if (this.pendingIntro) { const f = this.pendingIntro; this.pendingIntro = null; f(); } } }
+    if (this.state === 'exiting') { this.fade = Math.min(1, this.fade + dt * 3.5); if (this.fade >= 1 && this.next) { const n = this.next; this.next = null; n(); } return; }
+    if (Input.justPressed('pause') && this.state === 'play') { R.openPause(this); return; }
+    // fixed-step simulation
+    const scale = w.slowmo > 0 ? 0.35 : 1;
+    this.acc += dt * scale;
+    let steps = 0;
+    while (this.acc >= STEP && steps < 4) { this.acc -= STEP; steps++; this.step(STEP); }
+    if (steps >= 4) this.acc = 0;
+    this.updateCamera(dt);
+    this.banners = this.banners.filter(b => b.update(dt));
+  }
+
+  step(dt) {
+    const w = this.world, run = this.run;
+    if (this.state !== 'play' && this.state !== 'intro') return;
+    w.step(dt);
+    updateBalls(w, dt);
+    updateAllies(w, dt);
+    run.time += dt;
+    if (w.player) run.hp = Math.max(0, w.player.hp);
+    if (this.trainer || this.waves.length) this.updateWaves(dt);
+    if (this.bossLive) bossDirector(w);
+    for (const n of this.npcs) if (n.emote > 0) n.emote -= dt;
+    for (const e of w.events.splice(0)) this.onEvent(e);
+    // clear check
+    if (!this.cleared && this.state === 'play') {
+      const fightDone = this.bossLive ? bossesDefeated(w) : (this.waves.length && this.waveI >= this.waves.length && !w.enemies().length);
+      if (fightDone && !this.pendingIntro) {
+        if (this.bossLive) R.bossDefeated(this); else this.clearRoom();
+      }
+    }
+    if (this.spec.kind === 'hub' || this.cleared) this.interactions();
+    if (this.doorsOpen) this.checkDoors(dt);
+    if (w.player.dead && !this.dying) this.die();
+  }
+
+  onEvent(e) {
+    const run = this.run, w = this.world;
+    switch (e.type) {
+      case 'kill': {
+        const a = e.actor; run.kills++;
+        this.lastKillAt = { x: a.x, y: a.y };
+        if (a.team === 'enemy' && !a.noExp) {
+          const ev = gainExp(run, expFor(run, a, a.trainerMon));
+          for (const l of ev) { w.text(w.player, `Lv ${l.level}!`, '#80ffff'); Sound.playSE('se_exp_max'); w.player.level = run.level; R.refreshPlayer(this); }
+          const money = Math.round((2 + a.level * 0.6) * (w.player.moneyMul || 1) * (a.trainerMon ? 0.5 : 1));
+          if (!a.boss) { run.money += money; w.texts.push({ str: `¥${money}`, x: a.x, y: a.y - 10, t: 0, life: 0.9, color: 'gold' }); }
+        }
+        break;
+      }
+      case 'money': run.money += Math.round(e.amount * (w.player.moneyMul || 1)); w.texts.push({ str: `¥${e.amount}`, x: e.x, y: e.y - 10, t: 0, life: 0.9, color: 'gold' }); break;
+      case 'catch': R.onCatch(this, e.actor, e.ball); break;
+      case 'revive': this.banners.push(new Banner('REVIVED!', 'Back on your feet!', { color: '#f8d060', life: 1.6 })); w.vfx.push({ kind: 'heal', x: w.player.x, y: w.player.y, t: 0, life: 0.8 }); Sound.playSE('se_m_morning_sun'); break;
+      case 'bossPhase': w.shake = 8; Sound.playCry(e.actor.species, { mode: 'roar_1' }); if (e.actor.species === 'MAROWAK' && e.phase === 1) this.banners.push(new Banner('The GHOST was MAROWAK!', 'Its spirit rages!', { color: '#a080ff' })); if (e.actor.species === 'MEWTWO' && e.phase === 2) this.banners.push(new Banner('MEWTWO is enraged!', '', { color: '#f85888', life: 1.6 })); break;
+      case 'banner': this.banners.push(new Banner(e.text, '', { life: 1.6, color: '#f8f8f8' })); break;
+      case 'pickup': R.onPickup(this, e.pickup); break;
+      case 'hurt': if (G.meta.settings.shake) Engine.shake = 0; break;
+    }
+  }
+
+  interactions() {
+    const p = this.world.player;
+    let near = null, nd = 1e9;
+    for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - p.x, n.y - 8 - p.y); if (d < (n.range || 30) && d < nd) { nd = d; near = n; } }
+    this.nearNpc = near;
+    if (near && Input.justPressed('interact') && !topOverlay()) { Input.consume('interact'); Sound.playSE('se_select'); near.onTalk(near); }
+  }
+
+  checkDoors(dt) {
+    const p = this.world.player;
+    this.nearDoor = null;
+    for (const d of this.doors) {
+      d.t += dt;
+      const dd = Math.hypot(d.x - p.x, d.y - p.y);
+      if (dd > 26) d.armed = true;
+      if (dd < 22) this.nearDoor = d;
+      if (dd < 10 && d.armed && this.state === 'play' && !d.used && !topOverlay()) { d.used = true; this.leave(d.reward); return; }
+    }
+    // Itemfinder reroll
+    if (this.nearDoor && Input.justPressed('ball') && this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory'].includes(this.nearDoor.reward.kind)) {
+      this.run.rerolls--;
+      const r = rollDoors(this.run, 3).find(x => x.kind !== this.nearDoor.reward.kind && x.kind !== 'boss' && x.kind !== 'center');
+      if (r) { this.nearDoor.reward = r; Sound.playSE('se_itemfinder'); if (r.kind === 'boon') preloadPmd([LEGENDS[r.legend].dex]); }
+    }
+  }
+
+  leave(reward) {
+    Sound.playSE(this.spec.kind === 'hub' ? 'se_exit' : 'se_door');
+    this.state = 'exiting';
+    this.next = () => R.goNext(this, reward);
+  }
+
+  async die() {
+    this.dying = true;
+    const w = this.world;
+    Sound.playCry(w.player.species, { mode: 'faint' });
+    w.slowmo = 2;
+    setTimeout(() => R.gameOver(this), 1600);
+  }
+
+  // ---- camera
+  snapCamera() { const p = this.world.player; this.cam = this.camTarget(p); }
+  camTarget(p) {
+    const Rm = this.room, rw = Rm.w * TILE, rh = Rm.h * TILE;
+    let fx = p.x, fy = p.y;
+    // frame bosses: look partway toward them
+    const bosses = this.world.actors.filter(a => a.boss && !a.dead && a.spawnT <= 0);
+    if (bosses.length) {
+      const bx = bosses.reduce((s, a) => s + a.x, 0) / bosses.length, by = bosses.reduce((s, a) => s + a.y, 0) / bosses.length;
+      if (Math.hypot(bx - p.x, by - p.y) < 320) { fx += (bx - p.x) * 0.4; fy += (by - p.y) * 0.4; }
+    }
+    let x = fx - VIEW_W / 2, y = fy - 8 - VIEW_H / 2;
+    if (Input.mouseAiming() && Input.mouseWorld && this.state === 'play') { x += (Input.mouseWorld.x - p.x) * 0.12; y += (Input.mouseWorld.y - p.y) * 0.12; }
+    if (rw <= VIEW_W) x = (rw - VIEW_W) / 2; else x = Math.max(-16, Math.min(rw - VIEW_W + 16, x));
+    if (rh <= VIEW_H + 8) y = (rh - VIEW_H) / 2 + 14; else y = Math.max(-24, Math.min(rh - VIEW_H + 40, y));
+    return { x, y };
+  }
+  updateCamera(dt) {
+    const t = this.camTarget(this.world.player);
+    const k = 1 - Math.exp(-8 * dt);
+    this.cam.x += (t.x - this.cam.x) * k; this.cam.y += (t.y - this.cam.y) * k;
+  }
+
+  // ---- drawing
+  draw(ctx) {
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    if (this.state === 'loading' || !this.world) { text(ctx, 'Loading...', W / 2, H / 2, { align: 'center', color: 'white' }); return; }
+    const w = this.world;
+    const sh = w.shake * (G.meta.settings.shake ?? 1);
+    const cx = Math.round(this.cam.x + (sh ? (Math.random() - 0.5) * sh : 0)), cy = Math.round(this.cam.y + (sh ? (Math.random() - 0.5) * sh : 0));
+    ctx.save();
+    ctx.setTransform(2, 0, 0, 2, -cx * 2, -cy * 2);
+    ctx.imageSmoothingEnabled = false;
+    const tick = Math.floor(this.t * 60);
+    drawWorld(ctx, w, this.cam, {
+      tileAnims: c => drawTileAnims(c, this.room, tick),
+      underlay: c => this.drawDoors(c),
+      extraSprites: items => { for (const n of this.npcs) items.push({ y: n.y - 2, draw: c => this.drawNpc(c, n) }); },
+    });
+    ctx.restore();
+    const B = BIOMES[this.run.biome];
+    if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette);
+    if (this.world.player.hp < this.world.player.maxHp * 0.25 && !this.world.player.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
+    // NPC labels (screen space)
+    for (const n of this.npcs) if (n.label && this.nearNpc !== n) { const sx = (n.x - this.cam.x) * 2, sy = (n.y - 36 - this.cam.y) * 2; text(ctx, n.label, sx, sy, { font: 'small', color: ['#f8f8f8', '#202020'], align: 'center' }); }
+    // prompts
+    if (this.nearNpc && !topOverlay()) this.prompt(ctx, `E: ${this.nearNpc.verb || 'Talk'}`, this.nearNpc.x, this.nearNpc.y - 40);
+    if (this.nearDoor && this.doorsOpen) {
+      const info = R.rewardLabel(this.nearDoor.reward);
+      this.prompt(ctx, info + (this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory'].includes(this.nearDoor.reward.kind) ? `   (R: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
+    }
+    if (this.doorsOpen && this.spec.kind !== 'hub') this.drawDoorArrows(ctx);
+    if (this.spec.kind !== 'hub' || this.run) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub' });
+    for (const b of this.banners) b.draw(ctx);
+    if (this.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${this.fade})`; ctx.fillRect(0, 0, W, H); }
+    if (this.spec.kind === 'hub') R.drawHubHints(ctx, this);
+  }
+
+  // arrows at the screen edge pointing to exits that are off screen
+  drawDoorArrows(ctx) {
+    const pulse = 0.6 + 0.4 * Math.sin(this.t * 5);
+    for (const d of this.doors) {
+      const sx = (d.x - this.cam.x) * 2, sy = (d.y - 20 - this.cam.y) * 2;
+      if (sx > 20 && sx < W - 20 && sy > 20 && sy < H - 70) continue;
+      const cx = W / 2, cy = H / 2 - 20, ang = Math.atan2(sy - cy, sx - cx);
+      const k = Math.min((W / 2 - 30) / Math.abs(Math.cos(ang) || 1e-6), (H / 2 - 60) / Math.abs(Math.sin(ang) || 1e-6));
+      const ax = cx + Math.cos(ang) * k, ay = cy + Math.sin(ang) * k;
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang);
+      ctx.fillStyle = d.reward.kind === 'boss' ? `rgba(255,90,70,${pulse})` : `rgba(255,240,160,${pulse})`;
+      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-6, -10); ctx.lineTo(-2, 0); ctx.lineTo(-6, 10); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      const r = d.reward;
+      let icon = r.kind === 'boon' ? ICON.portrait(LEGENDS[r.legend].dex) : REWARD_INFO[r.kind]?.icon;
+      if (icon) { const im = img(icon); if (ready(im)) ctx.drawImage(im, ax - Math.cos(ang) * 26 - 12, ay - Math.sin(ang) * 26 - 12, 24, 24); }
+    }
+  }
+
+  prompt(ctx, str, wx, wy) {
+    const sx = (wx - this.cam.x) * 2, sy = (wy - this.cam.y) * 2;
+    const tw = measure(str, 'small') + 12;
+    pixBox(ctx, sx - tw / 2, sy - 8, tw, 16, 'rgba(16,20,32,0.85)', '#f8f8f8', 2);
+    text(ctx, str, sx, sy - 7, { font: 'small', color: 'white', align: 'center' });
+  }
+
+  drawNpc(ctx, n) {
+    if (n.dex) drawPmd(ctx, n.dex, n.x, n.y - 4 - (n.float ? 6 + Math.sin(this.t * 2) * 3 : 0), { anim: n.anim || 'Idle', dir: n.pdir || 0, t: this.t });
+    else if (n.sprite) drawOW(ctx, n.sprite, n.x, n.y, n.dir || 'down');
+    if (n.icon) { const im = img(n.icon); if (ready(im)) ctx.drawImage(im, Math.round(n.x - im.naturalWidth / 2), Math.round(n.y - im.naturalHeight - 2 + Math.sin(this.t * 3) * 1.5)); }
+    if (n.emote > 0) { const im = img('gfx/misc/emotes/exclamation.png'); if (ready(im)) ctx.drawImage(im, 0, 0, 16, 16, Math.round(n.x - 8), Math.round(n.y - 50), 16, 16); }
+
+  }
+
+  drawDoors(ctx) {
+    if (!this.doorsOpen) {
+      // locked exits glow faintly so the player knows where they'll be
+      for (const e of this.room.exits) { if (this.spec.kind === 'hub') continue; ctx.fillStyle = 'rgba(255,80,60,0.18)'; ctx.beginPath(); ctx.ellipse(e.x, e.y, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+      return;
+    }
+    for (const d of this.doors) R.drawDoor(ctx, this, d);
+  }
+}
