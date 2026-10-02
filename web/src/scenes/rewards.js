@@ -129,7 +129,7 @@ export async function applyReward(scene, r) {
     }
     case 'hp_up': run.maxHpMul += 0.15; refreshPlayer(scene); w.heal(w.player, Math.round(w.player.maxHp * 0.25)); run.hp = w.player.hp; Sound.playSE('se_m_stat_increase'); await say(['Max HP rose by 15%!']); break;
     case 'pp_up': await ppUp(scene); break;
-    case 'money': { const n = Math.round((120 + run.biome * 50 + run.rng.int(0, 30)) * mm); run.money += n; Sound.playSE('se_shop'); scene.banners.push(new Banner(`¥${n}`, 'You sold the NUGGET.', { life: 1.4, color: '#f8d030' })); break; }
+    case 'money': { const n = Math.round((70 + run.biome * 30 + run.rng.int(0, 20)) * mm); run.money += n; Sound.playSE('se_shop'); scene.banners.push(new Banner(`¥${n}`, 'You sold the NUGGET.', { life: 1.4, color: '#f8d030' })); break; }
     case 'tm': await offerTMs(scene); break;
     case 'stardust': case 'star_piece': { const n = Math.round((r.kind === 'star_piece' ? 40 + run.biome * 8 : run.rng.int(10, 16) + run.biome * 4) * (1 + 0.1 * (run.heat || 0))); G.meta.stardust += n; G.meta.totalStardust += n; run.stardustGained += n; saveMeta(); Sound.playSE('se_shiny'); scene.banners.push(new Banner(`+${n} STARDUST`, "Bring it to PROF. OAK.", { life: 1.4, color: '#c0e0ff' })); break; }
     case 'balls': run.balls += 3; Sound.playSE('se_ball_tray_ball'); scene.banners.push(new Banner('+3 POKé BALLS', '', { life: 1.2 })); break;
@@ -144,18 +144,40 @@ async function offerBoons(scene, legend) {
   if (!ch.length) { await say([{ text: `${L.name} has nothing more to offer. It leaves you a RARE CANDY.`, portrait: L.dex }]); await applyReward(scene, { kind: 'rare_candy' }); return; }
   const cards = ch.map(c => boonCard(run, c));
   const i = await choose(`${L.name}`, cards, {
-    header: (ctx, y) => {
-      drawPortrait(ctx, L.dex, W / 2 - 150, y - 56, 'Normal');
-      text(ctx, L.name, W / 2 - 100, y - 54, { color: [L.color, '#202020'], scale: 2 });
-      text(ctx, L.title + ' offers you its power.', W / 2 - 100, y - 24, { color: 'whiteSoft', font: 'small' });
+    header: (ctx, y, cx) => {
+      drawPortrait(ctx, L.dex, cx - 150, y - 56, 'Normal');
+      text(ctx, L.name, cx - 100, y - 54, { color: [L.color, '#202020'], scale: 2 });
+      text(ctx, L.title + ' offers you its power.', cx - 100, y - 24, { color: 'whiteSoft', font: 'small' });
     },
-    footer: 'One blessing per slot: a new legend replaces the old one in that slot.',
+    side: (ctx, o) => drawOwnedBoons(ctx, run, BOONS[ch[o.sel]?.key]?.slot),
+    footer: 'One blessing per slot. Replacing one comes a rarity higher.',
+    canSkip: true,
   });
   if (i >= 0) {
     addBoon(run, ch[i]);
     refreshPlayer(scene);
     Sound.playSE('se_m_stat_increase');
   }
+}
+
+// Left panel on the boon screen: the blessings you already have; the one the highlighted card would replace is marked.
+function drawOwnedBoons(ctx, run, slot) {
+  const x = 12, y = 40, w = 264;
+  const list = [...run.boons].sort((a, b) => Object.keys(SLOT_NAMES).indexOf(BOONS[a.key].slot) - Object.keys(SLOT_NAMES).indexOf(BOONS[b.key].slot));
+  const rowH = list.length > 7 ? 24 : 40, h = Math.max(60, 26 + list.length * rowH + 4);
+  pixBox(ctx, x, y, w, Math.min(h, H - 80), '#141824', '#404860', 3);
+  text(ctx, 'YOUR BLESSINGS', x + 10, y + 7, { color: 'gold', font: 'small' });
+  if (!list.length) text(ctx, 'None yet.', x + 10, y + 26, { color: 'gray', font: 'small' });
+  list.forEach((b, i) => {
+    const def = BOONS[b.key], rar = RARITY[b.rarity], ry = y + 24 + i * rowH;
+    if (ry + rowH > H - 80) return;
+    const repl = slot && slot !== 'passive' && def.slot === slot;
+    if (repl) pixBox(ctx, x + 4, ry - 2, w - 8, rowH - 2, '#401818', '#e04040', 2);
+    text(ctx, def.name, x + 10, ry, { font: 'small', color: [rar.color, '#202020'] });
+    const tag = repl ? 'REPLACED' : `${SLOT_NAMES[def.slot]}${b.level > 1 ? ' Lv' + b.level : ''}`;
+    text(ctx, tag, x + w - 10, ry, { align: 'right', font: 'small', color: repl ? 'red' : 'gray' });
+    if (rowH > 30) text(ctx, wrap(def.desc(boonInstance(run, b)), w - 20, 'small')[0] || '', x + 10, ry + 12, { font: 'small', color: 'whiteSoft' });
+  });
 }
 
 function boonCard(run, c) {
@@ -182,7 +204,7 @@ async function offerTMs(scene) {
   const tms = tmChoices(run);
   if (!tms.length) { await applyReward(scene, { kind: 'money' }); return; }
   const cards = tms.map(m => moveCard(m));
-  const i = await choose('Choose a TM', cards, { canSkip: true, footer: 'X: skip' });
+  const i = await choose('Choose a TM', cards, { canSkip: true });
   if (i >= 0) await assignMove(scene, tms[i], `${D.species[run.species].name} can learn ${D.moves[tms[i]].name}!`);
 }
 
@@ -231,7 +253,7 @@ async function offerHeld(scene) {
   const run = G.run;
   const ks = heldChoices(run);
   const cards = ks.map(k => ({ title: HELD[k].name, desc: HELD[k].desc, icon: ICON.item(k), accent: '#c0a040', sub: run.held ? `replaces ${HELD[run.held].name}` : '' }));
-  const i = await choose('Choose an item to hold', cards, { canSkip: true, footer: 'Held items stay with you for the run. X: skip' });
+  const i = await choose('Choose an item to hold', cards, { canSkip: true, footer: 'Held items stay with you for the run.' });
   if (i >= 0) { run.held = ks[i]; refreshPlayer(scene); Sound.playSE('se_m_stat_increase'); }
 }
 
@@ -240,6 +262,7 @@ async function offerHeld(scene) {
 export function refreshPlayer(scene) {
   const run = G.run, w = scene.world, old = w.player;
   if (!old || old.dead) return;
+  scene.run = w.run = run; // Oak's lab makes a fresh run when you switch starters: moves must follow it
   const np = makePlayer(run, old.x, old.y);
   const keep = ['x', 'y', 'facing', 'brain', 'pc', 'cds', 'cdMax', 'status', 'stages', 'stageTimers', 'iframes', 'id', 'action', 'seeded', 'shieldHits', 'kx', 'ky', 'dashing', 'noCollide', 'anim', 'animT', 'protect', 'deflect', 'untargetable', 'burrowed', 'speedMul', 'z', 'stun', 'lockFacing', 'hidden', 'animLock'];
   const saved = {}; for (const k of keep) saved[k] = old[k];
@@ -327,7 +350,7 @@ export async function onCatch(scene, a, ball) {
 }
 
 // ---------------------------------------------------------------- shop / center / deoxys
-function shopStock(run) {
+function shopStock(run, center) {
   const b = run.biome;
   const all = [
     { key: 'POTION', name: 'POTION', price: 30 + b * 15, desc: 'Restore 25% HP.', buy: (s) => healPct(s, 0.25) },
@@ -343,19 +366,21 @@ function shopStock(run) {
     { key: 'SACRED_ASH', name: 'SACRED ASH', price: 260 + b * 40, desc: '+1 Revive this run.', buy: () => { run.revives++; } },
     { key: 'STAR_PIECE', name: 'STAR PIECE', price: 90 + b * 30, desc: '+25 STARDUST for Oak.', buy: () => { G.meta.stardust += 25; G.meta.totalStardust += 25; run.stardustGained += 25; saveMeta(); } },
   ];
-  const always = all.filter(x => ['POTION', 'POKE_BALL'].includes(x.key));
-  const rest = run.rng.sample(all.filter(x => !always.includes(x) && (!x.need || x.need(run))), 5);
+  // the Pokémon Center's clerk sells no healing: Nurse Joy heals you for free
+  const pool = center ? all.filter(x => !['POTION', 'SUPER_POTION'].includes(x.key)) : all;
+  const always = pool.filter(x => ['POTION', 'POKE_BALL'].includes(x.key));
+  const rest = run.rng.sample(pool.filter(x => !always.includes(x) && (!x.need || x.need(run))), 5);
   return [...always, ...rest];
 }
 function healPct(scene, f) { const p = scene.world.player; scene.world.heal(p, Math.round(p.maxHp * f)); G.run.hp = p.hp; Sound.playSE('se_use_item'); }
 
 export async function openShop(scene) {
   const run = G.run;
-  scene.stock ??= shopStock(run);
+  scene.stock ??= shopStock(run, scene.spec?.kind === 'center');
   await say([{ text: 'Hi there! May I help you?', name: 'CLERK' }]);
   while (true) {
     const cards = scene.stock.map(s => ({ title: s.name, sub: s.sold ? 'SOLD' : `¥${s.price}`, subColor: run.money >= s.price ? 'green' : 'red', desc: s.desc, icon: ICON.item(s.key), accent: '#3070c0', disabled: s.sold || run.money < s.price }));
-    const i = await choose(`POKé MART   ¥${run.money}`, cards, { cardH: 40, canSkip: true, footer: 'X: leave' });
+    const i = await choose(`POKé MART   ¥${run.money}`, cards, { cardH: 40, canSkip: true, skipLabel: 'LEAVE (X)' });
     if (i < 0) break;
     const s = scene.stock[i];
     run.money -= s.price; s.sold = true; Sound.playSE('se_shop');
@@ -568,7 +593,7 @@ async function rivalTalk(scene) {
   const max = Math.min(HEAT.length - 1, (G.meta.maxHeatWon ?? -1) + 1);
   const cards = [];
   for (let h = 0; h <= max; h++) cards.push({ title: `HEAT ${h}`, sub: h ? `+${h * 10}% STARDUST` : '', desc: h ? HEAT.slice(1, h + 1).join(' · ') : 'The normal rules.', accent: h ? '#e04020' : '#808080', badge: h <= (G.meta.maxHeatWon ?? -1) ? 'CLEARED' : '', badgeColor: '#30a050' });
-  const i = await choose('Choose your HEAT', cards, { cardH: 44, canSkip: true, footer: 'Each level adds the rules of the ones before it. X: cancel' });
+  const i = await choose('Choose your HEAT', cards, { cardH: 44, canSkip: true, skipLabel: 'CANCEL (X)', footer: 'Each level adds the rules of the ones before it.' });
   if (i < 0) return;
   G.meta.heat = i; saveMeta();
   newRun(G.meta.lastStarter); refreshPlayer(scene); scene.world.player.brain = hubBrain(scene.world.player.brain);
@@ -591,7 +616,7 @@ async function chooseStarter(scene) {
     const sp = D.species[s.species], ok = starterUnlocked(s);
     return { title: sp.name, sub: ok ? sp.types.join('/') : 'LOCKED', subColor: ok ? 'blue' : 'red', desc: ok ? `${s.blurb}  ${D.moves[s.slots.attack].name} / ${D.moves[s.slots.special].name} / ${D.moves[s.slots.cast].name}` : `Defeat ${s.unlock} to unlock.`, portrait: ok ? sp.dex : null, icon: ok ? null : 'gfx/overworld/misc/item_ball.png', accent: ok ? TYPE_COLORS[sp.types[0]] : '#606060', disabled: !ok };
   });
-  const i = await choose('Choose your partner POKéMON', cards, { cardH: 46, canSkip: true, footer: 'X: cancel' });
+  const i = await choose('Choose your partner POKéMON', cards, { cardH: 46, canSkip: true, skipLabel: 'CANCEL (X)' });
   if (i < 0) return;
   const s = STARTERS[i];
   G.meta.lastStarter = s.species; saveMeta();
@@ -608,7 +633,7 @@ async function oakResearch(scene) {
       const rk = rank(r.key), maxed = rk >= r.max, cost = r.cost[rk];
       return { title: `${r.name}  ${'★'.repeat(rk)}${'·'.repeat(r.max - rk)}`, sub: maxed ? 'DONE' : `${cost} dust`, subColor: maxed ? 'gray' : G.meta.stardust >= cost ? 'green' : 'red', desc: `Now: ${rk ? r.desc(rk) : 'nothing'}${maxed ? '' : `   Next: ${r.desc(rk + 1)}`}`, icon: ICON.item(r.icon), accent: '#40a060', disabled: maxed || G.meta.stardust < cost };
     });
-    const i = await choose(`OAK's RESEARCH   STARDUST: ${G.meta.stardust}`, cards, { cardH: 32, canSkip: true, footer: 'X: done' });
+    const i = await choose(`OAK's RESEARCH   STARDUST: ${G.meta.stardust}`, cards, { cardH: 40, canSkip: true, skipLabel: 'DONE (X)' });
     if (i < 0) break;
     const r = RESEARCH[i];
     G.meta.stardust -= r.cost[rank(r.key)];
@@ -627,7 +652,10 @@ async function records(scene) {
     { text: `Runs: ${m.runs}   Escapes: ${m.wins}   Best time: ${m.bestTime ? fmtTime(m.bestTime) : '--'}`, name: 'AIDE' },
     { text: `POKéDEX: seen ${seen}, caught ${caught}. Bosses beaten: ${m.badges.join(', ') || 'none yet'}.`, name: 'AIDE' },
     ...(last ? [{ text: `Last run: ${D.species[last.species]?.name} Lv${last.level}, reached ${BIOMES[last.biome].name} (${last.won ? 'ESCAPED!' : 'fainted'}).`, name: 'AIDE' }] : []),
+    { text: 'Here are the full RECORDS: everyone\'s runs, yours, and the top trainers.', name: 'AIDE' },
   ]);
+  const { RecordsScene } = await import('./records.js'); // BACK returns to the lab
+  setScene(new RecordsScene({ fromHub: true }));
 }
 
 async function tutorial(scene, first) {

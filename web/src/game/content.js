@@ -1,7 +1,7 @@
 // Biomes, starters, held items and shop stock.
 
 // Global difficulty knobs (tuned with tests/sim: a decent player with no research should win ~1 run in 4).
-export const TUNING = { enemyDmg: 2.4, bossDmg: 2.1, bossSecs: 1.75 };
+export const TUNING = { enemyDmg: 2.75, bossDmg: 1.7, bossSecs: 1.75 };
 
 export const BIOMES = [
   {

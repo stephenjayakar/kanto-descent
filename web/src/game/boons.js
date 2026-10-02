@@ -113,7 +113,7 @@ export const BOONS = {
     stat: (p, b) => { p.slamBonus = (p.slamBonus || 0.6) + v(b, 0.4, 0.3); } },
   L_RAIN: { legend: 'LUGIA', slot: 'passive', name: 'Rain Dance', desc: b => `WATER and FLYING damage +${pct(v(b, 0.25, 0.2))}. Foes may drop extra money.`,
     beforeHit: (w, info, b) => { if ((info.p.type === 'WATER' || info.p.type === 'FLYING') && info.src?.team !== 'enemy') info.dmg = Math.round(info.dmg * (1 + v(b, 0.25, 0.2))); },
-    onKill: (w, e, b) => { if (w.rand() < 0.35) w.emit({ type: 'money', amount: 3 + Math.floor(e.level / 3), x: e.x, y: e.y }); } },
+    onKill: (w, e, b) => { if (w.rand() < 0.35) w.emit({ type: 'money', amount: 2 + Math.floor(e.level / 5), x: e.x, y: e.y }); } },
 
   // ---------------- HO-OH
   H_REVIVE: { legend: 'HOOH', slot: 'passive', name: 'Sacred Ash', desc: b => `+1 Revive: when you faint, rise again with ${pct(v(b, 0.3, 0.2))} HP.`,

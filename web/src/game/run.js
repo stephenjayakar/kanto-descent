@@ -2,6 +2,8 @@
 import { D, monStats, expForLevel, movesLearnedAt, levelEvolution, easyEvolution } from './data.js';
 import { RNG, randomSeedString } from '../engine/rng.js';
 import { Cloud } from './cloud.js';
+import { VERSION } from './version.js';
+import { scoreRun } from './score.js';
 import { makeActor } from './combat.js';
 import { BOONS, LEGENDS, CHAOS, RARITY, legendBoonPool, rollRarity, boonInstance } from './boons.js';
 import { BIOMES, STARTERS, HELD, RESEARCH, SPECIAL_EVOS } from './content.js';
@@ -72,8 +74,14 @@ export function runLabel(run) {
   const B = BIOMES[run.biome];
   return `${D.species[run.species]?.name || run.species} Lv${run.level} - ${B ? B.name : ''} ${run.roomInBiome + 1}/${(B?.rooms || 0) + 1}`;
 }
-// finished runs go to the cloud history too
-export function recordRun(entry) { Cloud.addRun(entry); }
+// finished runs go to the cloud history too (tagged with the game version, partner and score; the
+// entry is the same object as G.meta.history[0], so the local history gets these fields as well)
+export function recordRun(entry) {
+  entry.version = VERSION;
+  if (entry.partner === undefined) entry.partner = G.run?.partner?.species || null;
+  entry.score = scoreRun(entry);
+  Cloud.addRun(entry);
+}
 
 // Signing in: take whichever progression is further along, and the newer run in progress.
 export async function syncFromCloud() {
@@ -321,7 +329,13 @@ export function boonChoices(run, legend) {
   const rng = run.rng;
   const picks = rng.sample(pool, 3);
   if (duos.length && rng.chance(0.5)) picks[picks.length > 2 ? 2 : picks.length] = rng.pick(duos);
-  return picks.filter(Boolean).map(b => ({ key: b.key, rarity: b.duo ? 3 : rollRarity(rng, rank('luck') * 0.06 + (run.biome * 0.03)), level: 1 }));
+  return picks.filter(Boolean).map(b => {
+    let rarity = b.duo ? 3 : rollRarity(rng, rank('luck') * 0.06 + (run.biome * 0.03));
+    // replacing another legend's blessing in the same slot: always at least one rarity higher
+    const old = b.slot !== 'passive' && run.boons.find(x => BOONS[x.key]?.slot === b.slot);
+    if (old) rarity = Math.min(3, Math.max(rarity, old.rarity + 1));
+    return { key: b.key, rarity, level: 1 };
+  });
 }
 export function addBoon(run, choice) {
   const def = BOONS[choice.key];

@@ -62,10 +62,12 @@ export function wildBrain(world, a, dt) {
     ai.move = scored[0]?.[0] || null;
   }
   const p = ai.move ? profile(ai.move) : null;
-  const range = p ? Math.max(18, p.range * (p.melee ? 0.9 : 0.75)) : 60;
+  // ranged moves are used from their full reach (enemy shots live longer to match); lunges start further out
+  const lunge = p && (p.kind === 'lunge' || p.kind === 'charge');
+  const range = !p ? 60 : lunge ? Math.max(18, ((p.dist || 30) + p.range) * 0.8) : Math.max(18, p.range * (p.melee ? 0.9 : 1.05));
   const sp = moveSpeed(a) * (a.elite ? 1.1 : 1);
   const ranged = p && !p.melee && p.kind !== 'nova' && p.kind !== 'debuff' && !(p.kind === 'cloud' && p.at === 'self');
-  const wantD = ranged ? Math.min(range * 0.8, 110) : range * 0.6;
+  const wantD = ranged ? Math.min(range * 0.8, 150) : range * 0.6;
   // attack if we can
   const busy = attackersBusy(world);
   const maxBusy = a.maxBusy ?? world.maxAttackers ?? 2;

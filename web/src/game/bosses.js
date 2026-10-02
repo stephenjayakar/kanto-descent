@@ -57,36 +57,43 @@ const PATTERNS = {
     { w: 2, cd: 1.4, run: (w, a, t) => w.useMove(a, P('TACKLE', { kind: 'charge', dist: 220, dur: 0.7, range: 22, windup: 0.8 }), { target: t, aim: aimAt(a, t) }) },
     { w: 1.5, cd: 1.0, run: (w, a, t) => w.useMove(a, P('ROCK_THROW', { count: 3, spread: 0.5, windup: 0.6 }), { target: t, aim: aimAt(a, t) }) },
     { w: 1.5, phase: 1, cd: 1.2, run: (w, a, t) => w.useMove(a, P('DIG', { kind: 'leap', radius: 46, dur: 0.9, windup: 0.6, fx: 'quake', onLand: ringOfRocks }), { target: t, aim: aimAt(a, t) }) },
+    { w: 2, cd: 1.3, run: (w, a, t) => storm(w, a, t, 'ROCK_SLIDE', { n: 10, r: 20, text: 'ROCK SLIDE', color: '#b8a038' }) },
   ],
   GEODUDE: null,
   STARMIE: [
-    { w: 3, cd: 0.9, run: (w, a, t) => w.useMove(a, P('SWIFT', { count: 5, spread: 0.9, speed: 150, homing: 2.5, windup: 0.5 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 3, cd: 0.9, run: (w, a, t) => w.useMove(a, P('SWIFT', { count: 5, spread: 0.9, speed: 150, homing: 2.5, life: 2.4, windup: 0.5 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 2, cd: 1.2, run: (w, a, t) => storm(w, a, t, 'WATER_GUN', { n: 12, r: 22, every: 0.12, text: 'RAIN DANCE', color: '#6890f0', fx: 'water' }) },
+    { w: 1.5, cd: 1.3, run: (w, a, t) => w.useMove(a, P('HYDRO_PUMP', { kind: 'sweep', sweep: 0.9, len: 640, width: 14, dur: 1.1, windup: 0.8, dir: w.rand() < 0.5 ? 1 : -1 }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 1.2, run: (w, a, t) => w.useMove(a, P('WATER_PULSE', { kind: 'nova', radius: 60, wave: true, windup: 0.8, fx: 'water', status: { kind: 'confuse', chance: 0.3 } }), { target: t, aim: aimAt(a, t) }) },
     { w: 2.5, cd: 0.6, run: (w, a, t) => ricochet(w, a, t, 2) },
     { w: 1, phase: 1, cd: 0.8, once: 0.45, run: (w, a) => w.useMove(a, { ...P('RECOVER'), kind: 'channel', dur: 1.6, heal: 0.12, breakFrac: 0.05, windup: 0.2, breakText: 'RECOVER was interrupted!' }, { aim: a.facing }) },
-    { w: 1.5, phase: 1, cd: 1.0, run: (w, a, t) => w.useMove(a, P('BUBBLE_BEAM', { kind: 'radial', count: 10, speed: 110, size: 5, life: 1.6, windup: 0.6 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 1.5, cd: 1.0, run: (w, a, t) => w.useMove(a, P('BUBBLE_BEAM', { kind: 'radial', count: a.phase >= 1 ? 14 : 10, speed: 110, size: 5, life: 3.2, windup: 0.6 }), { target: t, aim: aimAt(a, t) }) },
   ],
   MAROWAK: [
     { w: 3, cd: 1.0, run: (w, a, t) => w.useMove(a, P('BONEMERANG', { count: a.phase >= 1 ? 3 : 1, spread: 0.5, windup: 0.5, speed: 190, life: 1.1 }), { target: t, aim: aimAt(a, t) }) },
     { w: 2.5, cd: 1.0, run: (w, a, t) => w.useMove(a, P('BONE_CLUB', { kind: 'leap', radius: 38, dur: 0.6, windup: 0.55, fx: 'quake', onLand: (w2, b) => shockRing(w2, b, 8, 'bone') }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 0.8, run: (w, a, t) => w.useMove(a, P('BONE_RUSH', { kind: 'charge', dist: 150, dur: 0.55, range: 20, windup: 0.55 }), { target: t, aim: aimAt(a, t) }) },
     { w: 1.5, cd: 0.6, run: (w, a, t) => phaseBehind(w, a, t) },
+    { w: 1.5, cd: 1.2, run: (w, a, t) => storm(w, a, t, 'SHADOW_BALL', { n: 9, r: 20, text: 'CURSE', color: '#705898' }) },
   ],
   RHYHORN: [
     { w: 3, cd: 1.0, run: (w, a, t) => w.useMove(a, P('HORN_ATTACK', { kind: 'charge', dist: 200, dur: 0.6, range: 22, windup: 0.7 }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 1.0, run: (w, a, t) => w.useMove(a, P('STOMP', { kind: 'nova', radius: 50, windup: 0.6, fx: 'quake', grounded: true }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 1.2, run: (w, a, t) => w.useMove(a, P('ROCK_TOMB', { count: 4, scatter: 36, delay: 0.7 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 1.2, cd: 1.3, run: (w, a, t) => storm(w, a, t, 'ROCK_SLIDE', { n: 8, r: 20, text: 'ROCK SLIDE', color: '#b8a038' }) },
   ],
   KANGASKHAN: [
     { w: 3, cd: 0.8, run: (w, a, t) => w.useMove(a, P('COMET_PUNCH', { hits: 5, range: 30, windup: 0.5 }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 1.0, run: (w, a, t) => w.useMove(a, P('MEGA_PUNCH', { kind: 'lunge', dist: 70, range: 22, windup: 0.6, knock: 240 }), { target: t, aim: aimAt(a, t) }) },
     { w: 1.5, cd: 1.4, run: (w, a, t) => w.useMove(a, P('EARTHQUAKE', { radius: 90, windup: 0.9 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 1.2, cd: 1.3, run: (w, a, t) => storm(w, a, t, 'STOMP', { n: 8, r: 24, text: 'STOMP STOMP', color: '#e0c068', fx: 'quake' }) },
   ],
   NIDOQUEEN: [
     { w: 2.5, cd: 1.3, run: (w, a, t) => w.useMove(a, P('EARTHQUAKE', { radius: 100, windup: 0.85 }), { target: t, aim: aimAt(a, t) }) },
     { w: 2.5, cd: 0.9, run: (w, a, t) => w.useMove(a, P('SLUDGE_BOMB', { kind: 'radial', count: 9, speed: 120, size: 7, life: 1.6, explode: 0, puddle: 'poison', windup: 0.6 }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 1.0, run: (w, a, t) => w.useMove(a, P('BODY_SLAM', { kind: 'charge', dist: 180, dur: 0.55, range: 24, windup: 0.6, status: { kind: 'para', chance: 0.3 } }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 0.9, run: (w, a, t) => w.useMove(a, P('POISON_STING', { count: 5, spread: 0.7, speed: 220, windup: 0.45 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 1.5, cd: 1.3, run: (w, a, t) => storm(w, a, t, 'SLUDGE_BOMB', { n: 10, r: 22, text: 'TOXIC RAIN', color: '#a040a0' }) },
   ],
   MEWTWO: [
     { w: 3, cd: 0.9, run: (w, a, t) => psychicTriple(w, a, t) },
@@ -162,6 +169,37 @@ function psystrikeStorm(w, a, t) {
     w.strikes.push({ owner: a, act: { p, slot: 'enemy', hits: new Set() }, x: pt.x, y: pt.y, r: 22, t: 0, delay: 0.85, p, slot: 'enemy', team: 'enemy', scale: 0.6 });
   });
   a.action = { p: { kind: 'wait' }, stage: 'active', t: 0, dur: 1.2, hits: new Set(), enemy: true };
+}
+
+// Arena-wide rain of marked blasts: some under you, the rest anywhere in the arena. Terrain doesn't stop it,
+// so every boss always has something that reaches you.
+function storm(w, a, t, base, { n = 10, every = 0.14, r = 20, delay = 0.9, aimed = 3, scale = 0.6, text, color = '#ffffff', fx } = {}) {
+  const p = P(base, { kind: 'strike', radius: r, delay, ...(fx ? { fx } : {}) });
+  for (let i = 0; i < n; i++) w.later(i * every, () => {
+    if (a.dead || t.dead) return;
+    const pt = i % aimed === 0 ? { x: t.x, y: t.y } : w.randomOpenPoint(null);
+    w.strikes.push({ owner: a, act: { p, slot: 'enemy', hits: new Set() }, x: pt.x, y: pt.y, r, t: 0, delay, p, slot: 'enemy', team: 'enemy', scale });
+  });
+  if (text) w.text(a, text, color);
+  setAnim(a, 'Charge', true);
+  Sound.playSE(p.sfx || 'se_m_rock_throw');
+  a.action = { p: { kind: 'wait' }, stage: 'active', t: 0, dur: 0.5 + n * every * 0.5, hits: new Set(), enemy: true };
+}
+
+// The boss lost sight of you behind its own terrain: it burrows / warps to a spot that can see you.
+function relocate(w, a, t) {
+  for (let i = 0; i < 40; i++) {
+    const ang = w.rand() * Math.PI * 2, d = 60 + w.rand() * 50;
+    const x = t.x + Math.cos(ang) * d, y = t.y + Math.sin(ang) * d;
+    if (!w.reachable(x, y) || w.collides(x, y, a.r, 'walk') || !w.lineClear(x, y - 4, t.x, t.y - 4, 'shot')) continue;
+    w.vfx.push({ kind: 'dust', x: a.x, y: a.y, t: 0, life: 0.4 });
+    a.x = x; a.y = y; a.kx = a.ky = 0;
+    w.vfx.push({ kind: 'dust', x, y, t: 0, life: 0.4 });
+    Sound.playSE(a.hover || a.types.includes('PSYCHIC') ? 'se_m_teleport' : 'se_m_dig');
+    a.bd.cool = Math.max(a.bd.cool, 0.6); // a beat to react before it attacks from the new spot
+    return true;
+  }
+  return false;
 }
 
 function barrier(w, a) {
@@ -256,6 +294,11 @@ export function bossBrain(world, a, dt) {
     bd.cool = 0.8;
   }
   if (!a.patterns) return wildBrain(world, a, dt);
+  if (!a.ghost && !a.action) {
+    const sees = world.lineClear(a.x, a.y - 4, t.x, t.y - 4, 'shot');
+    bd.blind = sees ? 0 : (bd.blind || 0) + dt;
+    if (bd.blind > 2.2) { bd.blind = 0; if (relocate(world, a, t)) return; }
+  }
   const dx = t.x - a.x, dy = t.y - a.y, d = Math.hypot(dx, dy) || 1;
   const partnerBusy = world.actors.some(o => o !== a && o.boss && !o.dead && o.action && o.action.stage === 'windup');
   if (bd.cool <= 0 && !partnerBusy) {

@@ -18,7 +18,8 @@ export const Cloud = {
   siteUrl: CONVEX_URL ? CONVEX_URL.replace(/\/$/, '').replace(/\.convex\.cloud$/, '.convex.site') : null,
   packs: !!PACKS,   // hosted build: the assets come from Convex after sign-in
   auth: null,       // { token, refreshToken }
-  me: null,         // { email, name, allowed, canInvite }
+  me: null,         // { email, name (public trainer name), allowed, canInvite, admin }
+  lastResult: null, // the last finished run: { status: local|uploading|saved|error, score, message }
   status: 'idle',   // idle | syncing | ok | offline
   error: null,
   get email() { return this.me?.allowed ? this.me.email : null; },
@@ -143,11 +144,26 @@ Object.assign(Cloud, {
     catch (e) { this.status = 'offline'; this.error = e.message; }
   },
   async addRun(entry) {
-    if (!this.email) return;
-    try { await call('mutation', 'game:addRun', { entry }); }
-    catch (e) { this.status = 'offline'; this.error = e.message; }
+    if (!this.email) { this.lastResult = { status: 'local', score: entry.score }; return; }
+    this.lastResult = { status: 'uploading', score: entry.score };
+    try { const r = await call('mutation', 'game:addRun', { entry }); this.lastResult = { status: 'saved', score: r?.score ?? entry.score }; }
+    catch (e) { this.status = 'offline'; this.error = e.message; this.lastResult = { status: 'error', message: e.message, score: entry.score }; }
   },
 });
+
+// ---- records screen (allowlisted accounts only; names are public, emails never leave the server)
+const opt = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ''));
+export async function rename(name) {
+  const r = await call('mutation', 'game:rename', { name });
+  if (Cloud.me) Cloud.me.name = r.name;
+  return r;
+}
+// rows: [{name, me, score, result: 'win'|'lose', version, heat, starter, species, partner, level, biome, room, time, kills, at}]
+export const leaderboard = ({ version, sort, starter, limit } = {}) => call('query', 'game:leaderboard', opt({ version, sort, starter, limit }));
+// {player: {name, runs, wins, bestScore}, recent: rows}
+export const myRuns = (version, limit) => call('query', 'game:myRuns', opt({ version, limit }));
+// [{name, me, runs, wins, bestScore}]
+export const topTrainers = (version, limit) => call('query', 'game:topTrainers', opt({ version, limit }));
 
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('pagehide', () => { if (pending) Cloud.flushMeta(true); });

@@ -139,7 +139,8 @@ export class World {
     return true;
   }
   // first wall along a ray (for beams)
-  rayLength(x, y, ang, len) {
+  rayLength(x, y, ang, len, owner) {
+    if (owner?.boss) return len; // boss beams pass over their own arena's terrain
     const c = Math.cos(ang), s = Math.sin(ang);
     for (let d = 4; d < len; d += 4) if (this.blocked(x + c * d, y + s * d, 'shot')) return d;
     return len;
@@ -424,7 +425,7 @@ export class World {
       case 'seed': this.spawnProjectile(a, act, act.aim, { seed: true }); act.dur = 0.08; break;
       case 'stream': act.dur = p.dur || 0.6; act.nextShot = 0; act.canMove = !act.enemy; a.speedMul = act.enemy ? 0 : 0.45; break;
       case 'beam': {
-        const len = this.rayLength(a.x, a.y - 6, act.aim, p.len || 150);
+        const len = this.rayLength(a.x, a.y - 6, act.aim, p.len || 150, a);
         act.dur = p.dur || 0.35; act.len = len;
         this.vfx.push({ kind: 'beam', x: a.x + c * 6, y: a.y - 6 + s * 6, ang: act.aim, len, width: p.width || 10, t: 0, life: act.dur + 0.1, fx: p.fx, type: p.type });
         this.shake = Math.max(this.shake, (p.width || 10) / 4);
@@ -603,7 +604,7 @@ export class World {
         const k = Math.min(1, act.t / act.dur);
         const ang = act.aim + (k - 0.5) * 2 * (p.sweep || 1) * (p.dir || 1);
         act.beamV.ang = ang; act.beamV.x = a.x; act.beamV.y = a.y - 6;
-        act.beamV.len = this.rayLength(a.x, a.y - 6, ang, act.len);
+        act.beamV.len = this.rayLength(a.x, a.y - 6, ang, act.len, a);
         a.facing = ang;
         if (!act.beamHit || act.t - act.beamHit > 0.2) { act.beamHit = act.t; act.hits = new Set(); }
         this.hitLine(a, act, a.x, a.y - 6, ang, act.beamV.len, (p.width || 12) / 2, 0.5);
@@ -680,7 +681,7 @@ export class World {
       const d = Math.hypot(b.x - a.x, b.y - a.y); if (d > p.range) continue;
       const da = Math.abs(angDiff(act.aim, Math.atan2(b.y - a.y, b.x - a.x)));
       const score = d * (1 + da * 1.5);
-      if (da < (a.team === 'enemy' ? 0.35 : 1.3) && score < best && this.lineClear(a.x, a.y, b.x, b.y)) { best = score; target = b; }
+      if (da < (a.team === 'enemy' ? 0.35 : 1.3) && score < best && (a.boss || this.lineClear(a.x, a.y, b.x, b.y))) { best = score; target = b; }
     }
     if (!target) { // fizzle bolt in the aim direction
       const len = this.rayLength(a.x, a.y - 8, act.aim, p.range * 0.7);
@@ -705,7 +706,9 @@ export class World {
     const sp = (p.speed || 200) * (a.team === 'enemy' ? (a.boss ? 0.85 : 0.72) * ((this.run?.heat || 0) >= 5 ? 1.15 : 1) : 1); // enemy shots are slower, so they can be read and side-stepped
     const pr = {
       owner: a, team: a.team, act, p, slot: act.slot, x: a.x + Math.cos(ang) * (a.r + 2), y: a.y - 6 + Math.sin(ang) * (a.r + 2), z: 0,
-      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, ang, r: (p.size || 5) * (o.small ? 0.8 : 1), life: p.life || 0.8, t: 0,
+      // enemy shots are slower but live longer, so they reach further than the same move in your hands
+      vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, ang, r: (p.size || 5) * (o.small ? 0.8 : 1), life: (p.life || 0.8) * (a.team === 'enemy' ? (a.boss ? 1.6 : 1.5) : 1), t: 0,
+      ghost: !!a.boss, // boss shots fly over walls and water
       pierce: p.pierce || 0, hits: new Set(), homing: p.homing || 0, sprite: p.sprite, spin: p.spin, wobble: p.wobble,
       boomerang: p.boomerang, explode: p.explode, lob: p.lob, seed: o.seed, dmgScale: o.dmgScale || 1, type: p.type,
       target: act.target, puddle: p.puddle,
@@ -753,7 +756,7 @@ export class World {
       pr.x += pr.vx * dt + (-pr.vy / (Math.hypot(pr.vx, pr.vy) || 1)) * wob * dt;
       pr.y += pr.vy * dt + (pr.vx / (Math.hypot(pr.vx, pr.vy) || 1)) * wob * dt;
       if (pr.t > pr.life * (pr.boomerang ? 1.6 : 1)) { if (pr.explode) this.explodeProjectile(pr); pr.dead = true; continue; }
-      if (!pr.boomerang && this.blocked(pr.x, pr.y + 6, 'shot')) { if (pr.explode) this.explodeProjectile(pr); else this.puff(pr); pr.dead = true; continue; }
+      if (!pr.boomerang && !pr.ghost && this.blocked(pr.x, pr.y + 6, 'shot')) { if (pr.explode) this.explodeProjectile(pr); else this.puff(pr); pr.dead = true; continue; }
       for (const b of this.foesOf(pr.owner)) {
         if (pr.hits.has(b)) continue;
         if (b.burrowed) continue;
@@ -849,7 +852,7 @@ export class World {
     switch (p.kind) {
       case 'swipe': case 'multi': return { shape: 'arc', x: a.x, y: a.y, ang, r: p.range * (a.scale || 1) + 4, arc: p.arc || 1.6 };
       case 'lunge': case 'charge': return { shape: 'line', x: a.x, y: a.y, ang, len: (p.dist || 30) + (p.range || 14), width: a.r * 2 };
-      case 'beam': return { shape: 'line', x: a.x, y: a.y - 6, ang, len: this.rayLength(a.x, a.y - 6, ang, p.len || 150), width: p.width || 10 };
+      case 'beam': return { shape: 'line', x: a.x, y: a.y - 6, ang, len: this.rayLength(a.x, a.y - 6, ang, p.len || 150, a), width: p.width || 10 };
       case 'proj': case 'stream': case 'seed': return { shape: 'line', x: a.x, y: a.y, ang, len: Math.min(140, p.lob ? 0 : (p.speed || 200) * (p.life || 0.8) * 0.5), width: 3, thin: true, spread: p.spread && p.count > 1 ? p.spread : 0 };
       case 'nova': return { shape: 'circle', x: a.x, y: a.y, r: p.radius || 40 };
       case 'cloud': { const c = Math.cos(ang), s = Math.sin(ang); const pt = p.at === 'front' ? { x: a.x + c * 34, y: a.y + s * 34 } : p.at === 'target' ? (act.targetPt || a) : a; return { shape: 'circle', x: pt.x, y: pt.y, r: p.radius || 24 }; }
@@ -898,7 +901,7 @@ export class World {
     if (info.dmg > 0) {
       this.applyDamage(src, b, { dmg: info.dmg, crit: info.crit, eff: info.eff, slot: info.slot, ang: info.ang, knock: o.noKnock ? 0 : info.knock, type: p.type });
       if (p.drain && src && !src.dead) this.heal(src, Math.max(1, Math.round(info.dmg * p.drain * (src.team === 'player' ? 0.35 : 1))));
-      if (p.money && src === this.player) this.emit({ type: 'money', amount: 2 + Math.floor(src.level / 4), x: b.x, y: b.y });
+      if (p.money && src === this.player) this.emit({ type: 'money', amount: 1 + Math.floor(src.level / 8), x: b.x, y: b.y });
     }
     if (p.status && !b.dead && this.rand() < (p.status.chance ?? 1) * (src?.team === 'player' && p.status.kind !== 'trap' ? 0.8 : 1)) this.addStatus(b, p.status.kind, src);
     this.hooks.onHit?.(this, info);

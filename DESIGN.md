@@ -126,18 +126,20 @@ Environment variables:
 | `R='{"revive":1}'` | Sets individual research ranks |
 | `START='dev=boss&biome=1&level=24'` | Starts every run at a specific room |
 
-Current targets and measurements (skill 0.7 is a "decent player"; about 40 to 100 runs each):
+Current targets and measurements (v0.0.2, `TUNING = { enemyDmg: 2.75, bossDmg: 1.7, bossSecs: 1.75 }`; skill 0.7 is a
+"decent player"; 50 to 60 runs each). v0.0.1 felt too easy to the owner, so v0.0.2 roughly halves the fresh-save numbers:
 
-| Setup | Win rate |
-|---|---|
-| Fresh save | ~29% (no dodging 12%, perfect dodging 33%) |
-| Half of Oak's research | ~74% |
-| Full research | ~79% |
-| Full research, HEAT 5 | ~40% |
-| Full research, HEAT 10 | ~14% |
+| Setup | v0.0.2 | v0.0.1 |
+|---|---|---|
+| Fresh save | ~8% (perfect dodging 15%) | ~29% (perfect 33%) |
+| Half of Oak's research | ~58% | ~74% |
+| Full research | ~65% | ~79% |
+| Full research, HEAT 5 | ~30% | ~40% |
+| Full research, HEAT 10 | ~8% | ~14% |
 
-* **Boss pass rates:** Brock, Misty, Marowak and Giovanni are each passed about 85–95% of the time; Mewtwo about 50%. Combat rooms take about 18s.
-* **Starters:** the spread is now 39–57% when the global tuning is easier (the gap used to be 4% to 71%).
+* **Boss pass rates (fresh):** Brock ~90%, Misty ~87%, Marowak and Giovanni ~90%, Mewtwo ~40%. Most fresh runs die in
+  biome 2 (Pokémon Tower). Combat rooms take about 18s.
+* **Starters:** with full research, 3/9 to 7/8 wins each (Squirtle and Bulbasaur lowest).
 
 Rules that came out of two adversarial review rounds and the sim:
 * **Telegraphs are readable.** Enemy ground blasts give at least 0.8s of warning (bosses 0.65s), enemy shots fly at 72% speed,
@@ -152,8 +154,25 @@ Rules that came out of two adversarial review rounds and the sim:
 * **Bosses resist control:** no flinch, short sleep/disable with a 4s immunity window, and paralysis only slows them.
   Damage-over-time against bosses is weak. Stat stages are capped at ±2 and last 8s.
 * **On-hit boon procs** trigger at most once per target every 0.25s.
+* **Bosses always reach you (v0.0.2):** boss shots and beams pass over walls and water. A boss that can't see you for 2.2s
+  burrows/warps to a spot 60–110px from you that can, then waits 0.6s before attacking. Every boss has an arena-wide `storm`
+  (marked blasts, every third one under you). Misty's Swift, Bubble Beam and a 640px Hydro Pump sweep cover the whole gym.
+* **Enemy reach (v0.0.2):** enemy shots fly at 72% speed but live 1.5× longer (bosses 1.6×), so they reach slightly further than
+  yours. Ranged foes fire from their full range. Lunges and charges start from 80% of their full travel distance.
+* **Boons:** a blessing that replaces another legend's blessing in the same slot is offered at least one rarity higher (max
+  MASTER). Every boon offer can be skipped, and the screen lists the blessings you already have.
+* **Money is scarce (v0.0.2):** kills give ¥(1 + level/4), trainer prizes are class money ×2 + 10, Nuggets ¥70 + 30/biome. The
+  pre-boss Pokémon Center's clerk sells no Potions (Nurse Joy heals there); the mid-area Poké Mart still does.
 * **HEAT** (pick it from the rival in the lab after your first escape): 10 cumulative rules, each adding foe damage, with
   +10% STARDUST per level.
+
+## Versions, records and title
+* `web/src/game/version.js` holds `VERSION` and `PATCH_NOTES` (newest first). Bump both for every playtest build; the title
+  opens new notes once per player (`G.meta.seenVersion`). Finished runs are tagged with the version and scored by
+  `web/src/game/score.js` (the server recomputes the score in `game:addRun`).
+* The title screen, records screen (`scenes/records.js`) and modals (`scenes/modal.js`) are ported from Kanto Spire. Records
+  shows leaderboards by trainer name (`players` table, `game:rename`), never emails. After a prod deploy that changes run
+  fields, run `npx convex run game:backfillRuns --prod`.
 
 ## Saves, accounts and hosting
 * **Autosave:** the run is snapshotted at the start of every room, before the room rolls its enemies. Pause → **Save & quit to title**, or

@@ -208,7 +208,7 @@ export class RoomScene {
     this.cleared = true;
     const run = this.run, w = this.world;
     if (!quiet) {
-      if (this.trainer) { Sound.playBGM('mus_victory_trainer'); const prize = Math.round(D.trainerClasses?.[this.trainer.class]?.money || 10) * 4 + 20; run.money += Math.round(prize * (w.player.moneyMul || 1)); this.banners.push(new Banner(`Defeated ${this.trainer.className} ${this.trainer.name}!`, `Got ¥${Math.round(prize * (w.player.moneyMul || 1))} for winning!`, { life: 2.2 })); }
+      if (this.trainer) { Sound.playBGM('mus_victory_trainer'); const prize = Math.round(D.trainerClasses?.[this.trainer.class]?.money || 10) * 2 + 10; run.money += Math.round(prize * (w.player.moneyMul || 1)); this.banners.push(new Banner(`Defeated ${this.trainer.className} ${this.trainer.name}!`, `Got ¥${Math.round(prize * (w.player.moneyMul || 1))} for winning!`, { life: 2.2 })); }
       else Sound.playSE('se_success');
       w.hooks.onRoomClear?.(w);
       for (const c of run.chaos) if (!c.active) { c.rooms--; if (c.rooms <= 0) { c.active = true; this.banners.push(new Banner('DEOXYS\'s curse lifts!', c.blessing.name, { color: '#d050a0' })); } }
@@ -289,7 +289,7 @@ export class RoomScene {
         if (a.team === 'enemy' && !a.noExp) {
           const ev = gainExp(run, expFor(run, a, a.trainerMon));
           for (const l of ev) { w.text(w.player, `Lv ${l.level}!`, '#80ffff'); Sound.playSE('se_exp_max'); w.player.level = run.level; R.refreshPlayer(this); }
-          const money = Math.round((2 + a.level * 0.6) * (w.player.moneyMul || 1) * (a.trainerMon ? 0.5 : 1));
+          const money = Math.round((1 + a.level * 0.25) * (w.player.moneyMul || 1) * (a.trainerMon ? 0.5 : 1));
           if (!a.boss) { run.money += money; w.texts.push({ str: `¥${money}`, x: a.x, y: a.y - 10, t: 0, life: 0.9, color: 'gold' }); }
         }
         break;

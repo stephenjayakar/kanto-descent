@@ -170,6 +170,7 @@ export function drawActor(ctx, a, w) {
   if (a.ghost && w.blocked(a.x, a.y, 'walk')) alpha *= 0.45;
   if (a.ghostly) alpha *= 0.55 + Math.sin(w.time * 4) * 0.15;
   if (a.team === 'player' && a.iframes > 0 && !a.dashing && Math.floor(w.time * 20) % 2 === 0) alpha *= 0.5;
+  if (a.team === 'player' && a.dashing) alpha *= 0.55; // dashing = invulnerable (about 0.2s): show it
   if (a.hidden > 0 && a.team === 'player') alpha *= 0.6;
   let tint = null, tintA = 0;
   if (a.flash > 0) { tint = '#ffffff'; tintA = 0.85; }

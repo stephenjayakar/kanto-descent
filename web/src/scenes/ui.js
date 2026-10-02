@@ -82,40 +82,66 @@ export function say(lines, opts = {}) { return new Promise(res => pushOverlay(ne
 
 // ---- Hades-style choice cards. cards: [{title, sub, desc, icon, color, accent, badge, portrait}]
 export class Choice {
-  constructor(title, cards, opts = {}) { this.title = title; this.cards = cards; this.opts = opts; this.sel = 0; this.t = 0; }
+  constructor(title, cards, opts = {}) { this.title = title; this.cards = cards; this.opts = opts; this.sel = 0; this.t = 0; this.scroll = 0; }
   enter() { Input.clear(); Sound.playSE('se_win_open'); }
   update(dt) {
     Input.poll(); this.t += dt;
     const n = this.cards.length;
-    if (Input.justPressed('up')) { this.sel = (this.sel + n - 1) % n; Sound.playSE('se_select'); }
-    if (Input.justPressed('down')) { this.sel = (this.sel + 1) % n; Sound.playSE('se_select'); }
+    let moved = false;
+    if (Input.justPressed('up')) { this.sel = (this.sel + n - 1) % n; Sound.playSE('se_select'); moved = true; }
+    if (Input.justPressed('down')) { this.sel = (this.sel + 1) % n; Sound.playSE('se_select'); moved = true; }
+    const V = this.view();
+    if (V.max > 0) {
+      if (Engine.mouse.wheel) this.scroll += Engine.mouse.wheel * 40;
+      if (moved) { // keep the selected card on screen
+        const top = this.sel * (V.ch + V.gap), bot = top + V.ch;
+        if (top < this.scroll) this.scroll = top;
+        if (bot > this.scroll + V.h) this.scroll = bot - V.h;
+      }
+      this.scroll = Math.max(0, Math.min(V.max, this.scroll));
+    }
     const L = this.layout();
-    L.forEach((r, i) => { if (inRect(r.x, r.y, r.w, r.h) && (Engine.mouse.x !== this.mx || Engine.mouse.y !== this.my)) this.sel = i; });
+    const vis = r => r.y + r.h > V.y0 && r.y < V.y0 + V.h;
+    L.forEach((r, i) => { if (vis(r) && inRect(r.x, r.y, r.w, r.h) && (Engine.mouse.x !== this.mx || Engine.mouse.y !== this.my)) this.sel = i; });
     this.mx = Engine.mouse.x; this.my = Engine.mouse.y;
     let pick = -1;
+    const skip = this.opts.canSkip && this.skipRect();
     if (Input.justPressed('confirm') && this.t > 0.4) pick = this.sel;
-    if (Engine.mouse.clicked && this.t > 0.4) L.forEach((r, i) => { if (inRect(r.x, r.y, r.w, r.h)) pick = i; });
+    if (Engine.mouse.clicked && this.t > 0.4) L.forEach((r, i) => { if (vis(r) && inRect(r.x, r.y, r.w, r.h)) pick = i; });
     if (pick >= 0 && !this.cards[pick].disabled) {
       Sound.playSE('se_select');
       popOverlay(this); this.opts.onPick?.(pick, this.cards[pick]);
     } else if (pick >= 0) Sound.playSE('se_failure');
-    if (this.opts.canSkip && Input.justPressed('back')) { popOverlay(this); this.opts.onPick?.(-1, null); }
+    else if (skip && (Input.justPressed('back') || (Engine.mouse.clicked && this.t > 0.4 && inRect(skip.x, skip.y, skip.w, skip.h)))) { Sound.playSE('se_select'); popOverlay(this); this.opts.onPick?.(-1, null); }
   }
-  layout() {
-    const n = this.cards.length, cw = 460, ch = this.opts.cardH || 62, gap = 8;
+  // the scrolling window the cards live in (scroll only when they don't fit)
+  view() {
+    const n = this.cards.length, ch = this.opts.cardH || 62, gap = 8;
     const total = n * ch + (n - 1) * gap;
     const y0 = Math.max(this.opts.top ?? 70, (H - total) / 2 + 14);
-    return this.cards.map((c, i) => ({ x: (W - cw) / 2, y: y0 + i * (ch + gap), w: cw, h: ch }));
+    const h = Math.min(total, H - 40 - y0);
+    return { y0, h, ch, gap, total, max: Math.max(0, total - h) };
   }
+  layout() {
+    const V = this.view(), cw = 460;
+    const x = this.opts.side ? W - cw - 16 : (W - cw) / 2;
+    return this.cards.map((c, i) => ({ x, y: V.y0 + i * (V.ch + V.gap) - this.scroll, w: cw, h: V.ch }));
+  }
+  skipRect() { const label = this.opts.skipLabel || 'SKIP (X)', w = measure(label, 'small') + 16; return { x: W - w - 12, y: H - 30, w, h: 18, label }; }
   draw(ctx) {
     const k = Math.min(1, this.t * 5);
     ctx.fillStyle = `rgba(8,10,20,${0.62 * k})`; ctx.fillRect(0, 0, W, H);
-    const L = this.layout();
+    const V = this.view(), L = this.layout();
     this.opts.drawTop?.(ctx);
-    if (this.opts.header) this.opts.header(ctx, L[0].y - 8);
-    else text(ctx, this.title, W / 2, L[0].y - 34, { align: 'center', color: 'white', scale: 2 });
+    this.opts.side?.(ctx, this);
+    const cx = L[0].x + L[0].w / 2;
+    if (this.opts.header) this.opts.header(ctx, V.y0 - 8, cx);
+    else text(ctx, this.title, cx, V.y0 - 34, { align: 'center', color: 'white', scale: 2 });
+    ctx.save();
+    if (V.max > 0) { ctx.beginPath(); ctx.rect(0, V.y0 - 2, W, V.h + 4); ctx.clip(); }
     this.cards.forEach((c, i) => {
       const r = L[i], sel = i === this.sel;
+      if (r.y + r.h < V.y0 - 2 || r.y > V.y0 + V.h + 2) return;
       const dx = (1 - k) * (i % 2 ? 40 : -40);
       const x = r.x + dx + (sel ? 0 : 6);
       pixBox(ctx, x, r.y, r.w, r.h, sel ? '#fffef0' : '#e8e8e0', c.accent || '#283040', 3);
@@ -129,7 +155,17 @@ export class Choice {
       wrap(c.desc || '', r.w - (tx - x) - 12, 'small').slice(0, 3).forEach((ln, j) => text(ctx, ln, tx, r.y + 23 + j * 12, { font: 'small', color: c.disabled ? 'gray' : 'dark' }));
       if (c.icon2) { const im = img(c.icon2); if (ready(im)) ctx.drawImage(im, x + r.w - 28, r.y + r.h - 28); }
     });
-    if (this.opts.footer) text(ctx, this.opts.footer, W / 2, H - 24, { align: 'center', color: 'whiteSoft', font: 'small' });
+    ctx.restore();
+    if (V.max > 0) { // scrollbar
+      const x = L[0].x + L[0].w + 6, barH = Math.max(16, V.h * V.h / V.total), barY = V.y0 + (V.h - barH) * (this.scroll / V.max);
+      rect(ctx, x, V.y0, 3, V.h, '#ffffff22'); rect(ctx, x, barY, 3, barH, '#f8d038');
+    }
+    if (this.opts.footer) text(ctx, this.opts.footer, cx, H - 24, { align: 'center', color: 'whiteSoft', font: 'small' });
+    if (this.opts.canSkip) {
+      const b = this.skipRect(), on = inRect(b.x, b.y, b.w, b.h);
+      pixBox(ctx, b.x, b.y, b.w, b.h, on ? '#506080' : '#303848', '#101420', 2);
+      text(ctx, b.label, b.x + b.w / 2, b.y + 3, { align: 'center', font: 'small', color: 'white' });
+    }
   }
 }
 export function choose(title, cards, opts = {}) { return new Promise(res => pushOverlay(new Choice(title, cards, { ...opts, onPick: (i, c) => res(i) }))); }

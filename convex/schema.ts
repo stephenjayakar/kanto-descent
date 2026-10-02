@@ -49,10 +49,32 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_email", ["email"]),
 
-  // finished runs (deaths and escapes)
+  // public trainer names for the records screen (one per account; emails are never shown to others)
+  players: defineTable({
+    email: v.string(),
+    name: v.string(),
+    nameLower: v.string(),
+    createdAt: v.number(),
+  }).index("by_email", ["email"]).index("by_nameLower", ["nameLower"]),
+
+  // finished runs (deaths and escapes). `entry` is what the client sent; the top-level fields are
+  // derived from it on the server for the leaderboards (runs from before v0.0.2 may lack them).
   runs: defineTable({
     email: v.string(),
     entry: v.any(),
     at: v.number(),
-  }).index("by_email_at", ["email", "at"]),
+    score: v.optional(v.number()),
+    result: v.optional(v.union(v.literal("win"), v.literal("lose"))),
+    version: v.optional(v.string()),
+    heat: v.optional(v.number()),
+    starter: v.optional(v.string()),
+  })
+    .index("by_email_at", ["email", "at"])
+    .index("by_email_version_at", ["email", "version", "at"])
+    .index("by_at", ["at"])
+    .index("by_score", ["score"])
+    .index("by_version_at", ["version", "at"])
+    .index("by_version_score", ["version", "score"])
+    .index("by_starter_at", ["starter", "at"])
+    .index("by_starter_score", ["starter", "score"]),
 });
