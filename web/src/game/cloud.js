@@ -1,7 +1,8 @@
-// Cloud saves in Convex, keyed by email (no password: anyone who knows an email can load its save).
+// Cloud saves in Convex, keyed by email. The backend only answers calls carrying the deployment's access
+// key (baked into config.js, which is only served by the private site / local dev) for allowed emails.
 // Talks to Convex's HTTP API with plain fetch, so the game needs no bundler. Everything is fail-soft:
 // localStorage is always written first and the game works offline.
-import { CONVEX_URL } from '../../config.js';
+import { CONVEX_URL, ACCESS_KEY, DEFAULT_EMAIL } from '../../config.js';
 
 const EMAIL_KEY = 'kanto-descent-email';
 let pushTimer = null, pending = null;
@@ -10,7 +11,7 @@ async function call(kind, path, args) {
   if (!CONVEX_URL) throw new Error('no CONVEX_URL');
   const r = await fetch(`${CONVEX_URL}/api/${kind}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, args, format: 'json' }),
+    body: JSON.stringify({ path, args: { key: ACCESS_KEY || '', ...args }, format: 'json' }),
   });
   const j = await r.json();
   if (j.status !== 'success') throw new Error(j.errorMessage || 'convex error');
@@ -18,7 +19,7 @@ async function call(kind, path, args) {
 }
 
 export const Cloud = {
-  email: (() => { try { return localStorage.getItem(EMAIL_KEY) || null; } catch { return null; } })(),
+  email: (() => { try { return localStorage.getItem(EMAIL_KEY) || DEFAULT_EMAIL || null; } catch { return DEFAULT_EMAIL || null; } })(),
   status: 'idle', // idle | syncing | ok | offline
   lastError: null,
 
@@ -65,6 +66,6 @@ export const Cloud = {
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('pagehide', () => {
     if (!Cloud.email || !pending || !CONVEX_URL) return;
-    try { navigator.sendBeacon?.(`${CONVEX_URL}/api/mutation`, new Blob([JSON.stringify({ path: 'game:putMeta', args: { email: Cloud.email, meta: pending }, format: 'json' })], { type: 'application/json' })); } catch { /* best effort */ }
+    try { navigator.sendBeacon?.(`${CONVEX_URL}/api/mutation`, new Blob([JSON.stringify({ path: 'game:putMeta', args: { key: ACCESS_KEY || '', email: Cloud.email, meta: pending }, format: 'json' })], { type: 'application/json' })); } catch { /* best effort */ }
   });
 }

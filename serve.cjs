@@ -1,6 +1,6 @@
-// Tiny static server: node serve.js [port]  -> http://localhost:8080/
+// Tiny static server: node serve.cjs [port] [dir=web]  -> http://localhost:8080/
 const http = require('http'), fs = require('fs'), path = require('path');
-const root = path.join(__dirname, 'web');
+const root = path.join(__dirname, process.argv[3] || 'web');
 const port = +process.argv[2] || 8080;
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.bin': 'application/octet-stream', '.css': 'text/css', '.wav': 'audio/wav' };
 http.createServer((req, res) => {

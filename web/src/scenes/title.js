@@ -75,7 +75,7 @@ export class TitleScene {
     wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:10;font:16px monospace;';
     wrap.innerHTML = `<div style="background:#f8f8f0;border:3px solid #283040;border-radius:6px;padding:18px 20px;width:360px;color:#303030">
       <div style="font-weight:bold;margin-bottom:6px">Cloud save</div>
-      <div style="font-size:13px;margin-bottom:10px">Enter your email to keep your progress and runs in the cloud (no password: anyone with your email can load this save).</div>
+      <div style="font-size:13px;margin-bottom:10px">Enter your email to keep your progress and runs in the cloud. Only allowed emails can sync.</div>
       <input type="email" required placeholder="you@example.com" style="width:100%;box-sizing:border-box;padding:8px;font:16px monospace;border:2px solid #506878;border-radius:4px" value="${Cloud.email || ''}">
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
         ${Cloud.email ? '<button type="button" data-a="out" style="padding:6px 10px">Sign out</button>' : ''}

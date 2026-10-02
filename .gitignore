@@ -14,3 +14,6 @@ tools/.pmd_cache/
 tools/__pycache__/
 
 .env.local
+.env.*
+dist/
+web/config.js
