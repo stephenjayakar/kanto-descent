@@ -155,25 +155,30 @@ Rules that came out of two adversarial review rounds and the sim:
 * **HEAT** (pick it from the rival in the lab after your first escape): 10 cumulative rules, each adding foe damage, with
   +10% STARDUST per level.
 
-## Saves
+## Saves, accounts and hosting
 * **Autosave:** the run is snapshotted at the start of every room, before the room rolls its enemies. Pause → **Save & quit to title**, or
-  just close the tab; **Continue** on the title screen resumes from the start of that room (Hades-style).
-* **Cloud saves** go to Convex (`convex/`, project `kanto-descent`) and are keyed by the email you enter on the title screen:
-  * tables: `profiles` (progression), `saves` (the run in progress) and `runs` (finished-run history);
-  * the browser talks to Convex's HTTP API with `fetch`, so there's no bundler. `web/config.js` holds the deployment URL;
-    regenerate it with `node tools/write_config.cjs`;
-  * localStorage is always written first, so the game works offline;
-  * on sign-in, whichever progression is further along wins, and so does the newer run save;
-  * access control: every Convex function requires the deployment's `ACCESS_KEY` plus an email listed in `ALLOWED_EMAILS`
-    (`npx convex env set [--prod] ...`). The keys live in the gitignored `.env.access.dev` and `.env.access.prod`.
-    `web/config.js` (generated, gitignored) carries the dev key; the deployed site carries the prod key.
-* **Deploying function changes:** `npx convex dev --once`.
-
-## Deploying (private ChatGPT Site + Convex prod)
-1. Deploy the Convex functions to prod: `npx convex deploy -y` (prod deployment `enchanted-newt-545`).
-2. Build the site: `node tools/build_site.mjs` writes `dist/`. It holds the code, only the assets the game can use (~30 MB)
-   and a `config.js` with the prod URL, the prod key and the default email.
-3. Test locally: `node serve.cjs 8094 dist`.
-4. Publish: `codex exec --dangerously-bypass-approvals-and-sandbox -C <repo> - < tests/out/sites_deploy_prompt.txt`.
-   * The site is private, with an access allowlist of exactly aj12ay@gmail.com.
-   * `dist/` and `web/assets/` are never committed; they only go up inside the site archive.
+  just close the tab; **Continue** on the title screen resumes from the start of that room.
+* **Accounts:** players sign in with Google through Convex Auth. The OAuth client is the same one Kanto Spire uses (Google Cloud project
+  polar-column-510319-q2), and both Convex callback URLs are registered on it. Only emails in the `allowedEmails` table can play, sync
+  saves or download assets:
+  * `npx convex run access:allow|revoke|list [--prod]`;
+  * **invite links:** only aj12ay@gmail.com can create them (title screen → *Make an invite link*, or
+    `npx convex run invites:createInternal '{"note":"name"}' --prod`). The link is `<site>/?invite=CODE`, it's single-use and it lasts
+    14 days; the first account to sign in with it joins the allowlist.
+* **Saves:** `profiles` (progression), `saves` (the run in progress) and `runs` (history), keyed by the signed-in account's email.
+  localStorage is written first, so play continues offline.
+* **Assets are never on the public site:**
+  * `node tools/upload_packs.mjs [--prod]` packs the pruned asset set (`tools/asset_list.mjs`, ~28 MB) into chunks under 12 MB and
+    uploads them to Convex storage;
+  * `GET /pack` serves them to allowed accounts only;
+  * the client caches them by hash and serves them from memory (`web/src/game/assetpack.js`).
+* **Local dev:** `node tools/write_config.cjs`, then `node serve.cjs 8093`. Assets load from `web/assets`, and Google sign-in is
+  optional (dev deployment neat-kudu-314, SITE_URL http://localhost:8093).
+* **Deploy:**
+  1. `npx convex deploy -y` (prod enchanted-newt-545);
+  2. `node tools/upload_packs.mjs --prod` (only changed packs upload);
+  3. `node tools/build_site.mjs` (code only; it refuses asset files);
+  4. `codex exec --dangerously-bypass-approvals-and-sandbox -C <repo> - < tests/out/sites_redeploy_prompt.txt`.
+  * The ChatGPT Site is https://kanto-descent.stephenjayakar.chatgpt.site (project appgprj_6abfb709d628819189468cd9ce5a15b1).
+    Its access is public; access control lives in the Convex backend.
+  * Convex Auth env per deployment: AUTH_GOOGLE_ID/SECRET, JWT_PRIVATE_KEY and JWKS (`tools/gen_auth_keys.mjs`), and SITE_URL.

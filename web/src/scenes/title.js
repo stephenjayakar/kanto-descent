@@ -44,8 +44,8 @@ export class TitleScene {
   }
 
   boxes(items) {
-    const w = 360, h = 20, y0 = 326;
-    return items.map((_, i) => ({ x: (W - w) / 2, y: y0 + i * (h + 4), w, h }));
+    const w = 360, h = 19, y0 = 316;
+    return items.map((_, i) => ({ x: (W - w) / 2, y: y0 + i * (h + 3), w, h }));
   }
 
   draw(ctx) {
@@ -66,8 +66,8 @@ export class TitleScene {
     });
     const status = Cloud.error && !Cloud.email ? Cloud.error : !Cloud.email ? 'Saves are kept in this browser. Sign in to sync them to the cloud.' : Cloud.status === 'offline' ? 'Cloud offline - saving locally, will sync later.' : Cloud.status === 'syncing' ? 'Syncing...' : 'Synced to the cloud.';
     const m = this.msg || status;
-    if (m.includes('@')) mixedText(ctx, m, W / 2, H - 32, this.msg ? '#a8ff60' : '#a0a0a0', true);
-    else text(ctx, m, W / 2, H - 32, { align: 'center', font: 'small', color: this.msg ? 'lime' : 'gray' });
+    if (m.includes('@')) mixedText(ctx, m, W / 2, H - 27, this.msg ? '#a8ff60' : '#a0a0a0', true);
+    else text(ctx, m, W / 2, H - 27, { align: 'center', font: 'small', color: this.msg ? 'lime' : 'gray' });
     text(ctx, `Runs ${G.meta.runs}  ·  Escapes ${G.meta.wins}`, W - 10, H - 16, { align: 'right', font: 'small', color: 'gray' });
     text(ctx, 'Fan project. Pokémon (c) Nintendo/Game Freak/Creatures. Sprites: PMDCollab (CC BY-NC).', 10, H - 16, { font: 'small', color: 'gray' });
   }
