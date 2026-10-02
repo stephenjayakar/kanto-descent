@@ -6,8 +6,8 @@ import { text, measure } from '../engine/font.js';
 import { pixBox } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
-import { G, loadRunSave, syncFromCloud, saveMeta } from '../game/run.js';
-import { Cloud } from '../game/cloud.js';
+import { G, loadRunSave } from '../game/run.js';
+import { Cloud, signIn, signOut, createInviteLink } from '../game/cloud.js';
 import { toHub, continueRun } from './rewards.js';
 import { preloadPmd } from '../game/pmd.js';
 
@@ -21,7 +21,11 @@ export class TitleScene {
     const list = [];
     if (save) list.push({ label: `Continue: ${save.label || 'run in progress'}`, fn: () => { Sound.playSE('se_select'); if (!continueRun()) toHub(); } });
     list.push({ label: save ? "New run (Oak's lab)" : "Start (Oak's lab)", fn: () => { Sound.playSE('se_select'); toHub(); } });
-    list.push({ label: Cloud.email ? `Cloud save: ${Cloud.email}` : 'Cloud save: sign in with email', fn: () => this.openInput() });
+    if (Cloud.url) {
+      if (Cloud.email) list.push({ label: `Signed in: ${Cloud.email} (sign out)`, fn: () => signOut() });
+      else list.push({ label: 'Sign in with Google to sync saves', fn: () => signIn().catch(e => { this.msg = e.message; }) });
+      if (Cloud.me?.canInvite) list.push({ label: 'Make an invite link', fn: () => this.makeInvite() });
+    }
     return list;
   }
 
@@ -60,7 +64,7 @@ export class TitleScene {
       if (label.includes('@')) mixedText(ctx, label, W / 2, b.y + 3, on ? '#f8d030' : '#ffffff');
       else text(ctx, label, W / 2, b.y + 4, { align: 'center', color: on ? 'gold' : 'white', font: measure(label) > b.w - 16 ? 'small' : 'normal' });
     });
-    const status = !Cloud.email ? 'Saves are kept in this browser. Sign in to sync them to the cloud.' : Cloud.status === 'offline' ? 'Cloud offline - saving locally, will sync later.' : Cloud.status === 'syncing' ? 'Syncing...' : 'Synced to the cloud.';
+    const status = Cloud.error && !Cloud.email ? Cloud.error : !Cloud.email ? 'Saves are kept in this browser. Sign in to sync them to the cloud.' : Cloud.status === 'offline' ? 'Cloud offline - saving locally, will sync later.' : Cloud.status === 'syncing' ? 'Syncing...' : 'Synced to the cloud.';
     const m = this.msg || status;
     if (m.includes('@')) mixedText(ctx, m, W / 2, H - 32, this.msg ? '#a8ff60' : '#a0a0a0', true);
     else text(ctx, m, W / 2, H - 32, { align: 'center', font: 'small', color: this.msg ? 'lime' : 'gray' });
@@ -68,38 +72,31 @@ export class TitleScene {
     text(ctx, 'Fan project. Pokémon (c) Nintendo/Game Freak/Creatures. Sprites: PMDCollab (CC BY-NC).', 10, H - 16, { font: 'small', color: 'gray' });
   }
 
-  // ---- email box (a real HTML input over the canvas)
-  openInput() {
+  // ---- invite links (owner only): a one-time link that adds whoever signs in with it
+  async makeInvite() {
     if (this.input) return;
-    const wrap = document.createElement('form');
-    wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:10;font:16px monospace;';
-    wrap.innerHTML = `<div style="background:#f8f8f0;border:3px solid #283040;border-radius:6px;padding:18px 20px;width:360px;color:#303030">
-      <div style="font-weight:bold;margin-bottom:6px">Cloud save</div>
-      <div style="font-size:13px;margin-bottom:10px">Enter your email to keep your progress and runs in the cloud. Only allowed emails can sync.</div>
-      <input type="email" required placeholder="you@example.com" style="width:100%;box-sizing:border-box;padding:8px;font:16px monospace;border:2px solid #506878;border-radius:4px" value="${Cloud.email || ''}">
+    this.msg = 'Making an invite link...';
+    let link;
+    try { link = await createInviteLink(); } catch (e) { this.msg = e.message; return; }
+    try { await navigator.clipboard?.writeText(link); } catch { /* clipboard blocked */ }
+    this.msg = 'Invite link copied to the clipboard.';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:10;font:15px monospace;';
+    wrap.innerHTML = `<div style="background:#f8f8f0;border:3px solid #283040;border-radius:6px;padding:18px 20px;width:460px;color:#303030">
+      <div style="font-weight:bold;margin-bottom:6px">One-time invite link</div>
+      <div style="font-size:13px;margin-bottom:10px">The first person to sign in with this link joins the playtest. It expires in 14 days.</div>
+      <input readonly style="width:100%;box-sizing:border-box;padding:8px;font:13px monospace;border:2px solid #506878;border-radius:4px">
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
-        ${Cloud.email ? '<button type="button" data-a="out" style="padding:6px 10px">Sign out</button>' : ''}
-        <button type="button" data-a="cancel" style="padding:6px 10px">Cancel</button>
-        <button type="submit" style="padding:6px 14px;background:#3060c0;color:#fff;border:0;border-radius:4px">Sync</button>
+        <button type="button" data-a="copy" style="padding:6px 12px">Copy</button>
+        <button type="button" data-a="close" style="padding:6px 14px;background:#3060c0;color:#fff;border:0;border-radius:4px">Done</button>
       </div></div>`;
     document.body.appendChild(wrap);
     const input = wrap.querySelector('input');
-    setTimeout(() => input.focus(), 0);
-    wrap.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') this.closeInput(); });
+    input.value = link; input.select();
+    wrap.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape' || e.key === 'Enter') this.closeInput(); });
     wrap.addEventListener('keyup', e => e.stopPropagation());
-    wrap.querySelector('[data-a="cancel"]').onclick = () => this.closeInput();
-    const out = wrap.querySelector('[data-a="out"]');
-    if (out) out.onclick = () => { Cloud.setEmail(null); this.msg = 'Signed out. Saves stay in this browser.'; this.closeInput(); };
-    wrap.onsubmit = async e => {
-      e.preventDefault();
-      const email = input.value.trim();
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { input.style.borderColor = '#e03030'; return; }
-      Cloud.setEmail(email);
-      this.closeInput();
-      this.msg = 'Syncing...';
-      const ok = await syncFromCloud();
-      if (ok) { saveMeta(); this.msg = `Signed in as ${Cloud.email}. Progress synced.`; } else this.msg = 'Could not reach the cloud - saving locally for now.';
-    };
+    wrap.querySelector('[data-a="copy"]').onclick = async () => { input.select(); try { await navigator.clipboard.writeText(link); } catch { document.execCommand?.('copy'); } this.msg = 'Invite link copied.'; };
+    wrap.querySelector('[data-a="close"]').onclick = () => this.closeInput();
     this.input = wrap;
   }
   closeInput() {

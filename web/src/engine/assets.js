@@ -1,4 +1,5 @@
 // Image loading with a cache. img() returns an Image immediately; draw helpers skip it until loaded.
+import { assetUrl } from '../game/assetpack.js';
 const cache = new Map();
 export const BASE = 'assets/';
 
@@ -6,7 +7,7 @@ export function img(path) {
   let im = cache.get(path);
   if (!im) {
     im = new Image();
-    im.src = BASE + path;
+    im.src = assetUrl(path); // a blob: URL when assets come from the signed-in asset packs
     im.onerror = () => { im._failed = true; };
     cache.set(path, im);
   }

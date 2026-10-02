@@ -1,71 +1,154 @@
-// Cloud saves in Convex, keyed by email. The backend only answers calls carrying the deployment's access
-// key (baked into config.js, which is only served by the private site / local dev) for allowed emails.
-// Talks to Convex's HTTP API with plain fetch, so the game needs no bundler. Everything is fail-soft:
-// localStorage is always written first and the game works offline.
-import { CONVEX_URL, ACCESS_KEY, DEFAULT_EMAIL } from '../../config.js';
+// Cloud saves in Convex behind Google sign-in (Convex Auth), over Convex's plain HTTP API (no bundler).
+// Only allowlisted accounts can sync or download the game's asset packs; invite links (?invite=CODE)
+// add whoever signs in with them. localStorage is always written first, so play works offline.
+import { CONVEX_URL, PACKS } from '../../config.js';
 
-const EMAIL_KEY = 'kanto-descent-email';
+const AUTH_KEY = 'kanto-descent.auth.v1';
+const VERIFIER_KEY = 'kanto-descent.authVerifier.v1';
+const INVITE_KEY = 'kanto-descent.invite.v1'; // kept across the Google redirect
+const hasStorage = typeof localStorage !== 'undefined';
 let pushTimer = null, pending = null;
 
-async function call(kind, path, args) {
-  if (!CONVEX_URL) throw new Error('no CONVEX_URL');
-  const r = await fetch(`${CONVEX_URL}/api/${kind}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, args: { key: ACCESS_KEY || '', ...args }, format: 'json' }),
-  });
-  const j = await r.json();
-  if (j.status !== 'success') throw new Error(j.errorMessage || 'convex error');
-  return j.value;
-}
+function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
+function store(key, v) { try { if (v === null || v === undefined) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(v)); } catch { /* storage off */ } }
+function tokenExpiry(jwt) { try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000; } catch { return 0; } }
 
 export const Cloud = {
-  email: (() => { try { return localStorage.getItem(EMAIL_KEY) || DEFAULT_EMAIL || null; } catch { return DEFAULT_EMAIL || null; } })(),
-  status: 'idle', // idle | syncing | ok | offline
-  lastError: null,
+  url: CONVEX_URL ? CONVEX_URL.replace(/\/$/, '') : null,
+  siteUrl: CONVEX_URL ? CONVEX_URL.replace(/\/$/, '').replace(/\.convex\.cloud$/, '.convex.site') : null,
+  packs: !!PACKS,   // hosted build: the assets come from Convex after sign-in
+  auth: null,       // { token, refreshToken }
+  me: null,         // { email, name, allowed, canInvite }
+  status: 'idle',   // idle | syncing | ok | offline
+  error: null,
+  get email() { return this.me?.allowed ? this.me.email : null; },
+};
 
-  setEmail(email) {
-    this.email = email ? email.trim().toLowerCase() : null;
-    try { if (this.email) localStorage.setItem(EMAIL_KEY, this.email); else localStorage.removeItem(EMAIL_KEY); } catch { /* storage off */ }
-  },
+async function post(kind, path, args, token, keepalive = false) {
+  if (!Cloud.url) throw new Error('Cloud saves are not configured.');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${Cloud.url}/api/${kind}`, { method: 'POST', headers, keepalive, body: JSON.stringify({ path, args, format: 'json' }) });
+  const body = await res.json().catch(() => ({ status: 'error', errorMessage: `HTTP ${res.status}` }));
+  if (body.status !== 'success') {
+    const m = /Uncaught Error: ([^\n]*)/.exec(body.errorMessage || '');
+    throw new Error(m ? m[1] : body.errorMessage || 'Request failed');
+  }
+  return body.value;
+}
 
+function setAuth(tokens) {
+  Cloud.auth = tokens ? { token: tokens.token, refreshToken: tokens.refreshToken } : null;
+  store(AUTH_KEY, Cloud.auth);
+  if (!tokens) Cloud.me = null;
+}
+
+let refreshing = null;
+async function freshToken() {
+  if (!Cloud.auth) return null;
+  if (tokenExpiry(Cloud.auth.token) - Date.now() > 60_000) return Cloud.auth.token;
+  refreshing ??= post('action', 'auth:signIn', { refreshToken: Cloud.auth.refreshToken })
+    .then(r => { setAuth(r.tokens || null); return Cloud.auth?.token ?? null; })
+    .catch(e => { console.warn('token refresh failed', e); setAuth(null); return null; })
+    .finally(() => { refreshing = null; });
+  return refreshing;
+}
+
+async function call(kind, path, args, opts = {}) {
+  const token = await freshToken();
+  if (!token) throw new Error('Signed out. Sign in with Google again.');
+  return post(kind, path, args, token, opts.keepalive);
+}
+
+// Run once at boot: picks up ?invite= and the ?code= coming back from Google, then who we are.
+export async function initCloud() {
+  if (!hasStorage || !Cloud.url) return;
+  Cloud.auth = load(AUTH_KEY, null);
+  const url = new URL(location.href);
+  const inv = url.searchParams.get('invite');
+  if (inv) { store(INVITE_KEY, inv); url.searchParams.delete('invite'); }
+  const code = url.searchParams.get('code');
+  if (code) url.searchParams.delete('code');
+  if (inv || code) history.replaceState(null, '', url.pathname + url.search + url.hash);
+  if (code) {
+    try { const r = await post('action', 'auth:signIn', { params: { code }, verifier: load(VERIFIER_KEY, undefined) }); setAuth(r.tokens || null); }
+    catch (e) { Cloud.error = e.message; }
+    store(VERIFIER_KEY, null);
+  }
+  if (!Cloud.auth) return;
+  const pendingInv = load(INVITE_KEY, null);
+  if (pendingInv) {
+    try { await call('mutation', 'invites:redeem', { code: pendingInv }); store(INVITE_KEY, null); }
+    catch (e) { Cloud.error = e.message; if (/used|expired|not valid/i.test(e.message)) store(INVITE_KEY, null); }
+  }
+  try {
+    Cloud.me = await call('query', 'game:me', {});
+    if (Cloud.me && !Cloud.me.allowed) Cloud.error ||= `${Cloud.me.email} isn't on the list yet. Ask for an invite link.`;
+    Cloud.status = Cloud.me?.allowed ? 'ok' : 'idle';
+  } catch (e) {
+    Cloud.error = e.message; Cloud.status = 'offline';
+    if (/sign in|signed out/i.test(e.message)) setAuth(null);
+  }
+}
+
+export async function signIn() {
+  Cloud.error = null;
+  const redirectTo = location.origin + location.pathname;
+  const r = await post('action', 'auth:signIn', { provider: 'google', params: { redirectTo } });
+  store(VERIFIER_KEY, r.verifier);
+  location.href = r.redirect;
+}
+
+export async function signOut() {
+  await Cloud.flushMeta().catch(() => {});
+  try { await call('action', 'auth:signOut', {}); } catch { /* already gone */ }
+  setAuth(null);
+  location.reload();
+}
+
+export const pendingInvite = () => (hasStorage ? load(INVITE_KEY, null) : null);
+export const authToken = () => freshToken();
+export const packManifest = () => call('query', 'packs:manifest', {});
+export function dropAuth(message) { setAuth(null); Cloud.error = message || null; }
+
+// Only the owner can make these (enforced on the server too).
+export async function createInviteLink(note) {
+  const r = await call('mutation', 'invites:create', { note: note || undefined });
+  return `${location.origin}${location.pathname}?invite=${r.code}`;
+}
+
+// ---- save sync (used by run.js) -------------------------------------------------------------
+Object.assign(Cloud, {
   async load() {
     if (!this.email) return null;
     this.status = 'syncing';
-    try { const v = await call('query', 'game:load', { email: this.email }); this.status = 'ok'; return v; }
-    catch (e) { this.status = 'offline'; this.lastError = e.message; return null; }
+    try { const v = await call('query', 'game:load', {}); this.status = 'ok'; return v; }
+    catch (e) { this.status = 'offline'; this.error = e.message; return null; }
   },
-
-  // progression is pushed debounced (it changes often)
   pushMeta(meta) {
     if (!this.email) return;
     pending = meta;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => this.flushMeta(), 1500);
   },
-  async flushMeta() {
+  async flushMeta(keepalive = false) {
     if (!this.email || !pending) return;
     const meta = pending; pending = null;
-    try { await call('mutation', 'game:putMeta', { email: this.email, meta }); this.status = 'ok'; }
-    catch (e) { this.status = 'offline'; this.lastError = e.message; }
+    try { await call('mutation', 'game:putMeta', { meta }, { keepalive }); this.status = 'ok'; }
+    catch (e) { this.status = 'offline'; this.error = e.message; }
   },
-
   async putSave(save) {
     if (!this.email) return;
-    try { await call('mutation', 'game:putSave', { email: this.email, save }); this.status = 'ok'; }
-    catch (e) { this.status = 'offline'; this.lastError = e.message; }
+    try { await call('mutation', 'game:putSave', { save }); this.status = 'ok'; }
+    catch (e) { this.status = 'offline'; this.error = e.message; }
   },
-
   async addRun(entry) {
     if (!this.email) return;
-    try { await call('mutation', 'game:addRun', { email: this.email, entry }); }
-    catch (e) { this.status = 'offline'; this.lastError = e.message; }
+    try { await call('mutation', 'game:addRun', { entry }); }
+    catch (e) { this.status = 'offline'; this.error = e.message; }
   },
-};
+});
 
-// Make sure queued progression reaches the server when the tab closes.
 if (typeof window !== 'undefined' && window.addEventListener) {
-  window.addEventListener('pagehide', () => {
-    if (!Cloud.email || !pending || !CONVEX_URL) return;
-    try { navigator.sendBeacon?.(`${CONVEX_URL}/api/mutation`, new Blob([JSON.stringify({ path: 'game:putMeta', args: { key: ACCESS_KEY || '', email: Cloud.email, meta: pending }, format: 'json' })], { type: 'application/json' })); } catch { /* best effort */ }
-  });
+  window.addEventListener('pagehide', () => { if (pending) Cloud.flushMeta(true); });
 }

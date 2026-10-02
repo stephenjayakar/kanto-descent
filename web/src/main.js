@@ -6,7 +6,8 @@ import { loadFonts } from './engine/font.js';
 import { loadJSON, preload } from './engine/assets.js';
 import { loadData, D } from './game/data.js';
 import { loadMeta, G, syncFromCloud } from './game/run.js';
-import { Cloud } from './game/cloud.js';
+import { Cloud, initCloud, signIn, pendingInvite, authToken, packManifest, dropAuth } from './game/cloud.js';
+import { loadPacks } from './game/assetpack.js';
 import { loadMapIndex } from './game/rooms.js';
 import { setBattleAnimManifest } from './game/render.js';
 import { Sound } from './audio/sound.js';
@@ -15,7 +16,41 @@ import { RoomScene } from './scenes/room.js';
 import { registerRoomScene, toHub } from './scenes/rewards.js';
 import * as rewards from './scenes/rewards.js';
 
+// Hosted build: nothing of the game (or its assets) loads until an allowed Google account signs in.
+function showSignIn() {
+  document.getElementById('loading')?.remove();
+  document.getElementById('game').style.display = 'none';
+  const page = document.getElementById('signin');
+  page.style.display = 'flex';
+  const err = document.getElementById('signin-error'), msg = document.getElementById('signin-msg');
+  err.textContent = Cloud.error || '';
+  if (pendingInvite()) msg.textContent = "You've been invited! Sign in with Google to join.";
+  if (Cloud.me && !Cloud.me.allowed) {
+    document.getElementById('signin-btn').textContent = 'Use a different Google account';
+    document.getElementById('signin-out').style.display = 'inline-block';
+  }
+  document.getElementById('signin-btn').onclick = async () => {
+    if (Cloud.me) dropAuth(null);
+    try { await signIn(); } catch (e) { err.textContent = e.message; }
+  };
+  document.getElementById('signin-out').onclick = () => { dropAuth(null); location.reload(); };
+}
+
 async function boot() {
+  await initCloud();
+  if (Cloud.packs) {
+    if (!Cloud.email) return showSignIn();
+    const el = document.getElementById('loading');
+    try {
+      await loadPacks({
+        siteUrl: Cloud.siteUrl, token: await authToken(), list: await packManifest(),
+        onProgress: (n, total) => { if (el) el.textContent = `Downloading game data... ${Math.round(100 * n / Math.max(1, total))}%`; },
+      });
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) { dropAuth(e.message); return showSignIn(); }
+      throw e;
+    }
+  }
   const canvas = document.getElementById('game');
   initEngine(canvas);
   Input.init(canvas);

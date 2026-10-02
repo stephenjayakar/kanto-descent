@@ -1,5 +1,6 @@
 // FireRed bitmap font renderer (fonts.json + 2-channel R=fill/G=shadow atlases from the decomp).
 import { BASE } from './assets.js';
+import { assetUrl } from '../game/assetpack.js';
 
 let META = null;
 const atlases = {}; // font -> Image (rg)
@@ -31,7 +32,7 @@ export async function loadFonts() {
     const im = new Image();
     im.onload = () => { atlases[name] = im; res(); };
     im.onerror = res;
-    im.src = BASE + 'gfx/' + f.rg;
+    im.src = assetUrl('gfx/' + f.rg);
   })));
 }
 

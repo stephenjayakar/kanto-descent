@@ -8,7 +8,13 @@
  * @module
  */
 
+import type * as access from "../access.js";
+import type * as auth from "../auth.js";
 import type * as game from "../game.js";
+import type * as http from "../http.js";
+import type * as invites from "../invites.js";
+import type * as lib from "../lib.js";
+import type * as packs from "../packs.js";
 
 import type {
   ApiFromModules,
@@ -17,7 +23,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  access: typeof access;
+  auth: typeof auth;
   game: typeof game;
+  http: typeof http;
+  invites: typeof invites;
+  lib: typeof lib;
+  packs: typeof packs;
 }>;
 
 /**
