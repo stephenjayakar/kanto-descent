@@ -164,5 +164,16 @@ Rules that came out of two adversarial review rounds and the sim:
     regenerate it with `node tools/write_config.cjs`;
   * localStorage is always written first, so the game works offline;
   * on sign-in, whichever progression is further along wins, and so does the newer run save;
-  * there's no password: anyone who knows an email can load or overwrite that save.
+  * access control: every Convex function requires the deployment's `ACCESS_KEY` plus an email listed in `ALLOWED_EMAILS`
+    (`npx convex env set [--prod] ...`). The keys live in the gitignored `.env.access.dev` and `.env.access.prod`.
+    `web/config.js` (generated, gitignored) carries the dev key; the deployed site carries the prod key.
 * **Deploying function changes:** `npx convex dev --once`.
+
+## Deploying (private ChatGPT Site + Convex prod)
+1. Deploy the Convex functions to prod: `npx convex deploy -y` (prod deployment `enchanted-newt-545`).
+2. Build the site: `node tools/build_site.mjs` writes `dist/`. It holds the code, only the assets the game can use (~30 MB)
+   and a `config.js` with the prod URL, the prod key and the default email.
+3. Test locally: `node serve.cjs 8094 dist`.
+4. Publish: `codex exec --dangerously-bypass-approvals-and-sandbox -C <repo> - < tests/out/sites_deploy_prompt.txt`.
+   * The site is private, with an access allowlist of exactly aj12ay@gmail.com.
+   * `dist/` and `web/assets/` are never committed; they only go up inside the site archive.
