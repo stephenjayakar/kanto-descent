@@ -4,6 +4,7 @@ import { assetUrl } from '../game/assetpack.js';
 
 let META = null;
 const atlases = {}; // font -> Image (rg)
+const masks = {};   // font -> { fill, shadow } white masks (tinted by compositing)
 const colored = new Map(); // key -> canvas
 
 export const COLORS = {
@@ -26,19 +27,43 @@ export const COLORS = {
 
 const ALIASES = { '"': '“', "'": '’', '`': '‘', '*': '·', '[': '(', ']': ')', '{': '(', '}': ')', '_': '-', '#': 'º', '~': '-', '@': 'º', '|': '!', '^': '·', '\\': '/' };
 
+const loadImg = src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+
 export async function loadFonts() {
   META = await (await fetch(BASE + 'gfx/fonts/fonts.json')).json();
-  await Promise.all(Object.entries(META.fonts).map(([name, f]) => new Promise(res => {
-    const im = new Image();
-    im.onload = () => { atlases[name] = im; res(); };
-    im.onerror = res;
-    im.src = assetUrl('gfx/' + f.rg);
-  })));
+  await Promise.all(Object.entries(META.fonts).map(async ([name, f]) => {
+    // white fill/shadow masks (tools/font_masks.py), tinted by compositing; the R/G atlas is only a fallback
+    const [fill, shadow] = await Promise.all([loadImg(assetUrl(`gfx/fonts/${name}_fill.png`)), loadImg(assetUrl(`gfx/fonts/${name}_shadow.png`))]);
+    if (fill && shadow) masks[name] = { fill, shadow };
+    else { const im = await loadImg(assetUrl('gfx/' + f.rg)); if (im) atlases[name] = im; }
+  }));
+}
+
+// Tint a white mask with compositing only: no getImageData, which privacy settings (Firefox's
+// fingerprinting protection, Brave...) blank or scramble, leaving all text invisible.
+function tinted(mask, color) {
+  const c = document.createElement('canvas');
+  c.width = mask.naturalWidth; c.height = mask.naturalHeight;
+  const x = c.getContext('2d');
+  x.drawImage(mask, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+  return c;
 }
 
 function colorAtlas(font, fill, shadow) {
   const key = font + fill + shadow;
   if (colored.has(key)) return colored.get(key);
+  const m = masks[font];
+  if (m) {
+    const c = document.createElement('canvas');
+    c.width = m.fill.naturalWidth; c.height = m.fill.naturalHeight;
+    const x = c.getContext('2d');
+    if (shadow) x.drawImage(tinted(m.shadow, shadow), 0, 0);
+    x.drawImage(tinted(m.fill, fill), 0, 0);
+    colored.set(key, c);
+    return c;
+  }
   const src = atlases[font];
   if (!src) return null;
   const c = document.createElement('canvas');
