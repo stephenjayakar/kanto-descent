@@ -9,7 +9,7 @@ import { Sound } from '../audio/sound.js';
 import { D } from '../game/data.js';
 import { G } from '../game/run.js';
 import { BIOMES, STARTERS } from '../game/content.js';
-import { Cloud, rename, signOut, createInviteLink, leaderboard, topTrainers, myRuns } from '../game/cloud.js';
+import { Cloud, rename, signOut, createInviteLink, leaderboard, topTrainers, myRuns, starterRecords } from '../game/cloud.js';
 import { scoreRun } from '../game/score.js';
 import { VERSION, PATCH_NOTES } from '../game/version.js';
 import { FocusNav, Modal, ChoiceModal } from './modal.js';
@@ -20,6 +20,7 @@ const TABS = [
   { key: 'all', label: 'ALL RUNS' },
   { key: 'mine', label: 'MY RUNS' },
   { key: 'trainers', label: 'TRAINERS' },
+  { key: 'starters', label: 'BY STARTER' }, // each starter is its own challenge
 ];
 // Version filter: ALL first (the default), then every version with patch notes, newest first.
 const VERSIONS = [...new Set([VERSION, ...PATCH_NOTES.map(p => p.v)])];
@@ -61,6 +62,15 @@ export class RecordsScene {
     const token = this.loadToken = (this.loadToken || 0) + 1; // a newer load (tab or filter change) wins
     this.rows = null; this.error = null; this.mine = null; this.local = false;
     const signedIn = !!Cloud.email;
+    if (tab === 'starters' && !(signedIn && Cloud.url)) { // signed out: your record per starter from this browser
+      const rows = (G.meta.history || []).map(localRow).filter(r => !version || r.version === version);
+      this.local = !signedIn;
+      this.rows = STARTERS.map(s => {
+        const mine = rows.filter(r => r.starter === s.species), best = mine.reduce((b, r) => (!b || r.score > b.score ? r : b), null);
+        return { starter: s.species, best: null, mine: { runs: mine.length, wins: mine.filter(r => r.result === 'win').length, bestScore: best?.score || 0, best } };
+      });
+      return;
+    }
     if (!signedIn && tab === 'mine') {
       // runs kept in this browser
       const rows = (G.meta.history || []).map(localRow).filter(r => !version || r.version === version);
@@ -73,6 +83,7 @@ export class RecordsScene {
     try {
       let rows;
       if (tab === 'trainers') rows = await topTrainers(version, ROWS);
+      else if (tab === 'starters') rows = await starterRecords(STARTERS.map(s => s.species), version);
       else if (tab === 'mine') { const r = await myRuns(version, ROWS); if (this.loadToken === token) this.mine = r; rows = r ? r.recent : []; }
       else rows = await leaderboard({ version, sort: this.sort, starter: this.starter === 'all' ? null : this.starter, limit: ROWS });
       if (this.loadToken === token) this.rows = rows;
@@ -126,7 +137,7 @@ export class RecordsScene {
       nav.button(ctx, 'tab-' + t.key, t.label, 12 + i * 90, 36, 86, 20, { color: this.tab === t.key ? THEME.play : '#404860', font: 'small' }, () => { if (this.tab !== t.key) { this.tab = t.key; this.load(); } });
     });
     if (this.tab === 'all') {
-      const fx = 290, fw = 120;
+      const fx = 384, fw = 116;
       const label = this.starter === 'all' ? 'ALL STARTERS' : speciesName(this.starter);
       nav.button(ctx, 'starter', label, fx, 36, fw, 20, { color: this.starter === 'all' ? '#404860' : '#7a4a30', font: 'small' }, () => {
         this.starter = STARTER_FILTERS[(STARTER_FILTERS.indexOf(this.starter) + 1) % STARTER_FILTERS.length]; this.load();
@@ -158,7 +169,7 @@ export class RecordsScene {
       text(ctx, this.version === 'all' ? `${what} yet. Head for CERULEAN CAVE!` : `${what} on ${this.version} yet. Head for CERULEAN CAVE!`, W / 2, cy, { align: 'center', color: 'whiteSoft' });
       return;
     }
-    if (this.tab === 'trainers') this.drawTrainers(ctx); else this.drawRuns(ctx);
+    if (this.tab === 'trainers') this.drawTrainers(ctx); else if (this.tab === 'starters') this.drawStarters(ctx); else this.drawRuns(ctx);
   }
 
   drawRuns(ctx) {
@@ -190,6 +201,30 @@ export class RecordsScene {
       text(ctx, reached, 466, ty, { color: r.result === 'win' ? 'lime' : 'whiteSoft', font: 'small' });
       text(ctx, ago(r.at), 648, y + 1, { color: 'gray', font: 'small' });
       text(ctx, r.version || '', 648, y + 13, { color: r.version === VERSION ? 'lime' : 'purple', font: 'small' });
+    });
+  }
+
+  // one row per starter: your record with it, and the best run anyone has with it
+  drawStarters(ctx) {
+    const y0 = 70;
+    for (const [h, x] of [['STARTER', 18], ['YOUR RUNS', 190], ['ESCAPES', 270], ['YOUR BEST', 350], ['RECORD', 540]]) text(ctx, h, x, y0, { color: 'gray', font: 'small' });
+    const reachedOf = r => { if (!r) return ''; if (r.result === 'win') return 'ESCAPED'; const B = BIOMES[r.biome]; return B ? `${B.name} ${r.room >= B.rooms ? 'BOSS' : `${r.room + 1}/${B.rooms + 1}`}` : ''; };
+    this.rows.forEach((s, i) => {
+      const y = y0 + 14 + i * 38;
+      const m = s.mine || {}, unlocked = s.best || m.runs;
+      pixBox(ctx, 14, y - 2, W - 28, 36, i % 2 ? '#262c3c' : '#2e3548', null, 2);
+      drawMonIcon(ctx, s.starter, 16, y - 2);
+      text(ctx, speciesName(s.starter), 52, y + 10, { color: unlocked ? 'white' : 'gray' });
+      text(ctx, String(m.runs || 0), 210, y + 11, { color: 'whiteSoft', font: 'small', align: 'center' });
+      text(ctx, m.runs ? `${m.wins} (${Math.round(100 * m.wins / m.runs)}%)` : '-', 270, y + 11, { color: m.wins ? 'lime' : 'whiteSoft', font: 'small' });
+      if (m.best) {
+        text(ctx, m.bestScore.toLocaleString(), 350, y + 4, { color: 'gold', font: 'small' });
+        text(ctx, reachedOf(m.best), 350, y + 17, { color: m.best.result === 'win' ? 'lime' : 'whiteSoft', font: 'small' });
+      } else text(ctx, '-', 350, y + 11, { color: 'gray', font: 'small' });
+      if (s.best) {
+        text(ctx, `${s.best.name}  ${s.best.score.toLocaleString()}`, 540, y + 4, { color: s.best.me ? 'gold' : 'white', font: 'small' });
+        text(ctx, `${reachedOf(s.best)}${s.best.heat ? ` · HEAT ${s.best.heat}` : ''}`, 540, y + 17, { color: s.best.result === 'win' ? 'lime' : 'whiteSoft', font: 'small' });
+      } else text(ctx, this.local ? 'sign in to see' : 'no runs yet', 540, y + 11, { color: 'gray', font: 'small' });
     });
   }
 

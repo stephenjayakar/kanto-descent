@@ -278,6 +278,11 @@ export function refreshPlayer(scene) {
 // ---------------------------------------------------------------- level-up prompts (at room clear)
 export async function levelPrompts(scene) {
   const run = G.run;
+  if (run.partnerEvo) {
+    const [from, into] = run.partnerEvo; run.partnerEvo = null;
+    Sound.playFanfare('mus_evolved');
+    await say([`Your partner ${D.species[from].name} evolved into ${D.species[into].name}!`]);
+  }
   if (run.pendingEvo) await evolutionSequence(scene);
   while (run.pendingLearn.length) {
     const mv = run.pendingLearn.shift();

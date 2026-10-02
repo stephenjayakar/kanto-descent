@@ -164,6 +164,7 @@ export const leaderboard = ({ version, sort, starter, limit } = {}) => call('que
 export const myRuns = (version, limit) => call('query', 'game:myRuns', opt({ version, limit }));
 // [{name, me, runs, wins, bestScore}]
 export const topTrainers = (version, limit) => call('query', 'game:topTrainers', opt({ version, limit }));
+export const starterRecords = (starters, version) => call('query', 'game:starterRecords', opt({ starters, version }));
 
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('pagehide', () => { if (pending) Cloud.flushMeta(true); });

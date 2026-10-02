@@ -48,7 +48,7 @@ export function makeActor(speciesKey, level, team, opts = {}) {
 
 function baseSpeed(spe, team) {
   if (team === 'player') return 84 + Math.min(36, spe * 0.22);
-  return 34 + Math.min(46, spe * 0.32);
+  return 44 + Math.min(56, spe * 0.42); // v0.0.2: foes close in faster (a Speed-50 foe ~65 px/s, the player ~95)
 }
 
 export function statOf(a, key) {
@@ -98,7 +98,8 @@ export class World {
     if (mode === 'shot') return R.shot[i] === 1;
     return R.walk[i] !== 0;
   }
-  moveMode(a) { return a.ghost ? 'ghost' : a.flying ? 'fly' : 'walk'; }
+  // the player's dash crosses gaps (water, ledges, low terrain) like Hades; walls still stop it
+  moveMode(a) { return a.ghost ? 'ghost' : a.flying || (a.dashing && a.action?.p.kind === 'dash') ? 'fly' : 'walk'; }
   // circle vs grid; axis separated with corner sampling
   collides(x, y, r, mode) {
     const s = r * 0.75;
@@ -144,6 +145,11 @@ export class World {
     const c = Math.cos(ang), s = Math.sin(ang);
     for (let d = 4; d < len; d += 4) if (this.blocked(x + c * d, y + s * d, 'shot')) return d;
     return len;
+  }
+  // after a move that ignored walls (leap, burrowing charge): step onto the nearest open ground
+  settle(a) {
+    if (!this.collides(a.x, a.y, Math.min(a.r, 8), this.moveMode(a)) && (a.team !== 'enemy' || a.ghost || a.flying || this.reachable(a.x, a.y))) return;
+    const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y;
   }
   // is this a cell the player can actually reach (and stand on)?
   reachable(x, y) {
@@ -390,7 +396,7 @@ export class World {
     }
     if (act.stage === 'active') {
       const done = this.tickActive(a, act, dt);
-      if (done) { act.stage = 'recover'; act.t = 0; a.dashing = false; a.noCollide = false; a.untargetable = false; }
+      if (done) { act.stage = 'recover'; act.t = 0; a.dashing = false; a.noCollide = false; a.untargetable = false; if (p.through) this.settle(a); }
       return;
     }
     if (act.stage === 'recover') {
@@ -547,7 +553,12 @@ export class World {
         break;
       }
       case 'lunge': case 'charge': {
-        const r = this.moveBy(a, act.vx * dt, act.vy * dt);
+        let r;
+        if (p.through) { // burrows through rock (Onix): only the arena's edge stops it
+          const R = this.room, nx = a.x + act.vx * dt, ny = a.y + act.vy * dt;
+          r = { hitX: nx < 8 || nx > R.w * TILE - 8, hitY: ny < 8 || ny > R.h * TILE - 8 };
+          a.x = Math.max(8, Math.min(R.w * TILE - 8, nx)); a.y = Math.max(8, Math.min(R.h * TILE - 8, ny));
+        } else r = this.moveBy(a, act.vx * dt, act.vy * dt);
         if (p.trail && this.time % 0.05 < dt) this.addZone({ owner: a, x: a.x, y: a.y, r: 10, dur: 1.5, p, slot: act.slot, team: a.team, tick: 0.4, fire: true, sprite: 'ember', dmgFrac: 0.3 });
         for (const b of this.foesOf(a)) if (!act.hits.has(b) && Math.hypot(b.x - a.x, b.y - a.y) < (p.range || 14) + b.r) {
           act.hits.add(b);
@@ -624,7 +635,7 @@ export class World {
         a.x = act.from.x + (act.to.x - act.from.x) * k; a.y = act.from.y + (act.to.y - act.from.y) * k; a.z = Math.sin(k * Math.PI) * 50;
         if (k >= 1) {
           a.z = 0; a.untargetable = false; a.noCollide = false;
-          if (this.collides(a.x, a.y, Math.min(a.r, 8), this.moveMode(a))) { const pt = this.randomOpenPoint(null); a.x = pt.x; a.y = pt.y; }
+          this.settle(a);
           this.vfx.push({ kind: 'ring', x: a.x, y: a.y, r0: 6, r1: p.radius || 40, t: 0, life: 0.35, fx: p.fx || 'quake' });
           this.hitCircle(a, act, a.x, a.y, p.radius || 40); this.shake = Math.max(this.shake, 6); Sound.playSE('se_m_earthquake');
           p.onLand?.(this, a, act);
@@ -634,6 +645,11 @@ export class World {
       case 'protect': break;
       case 'dash': {
         this.moveBy(a, act.vx * dt, act.vy * dt);
+        // still over a gap when the dash ends: carry on a little to the far side, else drop back onto the nearest ground
+        if (act.t >= act.dur && (this.collides(a.x, a.y, Math.min(a.r, 6), 'walk') || !this.reachable(a.x, a.y))) {
+          if ((act.extra = (act.extra || 0) + dt) < 0.1) act.dur += dt;
+          else { const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y; }
+        }
         act.ghostT = (act.ghostT || 0) - dt;
         if (act.ghostT <= 0) { act.ghostT = 0.03; this.vfx.push({ kind: 'afterimage', dex: a.dex, x: a.x, y: a.y, dir: a.dir, anim: a.anim, animT: a.animT, t: 0, life: 0.2 }); }
         act.recover = 0;

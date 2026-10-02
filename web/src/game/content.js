@@ -1,7 +1,7 @@
 // Biomes, starters, held items and shop stock.
 
 // Global difficulty knobs (tuned with tests/sim: a decent player with no research should win ~1 run in 4).
-export const TUNING = { enemyDmg: 2.75, bossDmg: 1.7, bossSecs: 1.75 };
+export const TUNING = { enemyDmg: 1.8, bossDmg: 1.45, bossSecs: 2.1 };
 
 export const BIOMES = [
   {
@@ -21,7 +21,7 @@ export const BIOMES = [
   {
     key: 'tower', name: 'POKéMON TOWER', music: 'mus_poke_tower', rooms: 7, vignette: 0.6, dark: true,
     pools: [['LAYOUT_POKEMON_TOWER_1F', [0, 1]], ['LAYOUT_POKEMON_TOWER_2F', [0, 1]], ['LAYOUT_POKEMON_TOWER_3F', [0, 1]], ['LAYOUT_POKEMON_TOWER_4F', [0, 1]], ['LAYOUT_POKEMON_TOWER_5F', [0, 1]]],
-    encounters: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F', 'MAP_POKEMON_TOWER_6F'], trainerMaps: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F'], levelBonus: [3, 7],
+    encounters: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F', 'MAP_POKEMON_TOWER_6F'], trainerMaps: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F'], levelBonus: [2, 5],
     boss: 'MAROWAK', bossRoom: ['LAYOUT_POKEMON_TOWER_6F', 0], waves: [2, 3], perWave: [3, 5], maxAttackers: 3,
     intro: 'Lavender\'s resting place for departed POKéMON. Something restless haunts the upper floors.',
   },

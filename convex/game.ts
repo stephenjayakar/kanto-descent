@@ -183,3 +183,32 @@ export const backfillRuns = internalMutation({
     return { updated: n };
   },
 });
+
+// One row per starter (each is its own challenge): the best run anyone has with it, and your own record with it.
+export const starterRecords = query({
+  args: { starters: v.array(v.string()), version: v.optional(v.string()) },
+  handler: async (ctx, { starters, version }) => {
+    const me = normEmail((await requireUser(ctx)).email);
+    const names: Names = new Map();
+    const mine = await ctx.db.query("runs").withIndex("by_email_at", q => q.eq("email", me)).order("desc").take(SCAN_CAP);
+    return await Promise.all(starters.slice(0, 12).map(async starter => {
+      // best overall: highest score with this starter (optionally on one version)
+      const top = await ctx.db.query("runs").withIndex("by_starter_score", q => q.eq("starter", starter)).order("desc").take(version ? SCAN_CAP : 1);
+      const bestDoc = version ? top.find(r => r.version === version) : top[0];
+      let runs = 0, wins = 0, bestScore = 0, myBest: Doc<"runs"> | null = null;
+      for (const r of mine) {
+        const f = runFields(r.entry);
+        if ((r.starter ?? f.starter) !== starter || (version && (r.version ?? f.version) !== version)) continue;
+        runs++;
+        if ((r.result ?? f.result) === "win") wins++;
+        const s = r.score ?? f.score;
+        if (!myBest || s > bestScore) { bestScore = s; myBest = r; }
+      }
+      return {
+        starter,
+        best: bestDoc ? await publicRun(ctx, bestDoc, names, me) : null,
+        mine: { runs, wins, bestScore, best: myBest ? await publicRun(ctx, myBest, names, me) : null },
+      };
+    }));
+  },
+});

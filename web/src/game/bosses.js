@@ -23,7 +23,7 @@ export const BOSSES = {
     trainer: 'LEADER_MISTY', sprite: 'misty', title: 'CERULEAN GYM LEADER', music: 'mus_vs_gym_leader', badge: 'CASCADE BADGE', badgeKey: 'CASCADE',
     intro: ["Hi, you're a new face!", "My policy is an all-out offensive with WATER-type POKéMON!"],
     outro: ["Wow! You're too much!", "All right! You can have the CASCADEBADGE to show you beat me!"],
-    refLevel: 24, mons: [{ species: 'STARMIE', level: 21, secs: 22, dmg: 0.85, tempo: 0.85 }],
+    refLevel: 24, mons: [{ species: 'STARMIE', level: 21, secs: 22, dmg: 0.72, tempo: 0.85 }],
     adds: { at: [0.5], species: 'STARYU', level: 18, n: 1, text: 'MISTY sent out STARYU!' },
   },
   MAROWAK: {
@@ -45,7 +45,7 @@ export const BOSSES = {
     sprite: null, title: 'THE GENETIC POKéMON', music: 'mus_vs_mewtwo', badge: 'MEWTWO', badgeKey: 'MEWTWO',
     intro: ['...', 'MEWTWO: Mew!'],
     outro: ['MEWTWO is exhausted...', 'The power in the cave fades.'],
-    refLevel: 45, mons: [{ species: 'MEWTWO', level: 62, secs: 60, dmg: 0.5, scale: 1 }],
+    refLevel: 45, mons: [{ species: 'MEWTWO', level: 62, secs: 60, dmg: 0.43, scale: 1 }],
   },
 };
 
@@ -54,7 +54,7 @@ const PATTERNS = {
   ONIX: [
     { w: 3, cd: 1.1, run: (w, a, t) => w.useMove(a, P('ROCK_TOMB', { count: 5, scatter: 46, radius: 18, delay: 0.75 }), { target: t, aim: aimAt(a, t) }) },
     { w: 2.5, cd: 1.0, run: (w, a, t) => w.useMove(a, P('BIND', { kind: 'swipe', range: 60, arc: 3.4, windup: 0.7, knock: 200 }), { target: t, aim: aimAt(a, t) }) },
-    { w: 2, cd: 1.4, run: (w, a, t) => w.useMove(a, P('TACKLE', { kind: 'charge', dist: 220, dur: 0.7, range: 22, windup: 0.8 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 2, cd: 1.4, run: (w, a, t) => w.useMove(a, P('TACKLE', { kind: 'charge', dist: 220, dur: 0.7, range: 22, windup: 0.8, through: true, recharge: 0.6 }), { target: t, aim: aimAt(a, t) }) },
     { w: 1.5, cd: 1.0, run: (w, a, t) => w.useMove(a, P('ROCK_THROW', { count: 3, spread: 0.5, windup: 0.6 }), { target: t, aim: aimAt(a, t) }) },
     { w: 1.5, phase: 1, cd: 1.2, run: (w, a, t) => w.useMove(a, P('DIG', { kind: 'leap', radius: 46, dur: 0.9, windup: 0.6, fx: 'quake', onLand: ringOfRocks }), { target: t, aim: aimAt(a, t) }) },
     { w: 2, cd: 1.3, run: (w, a, t) => storm(w, a, t, 'ROCK_SLIDE', { n: 10, r: 20, text: 'ROCK SLIDE', color: '#b8a038' }) },
@@ -314,7 +314,7 @@ export function bossBrain(world, a, dt) {
   }
   // drift toward a comfortable distance and circle
   const want = 70;
-  const sp = Math.min(moveSpeed(a) * 0.8, 52); // bosses move deliberately; fast species shouldn't out-run aimed attacks
+  const sp = Math.min(moveSpeed(a) * 0.8, 64); // bosses move deliberately; fast species shouldn't out-run aimed attacks
   let mx = 0, my = 0;
   if (d > want + 20) { mx = dx / d; my = dy / d; if (!a.flying && !a.ghost && !world.lineClear(a.x, a.y, t.x, t.y, 'walk')) { const f = world.flowDir(a.x, a.y); if (f) { mx = f.x; my = f.y; } } }
   else if (d < want - 20) { mx = -dx / d; my = -dy / d; }

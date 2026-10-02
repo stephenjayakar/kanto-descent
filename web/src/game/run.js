@@ -240,11 +240,34 @@ export function gainExp(run, amount) {
   }
   return ev;
 }
+// Every evolution method has a level here, so every line can finish evolving in a run:
+// level methods at their level, trade/friendship/beauty at 30, stones at 32, SPECIAL_EVOS overrides.
+export function nextEvolution(sp, level, stats) {
+  if (SPECIAL_EVOS[sp] && level >= SPECIAL_EVOS[sp][0]) return SPECIAL_EVOS[sp][1];
+  const into = levelEvolution(sp, level, stats) || easyEvolution(sp, level);
+  if (into) return into;
+  for (const e of D.species[sp]?.evolutions || []) {
+    if (/^LEVEL/.test(e.method) && e.method !== 'LEVEL_SHEDINJA' && level >= e.param) return e.into; // Tyrogue without stats, Wurmple, Nincada
+    if ((e.method === 'ITEM' && level >= 32) || (e.method === 'BEAUTY' && level >= 30)) return e.into;
+  }
+  return null;
+}
+export function partnerLevel(run) { return Math.max(run.partner?.level || 1, run.level - 2); }
+// The caught partner grows with you: evolve it as far as its level allows (returns the old species if it changed).
+export function evolvePartner(run) {
+  const pt = run.partner;
+  if (!pt) return null;
+  const from = pt.species;
+  for (let i = 0; i < 3; i++) { const into = nextEvolution(pt.species, partnerLevel(run)); if (!into || !D.species[into]) break; pt.species = into; }
+  return pt.species !== from ? from : null;
+}
+
 export function checkEvolution(run) {
+  const was = evolvePartner(run);
+  if (was) run.partnerEvo = [was, run.partner.species];
   if (run.pendingEvo) return;
   const sp = run.species;
-  let into = levelEvolution(sp, run.level, playerStats(run)) || easyEvolution(sp, run.level);
-  if (SPECIAL_EVOS[sp] && run.level >= SPECIAL_EVOS[sp][0]) into = SPECIAL_EVOS[sp][1];
+  let into = nextEvolution(sp, run.level, playerStats(run));
   if (sp === 'EEVEE' && run.level >= 20) into = 'CHOICE';
   if (into && (into === 'CHOICE' || D.species[into])) run.pendingEvo = into;
 }
