@@ -9,6 +9,8 @@ import { Sound } from '../audio/sound.js';
 import { D, TYPE_COLORS } from '../game/data.js';
 import { TILE, setAnim } from '../game/combat.js';
 import { profile, slotFor } from '../game/moves_rt.js';
+import { serializeRun, restoreRun, loadRunSave, clearRunSave, recordRun, runLabel } from '../game/run.js';
+import { Cloud } from '../game/cloud.js';
 import { G, newRun, makePlayer, buildHooks, gainExp, evolve, learnMove, boonChoices, addBoon, tmChoices, heldChoices, chaosOffer, saveMeta, rank, playerMaxHp, REWARD_INFO, starterUnlocked } from '../game/run.js';
 import { BOONS, LEGENDS, RARITY, SLOT_NAMES, boonInstance } from '../game/boons.js';
 import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT, HEAT } from '../game/content.js';
@@ -197,12 +199,30 @@ async function assignMove(scene, move, title) {
   const run = G.run;
   const best = slotFor(move);
   const order = [best, ...['attack', 'special', 'cast'].filter(s => s !== best)];
+  const newName = D.moves[move].name;
+  const brief = m => { const mv = D.moves[m], c = moveCard(m); return `${mv.name} (${c.sub})`; };
   const cards = order.map(s => {
     const cur = run.slots[s];
-    return { ...moveCard(cur || 'STRUGGLE'), title: `${SLOT_NAMES[s]}: replace ${cur ? D.moves[cur].name : '-'}`, sub: s === best ? '(suggested)' : '', subColor: 'green' };
+    const curName = cur ? D.moves[cur].name : 'nothing';
+    return {
+      title: `Forget ${curName}`, sub: `→ ${newName} becomes your ${SLOT_NAMES[s]}${s === best ? '  (suggested)' : ''}`, subColor: s === best ? 'green' : 'blue',
+      desc: cur ? `You lose ${brief(cur)}.` : 'This slot is empty.',
+      icon: cur ? ICON.type(D.moves[cur].type) : null, accent: s === best ? '#40b050' : TYPE_COLORS[D.moves[cur]?.type] || '#808080',
+    };
   });
-  cards.push({ title: `Don't learn ${D.moves[move].name}`, desc: 'Keep your current moves.', accent: '#808080' });
-  const i = await choose(title, cards, { cardH: 50, header: (ctx, y) => { const c = moveCard(move); text(ctx, title, W / 2, y - 50, { align: 'center', color: 'white' }); text(ctx, c.sub, W / 2, y - 32, { align: 'center', color: c.subColor, font: 'small' }); } });
+  cards.push({ title: `Don't learn ${newName}`, desc: 'Keep all your current moves.', accent: '#808080' });
+  const nc = moveCard(move);
+  const i = await choose(title, cards, { cardH: 46, top: 150, header: () => {}, footer: 'Learning a move means forgetting the one in that slot.', drawTop: ctx => {
+    // the new move, shown big above the choices
+    const bx = (W - 460) / 2, by = 34;
+    text(ctx, title, W / 2, by - 24, { align: 'center', color: 'white' });
+    pixBox(ctx, bx, by, 460, 96, '#fffef0', nc.accent, 3);
+    text(ctx, 'NEW MOVE', bx + 10, by + 6, { font: 'small', color: 'green' });
+    const im = img(nc.icon); if (ready(im)) ctx.drawImage(im, bx + 10, by + 24);
+    text(ctx, newName, bx + 50, by + 21, { color: 'dark', scale: 2 });
+    text(ctx, nc.sub, bx + 10, by + 50, { font: 'small', color: nc.subColor });
+    wrap(nc.desc || '', 440, 'small').slice(0, 2).forEach((ln, j) => text(ctx, ln, bx + 10, by + 64 + j * 12, { font: 'small', color: 'dark' }));
+  } });
   if (i >= 0 && i < 3) { learnMove(run, move, order[i]); Sound.playFanfare('mus_level_up'); refreshPlayer(scene); }
   else if (!run.known.includes(move)) run.known.push(move);
 }
@@ -425,6 +445,7 @@ class PauseOverlay {
       { label: `Music ${Math.round(G.meta.settings.music * 10)}/10`, fn: () => { G.meta.settings.music = (Math.round(G.meta.settings.music * 10) + 2) % 12 / 10; Sound.setMusicVolume(G.meta.settings.music); saveMeta(); } },
       { label: `Sound ${Math.round(G.meta.settings.sfx * 10)}/10`, fn: () => { G.meta.settings.sfx = (Math.round(G.meta.settings.sfx * 10) + 2) % 12 / 10; Sound.setSfxVolume(G.meta.settings.sfx); saveMeta(); } },
       { label: `Screen shake ${G.meta.settings.shake ? 'ON' : 'OFF'}`, fn: () => { G.meta.settings.shake = G.meta.settings.shake ? 0 : 1; saveMeta(); } },
+      ...(this.scene.spec.kind === 'hub' ? [] : [{ label: 'Save & quit to title', fn: () => saveAndQuit(this) }]),
       ...(this.scene.spec.kind === 'hub' ? [] : [{ label: 'Give up the run', fn: () => { popOverlay(this); const w = this.scene.world; w.forceDeath = true; w.player.hp = 0; w.kill(w.player, null); } }]),
     ];
   }
@@ -458,7 +479,9 @@ class PauseOverlay {
 export async function gameOver(scene) {
   const run = G.run;
   G.meta.deaths++;
-  G.meta.history.unshift({ starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: false, kills: run.kills, dust: run.stardustGained });
+  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: false, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now() };
+  G.meta.history.unshift(entry);
+  clearRunSave(); recordRun(entry);
   G.meta.history = G.meta.history.slice(0, 20);
   saveMeta();
   Sound.stopBGM();
@@ -469,7 +492,9 @@ function victory() {
   G.meta.wins++;
   G.meta.maxHeatWon = Math.max(G.meta.maxHeatWon ?? -1, run.heat || 0);
   if (!G.meta.bestTime || run.time < G.meta.bestTime) G.meta.bestTime = Math.round(run.time);
-  G.meta.history.unshift({ starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: true, kills: run.kills, dust: run.stardustGained });
+  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: true, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now() };
+  G.meta.history.unshift(entry);
+  clearRunSave(); recordRun(entry);
   saveMeta();
   setScene(new VictoryScene());
 }
@@ -630,3 +655,22 @@ export function devStart(q) {
   run.roomInBiome--; run.depth--;
   goNext({ spec: { kind: 'x' } }, kind === 'combat' ? { kind: 'rare_candy' } : { kind });
 }
+
+// ---------------------------------------------------------------- save & quit / continue
+async function saveAndQuit(pause) {
+  popOverlay(pause);
+  // the snapshot taken at the start of this room is the save; just make sure everything is flushed
+  saveMeta();
+  await Cloud.flushMeta();
+  Sound.playSE('se_save');
+  const { TitleScene } = await import('./title.js');
+  setScene(new TitleScene({ saved: true }));
+}
+export function continueRun() {
+  const s = loadRunSave();
+  if (!s) return false;
+  restoreRun(s.run);
+  go({ ...s.spec });
+  return true;
+}
+export { runLabel };

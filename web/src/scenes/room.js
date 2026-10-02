@@ -12,7 +12,7 @@ import '../game/combat_boons.js';
 import { loadLayout, buildRoom, candidates, drawTileAnims, mapIndex } from '../game/rooms.js';
 import { drawWorld, drawVignette, drawBA } from '../game/render.js';
 import { playerBrain, updateBalls, updateAllies } from '../game/player.js';
-import { G, makePlayer, buildHooks, gainExp, expFor, rollDoors, saveMeta, REWARD_INFO, playerMaxHp, rank } from '../game/run.js';
+import { G, makePlayer, buildHooks, gainExp, expFor, rollDoors, saveMeta, REWARD_INFO, playerMaxHp, rank, saveRunSnapshot } from '../game/run.js';
 import { BIOMES } from '../game/content.js';
 import { LEGENDS } from '../game/boons.js';
 import { rollWave, makeEnemy, rollTrainer, trainerParty, trainerSprite } from '../game/spawn.js';
@@ -34,6 +34,9 @@ export class RoomScene {
 
   async enter() {
     const spec = this.spec;
+    // autosave: snapshot the run as this room begins (before it rolls anything), for save & quit / crashes
+    const devRoom = typeof location !== 'undefined' && /[?&]dev=/.test(location.search || '');
+    if (spec.kind !== 'hub' && this.run && !spec.noSave && !devRoom) saveRunSnapshot(this.run, spec);
     try {
       const L = await loadLayout(spec.layout);
       const crop = spec.crop || candidates(spec.layout)[spec.cropIndex || 0] || { x: 0, y: 0, w: L.meta.w, h: L.meta.h };

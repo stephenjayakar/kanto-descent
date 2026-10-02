@@ -104,13 +104,14 @@ export class Choice {
   layout() {
     const n = this.cards.length, cw = 460, ch = this.opts.cardH || 62, gap = 8;
     const total = n * ch + (n - 1) * gap;
-    const y0 = Math.max(70, (H - total) / 2 + 14);
+    const y0 = Math.max(this.opts.top ?? 70, (H - total) / 2 + 14);
     return this.cards.map((c, i) => ({ x: (W - cw) / 2, y: y0 + i * (ch + gap), w: cw, h: ch }));
   }
   draw(ctx) {
     const k = Math.min(1, this.t * 5);
     ctx.fillStyle = `rgba(8,10,20,${0.62 * k})`; ctx.fillRect(0, 0, W, H);
     const L = this.layout();
+    this.opts.drawTop?.(ctx);
     if (this.opts.header) this.opts.header(ctx, L[0].y - 8);
     else text(ctx, this.title, W / 2, L[0].y - 34, { align: 'center', color: 'white', scale: 2 });
     this.cards.forEach((c, i) => {

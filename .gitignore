@@ -12,3 +12,5 @@ tools/pmd_verify/
 tools/battle_anims_verify/
 tools/.pmd_cache/
 tools/__pycache__/
+
+.env.local

@@ -5,7 +5,8 @@ import { Input } from './engine/input.js';
 import { loadFonts } from './engine/font.js';
 import { loadJSON, preload } from './engine/assets.js';
 import { loadData, D } from './game/data.js';
-import { loadMeta, G } from './game/run.js';
+import { loadMeta, G, syncFromCloud } from './game/run.js';
+import { Cloud } from './game/cloud.js';
 import { loadMapIndex } from './game/rooms.js';
 import { setBattleAnimManifest } from './game/render.js';
 import { Sound } from './audio/sound.js';
@@ -32,6 +33,8 @@ async function boot() {
     loadJSON('gfx/battle_anims/manifest.json').then(setBattleAnimManifest),
     preload(['gfx/ui/title/title_screen.png', 'gfx/ui/text_window/type1.png', 'gfx/ui/text_window/std.png']),
   ]);
+  // signed in on this browser: pull cloud progress first (don't hold up the title for more than ~3s)
+  if (Cloud.email) await Promise.race([syncFromCloud(), new Promise(r => setTimeout(r, 3000))]);
   document.getElementById('loading')?.remove();
   Object.assign(window, { G, D, __engine: engine, __sound: Sound, __rewards: rewards, __input: Input });
   const q = new URLSearchParams(location.search);

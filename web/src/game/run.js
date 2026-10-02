@@ -1,6 +1,7 @@
 // Run state (one escape attempt) and the persistent save (meta progression).
 import { D, monStats, expForLevel, movesLearnedAt, levelEvolution, easyEvolution } from './data.js';
 import { RNG, randomSeedString } from '../engine/rng.js';
+import { Cloud } from './cloud.js';
 import { makeActor } from './combat.js';
 import { BOONS, LEGENDS, CHAOS, RARITY, legendBoonPool, rollRarity, boonInstance } from './boons.js';
 import { BIOMES, STARTERS, HELD, RESEARCH, SPECIAL_EVOS } from './content.js';
@@ -13,20 +14,82 @@ export const PLAYER_BANNED = new Set(['EXPLOSION', 'SELF_DESTRUCT', 'DESTINY_BON
 
 // ---------------------------------------------------------------- meta (localStorage)
 const SAVE_KEY = 'kanto-descent-v1';
-export const G = { meta: null, run: null };
+export const G = { meta: null, run: null, save: undefined, cloudRuns: [] };
 
-export function loadMeta() {
-  let m = null;
-  try { m = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { m = null; }
-  G.meta = Object.assign({
+export function normalizeMeta(m) {
+  const meta = Object.assign({
     stardust: 0, totalStardust: 0, research: {}, badges: [], dex: { seen: {}, caught: {} }, runs: 0, wins: 0, bestTime: null,
     deaths: 0, heat: 0, maxHeatWon: -1, bossKills: {}, settings: { music: 0.7, sfx: 0.8, shake: 1 }, history: [], lastStarter: 'CHARMANDER', seenIntro: false,
   }, m || {});
-  if (G.meta.wins > 0 && (G.meta.maxHeatWon ?? -1) < 0) G.meta.maxHeatWon = 0;
-  for (const r of RESEARCH) if ((G.meta.research[r.key] || 0) > r.max) G.meta.research[r.key] = r.max;
+  if (meta.wins > 0 && (meta.maxHeatWon ?? -1) < 0) meta.maxHeatWon = 0;
+  for (const r of RESEARCH) if ((meta.research[r.key] || 0) > r.max) meta.research[r.key] = r.max;
+  return meta;
+}
+export function loadMeta() {
+  let m = null;
+  try { m = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { m = null; }
+  G.meta = normalizeMeta(m);
   return G.meta;
 }
-export function saveMeta() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(G.meta)); } catch { /* storage full */ } }
+export function saveMeta() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(G.meta)); } catch { /* storage full */ }
+  Cloud.pushMeta(G.meta);
+}
+
+// ---------------------------------------------------------------- run in progress (save & quit)
+// A snapshot is taken at the start of every room (before it rolls its enemies), so quitting and
+// resuming puts you back at the start of that room, like Hades.
+const RUN_KEY = 'kanto-descent-run';
+export function serializeRun(run) {
+  const o = { ...run, rng: run.rng.state, chaos: run.chaos.map(c => ({ curse: c.curse.key, blessing: c.blessing.key, rooms: c.rooms, active: c.active })) };
+  return JSON.parse(JSON.stringify(o));
+}
+export function restoreRun(o) {
+  const run = { ...o };
+  run.rng = new RNG(1); run.rng.state = o.rng;
+  run.chaos = (o.chaos || []).map(c => ({ curse: CHAOS.curses.find(x => x.key === c.curse) || CHAOS.curses[0], blessing: CHAOS.blessings.find(x => x.key === c.blessing) || CHAOS.blessings[0], rooms: c.rooms, active: c.active }));
+  G.run = run;
+  return run;
+}
+export function saveRunSnapshot(run, spec) {
+  const save = { run: serializeRun(run), spec: JSON.parse(JSON.stringify(spec)), at: Date.now(), label: runLabel(run) };
+  G.save = save;
+  try { localStorage.setItem(RUN_KEY, JSON.stringify(save)); } catch { /* storage full */ }
+  Cloud.putSave(save);
+  return save;
+}
+export function loadRunSave() {
+  if (G.save !== undefined) return G.save;
+  try { G.save = JSON.parse(localStorage.getItem(RUN_KEY) || 'null'); } catch { G.save = null; }
+  return G.save;
+}
+export function clearRunSave() {
+  G.save = null;
+  try { localStorage.removeItem(RUN_KEY); } catch { /* storage off */ }
+  Cloud.putSave(null);
+}
+export function runLabel(run) {
+  const B = BIOMES[run.biome];
+  return `${D.species[run.species]?.name || run.species} Lv${run.level} - ${B ? B.name : ''} ${run.roomInBiome + 1}/${(B?.rooms || 0) + 1}`;
+}
+// finished runs go to the cloud history too
+export function recordRun(entry) { Cloud.addRun(entry); }
+
+// Signing in: take whichever progression is further along, and the newer run in progress.
+export async function syncFromCloud() {
+  const remote = await Cloud.load();
+  if (!remote) return false;
+  const local = G.meta;
+  const score = m => (m?.totalStardust || 0) + (m?.runs || 0) * 10 + (m?.wins || 0) * 1000;
+  if (remote.meta && score(remote.meta) >= score(local)) { G.meta = normalizeMeta(remote.meta); try { localStorage.setItem(SAVE_KEY, JSON.stringify(G.meta)); } catch { /* */ } }
+  else Cloud.pushMeta(local);
+  const ls = loadRunSave();
+  if (remote.save && (!ls || remote.save.at > ls.at)) { G.save = remote.save; try { localStorage.setItem(RUN_KEY, JSON.stringify(remote.save)); } catch { /* */ } }
+  else if (ls && (!remote.save || ls.at > remote.save.at)) Cloud.putSave(ls);
+  G.cloudRuns = remote.runs || [];
+  return true;
+}
+
 export const rank = key => G.meta.research[key] || 0;
 export function starterUnlocked(s) { return !s.unlock || G.meta.badges.includes(s.unlock); }
 

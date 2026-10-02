@@ -154,3 +154,15 @@ Rules that came out of two adversarial review rounds and the sim:
 * **On-hit boon procs** trigger at most once per target every 0.25s.
 * **HEAT** (pick it from the rival in the lab after your first escape): 10 cumulative rules, each adding foe damage, with
   +10% STARDUST per level.
+
+## Saves
+* **Autosave:** the run is snapshotted at the start of every room, before the room rolls its enemies. Pause → **Save & quit to title**, or
+  just close the tab; **Continue** on the title screen resumes from the start of that room (Hades-style).
+* **Cloud saves** go to Convex (`convex/`, project `kanto-descent`) and are keyed by the email you enter on the title screen:
+  * tables: `profiles` (progression), `saves` (the run in progress) and `runs` (finished-run history);
+  * the browser talks to Convex's HTTP API with `fetch`, so there's no bundler. `web/config.js` holds the deployment URL;
+    regenerate it with `node tools/write_config.cjs`;
+  * localStorage is always written first, so the game works offline;
+  * on sign-in, whichever progression is further along wins, and so does the newer run save;
+  * there's no password: anyone who knows an email can load or overwrite that save.
+* **Deploying function changes:** `npx convex dev --once`.
