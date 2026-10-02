@@ -3,6 +3,7 @@
 // Rarity uses ball tiers: POKé (common) < GREAT < ULTRA < MASTER (duo boons).
 // Values scale with rarity and with PP Ups (boon level).
 import { Sound } from '../audio/sound.js';
+import { profile } from './moves_rt.js';
 
 export const LEGENDS = {
   ZAPDOS: { dex: 145, name: 'ZAPDOS', type: 'ELECTRIC', color: '#f8d030', cry: 'zapdos', title: 'Lord of Thunder' },
@@ -128,8 +129,10 @@ export const BOONS = {
   H_GUARD: { legend: 'HOOH', slot: 'passive', name: 'Rebirth Shield', desc: b => `The first ${Math.round(v(b, 1, 0.5))} hit(s) you take in each room deal no damage.`,
     onRoom: (w, b) => { w.player.shieldHits = Math.round(v(b, 1, 0.5)); },
     beforeHurt: (w, ctx) => { const p = w.player; if (p.shieldHits > 0 && ctx.slot !== 'dot' && ctx.slot !== 'self') { p.shieldHits--; ctx.dmg = 0; w.text(p, 'SHIELD', '#f8d060'); Sound.playSE('se_m_reflect'); } } },
-  H_CAST: { legend: 'HOOH', slot: 'cast', name: 'Recover', desc: b => `Your Cast also restores ${pct(v(b, 0.05, 0.3))} HP.`,
-    onCast: (w, a, b) => w.heal(a, Math.round(a.maxHp * v(b, 0.05, 0.3))) },
+  H_CAST: { legend: 'HOOH', slot: 'cast', name: 'Recover', castHits: true, desc: b => `When your Cast hits a foe, restore ${pct(v(b, 0.05, 0.3))} HP (once per Cast).`,
+    onCast: (w, a) => { a.recoverUntil = w.time + 2; }, // shots and lobs land a moment later
+    onCastHit: (w, e, b) => recoverHeal(w, b),
+    onHit: (w, info, b) => { if (fromSlot(info, 'cast')) recoverHeal(w, b); } },
 
   // ---------------- duo boons (MASTER rarity; need one boon from each)
   DUO_STORM: { legend: 'ZAPDOS', duo: ['ZAPDOS', 'ARTICUNO'], slot: 'passive', name: 'Frozen Storm', desc: () => `Paralyzed foes are also Chilled every second, and Frozen foes are struck by lightning (60 power).`,
@@ -163,6 +166,17 @@ export const CHAOS = {
   ],
 };
 
+function recoverHeal(w, b) {
+  const p = w.player;
+  if (!p || !(w.time < p.recoverUntil)) return;
+  p.recoverUntil = 0;
+  w.heal(p, Math.round(p.maxHp * v(b, 0.05, 0.3)));
+}
+
+// can the run's Cast move touch a foe at all? (Withdraw, Agility... can't, so "on Cast hit" boons are useless)
+const SELF_KINDS = new Set(['buff', 'heal', 'protect', 'teleport']);
+export const castHitsFoes = run => !!run.slots.cast && !SELF_KINDS.has(profile(run.slots.cast).kind);
+
 export function legendBoonPool(legend, run) {
   const owned = new Set(run.boons.map(b => b.key));
   const ownedLegends = new Set(run.boons.map(b => BOONS[b.key]?.legend));
@@ -172,6 +186,7 @@ export function legendBoonPool(legend, run) {
     if (owned.has(b.key)) return false;
     if (b.duo) return b.duo.every(l => ownedLegends.has(l));
     if (b.req && !b.req.some(r => owned.has(r))) return false;
+    if (b.castHits && !castHitsFoes(run)) return false;
     if (b.slot !== 'passive' && slotsTaken[b.slot] && BOONS[slotsTaken[b.slot]].legend === legend) return false;
     return true;
   });

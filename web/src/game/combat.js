@@ -470,6 +470,7 @@ export class World {
           if (b.team === 'player' && b.iframes > 0) continue;
           if (p.stat) this.changeStage(b, p.stat, -(p.stages || 1));
           if (p.status) this.addStatus(b, p.status, a);
+          if (act.slot === 'cast' && a === this.player) this.hooks.onCastHit?.(this, b);
         }
         act.dur = 0.1;
         break;

@@ -10,6 +10,7 @@ export const PATCH_NOTES = [
         'Harder: enemies hit harder and attack from farther away.',
         'Bosses hit a little softer per attack, but now always have something that reaches you.',
         'Dashing makes you see-through while you are invulnerable (about 0.2s).',
+        "HO-OH's Recover only heals when your Cast hits a foe (once per Cast), and isn't offered if your Cast can't hit anything.",
         'Bosses: no longer stuck behind their own terrain; shots and beams pass over walls, they reposition when they lose sight of you, and every boss has an arena-wide attack. MISTY’s attacks reach the whole arena.',
         'Boons: see the boons you already have while choosing; you can skip a boon; a boon that replaces one you have comes at least one rarity higher.',
         'Economy: less money from battles, trainers and NUGGETS; the pre-boss POKéMON CENTER no longer sells healing (NURSE JOY heals you).',

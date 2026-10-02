@@ -201,6 +201,7 @@ export function buildHooks(run, world) {
     },
     onDash(w, a) { each('onDash', w, a); },
     onCast(w, a) { each('onCast', w, a); },
+    onCastHit(w, e) { each('onCastHit', w, e); }, // a Cast debuff (Growl...) touched a foe
     onFreeze(w, e) { each('onFreeze', w, e); },
     onSlam(w, e) { each('onSlam', w, e); },
     onTick(w, dt) {
