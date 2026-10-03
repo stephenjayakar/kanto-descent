@@ -91,7 +91,7 @@ const P = {
   OCTAZOOKA: { kind: 'proj', speed: 200, size: 7, count: 1, life: 0.8, cd: 0.7, sprite: 'ink', explode: 18, sfx: 'se_m_bubble3' },
   AURORA_BEAM: { kind: 'beam', len: 130, width: 8, windup: 0.25, dur: 0.25, cd: 1.0, fx: 'ice', sfx: 'se_m_icy_wind' },
   ICE_BEAM: { kind: 'beam', len: 150, width: 10, windup: 0.3, dur: 0.3, cd: 1.4, fx: 'ice', sfx: 'se_m_icy_wind' },
-  BLIZZARD: { kind: 'strike', radius: 22, delay: 0.5, count: 5, scatter: 40, cd: 2.2, fx: 'ice', sfx: 'se_m_blizzard' },
+  BLIZZARD: { kind: 'strike', radius: 22, delay: 0.5, count: 5, scatter: 40, cd: 2.2, fx: 'ice', sfx: 'se_m_blizzard', blizzard: true },
   POWDER_SNOW: { kind: 'stream', dur: 0.4, rate: 0.06, speed: 160, size: 5, life: 0.5, spread: 0.5, cd: 0.8, sprite: 'snow', sfx: 'se_m_icy_wind' },
   ICY_WIND: { kind: 'proj', speed: 180, size: 6, count: 5, spread: 0.9, life: 0.6, cd: 1.0, sprite: 'snow', sfx: 'se_m_icy_wind' },
   RAZOR_LEAF: { kind: 'proj', speed: 230, size: 4, count: 3, spread: 0.32, life: 0.7, cd: 0.45, sprite: 'leaf', spin: true, crit: 0.25, sfx: 'se_m_razor_wind2' },

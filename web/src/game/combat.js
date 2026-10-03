@@ -461,7 +461,10 @@ export class World {
           // enemy blasts must be readable: at least ~0.75s between the warning circle and the hit
           const delay = a.team === 'enemy' ? Math.max(p.delay ?? 0.4, a.boss ? 0.65 : 0.8) : (p.delay ?? 0.4);
           this.strikes.push({ owner: a, act, x: pt.x, y: pt.y, r: p.radius || 20, t: -(i * 0.12), delay, p, slot: act.slot, team: a.team });
+          if (p.blizzard) this.vfx.push({ kind: 'icefall', x: pt.x, y: pt.y, t: -(i * 0.12), life: delay });
         }
+        // Blizzard: a snowstorm sweeps over the whole area while the ice comes down
+        if (p.blizzard) this.vfx.push({ kind: 'blizzard', x: tp.x, y: tp.y, r: (p.scatter || 0) + (p.radius || 20) + 16, t: 0, life: (p.delay ?? 0.4) + n * 0.12 + 0.9 });
         act.dur = 0.15;
         break;
       }
@@ -849,6 +852,7 @@ export class World {
         this.vfx.push({ kind: 'explode', x: s.x, y: s.y, r: s.r, t: 0, life: 0.3, type: s.p.type, fx: s.p.fx, strike: true });
         if (s.p.fx === 'lightning') { this.vfx.push({ kind: 'bolt', x0: s.x + (this.rand() - 0.5) * 20, y0: s.y - 200, x1: s.x, y1: s.y, t: 0, life: 0.2, big: true }); this.shake = Math.max(this.shake, 4); }
         if (s.p.fx === 'rock' || s.p.fx === 'quake') this.shake = Math.max(this.shake, 3);
+        if (s.p.blizzard) { this.vfx.push({ kind: 'iceburst', x: s.x, y: s.y, r: s.r, t: 0, life: 0.55 }); this.shake = Math.max(this.shake, 3); }
         const fake = { ...s.act, p: s.p, slot: s.slot, hits: new Set(), enemy: s.team === 'enemy' };
         const owner = s.owner;
         for (const b of this.actors) {

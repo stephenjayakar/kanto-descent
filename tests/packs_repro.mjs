@@ -35,7 +35,7 @@ const server = http.createServer((req, res) => {
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = `${b64({ alg: 'none' })}.${b64({ exp: Math.floor(Date.now() / 1000) + 86400 })}.x`;
 const me = { email: 'tester@example.com', allowed: true, canInvite: true, admin: true, name: 'TESTER' };
-const browser = process.env.FF ? await firefox.launch({ headless: true, firefoxUserPrefs: process.env.RFP ? { 'privacy.resistFingerprinting': true, 'privacy.fingerprintingProtection': true, 'privacy.fingerprintingProtection.overrides': '+AllTargets' } : {} }) : await chromium.launch({ channel: 'chrome', headless: true });
+const browser = process.env.FF ? await firefox.launch({ headless: true, firefoxUserPrefs: { 'media.volume_scale': '0.0', ...(process.env.RFP ? { 'privacy.resistFingerprinting': true, 'privacy.fingerprintingProtection': true, 'privacy.fingerprintingProtection.overrides': '+AllTargets' } : {}) } }) : await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio'] }); // silent
 const page = await browser.newPage({ viewport: { width: 1536, height: 864 } });
 const logs = [];
 page.on('console', m => logs.push(`[${m.type()}] ${m.text()}`));

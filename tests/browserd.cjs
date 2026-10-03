@@ -5,7 +5,7 @@
 const { chromium } = require('playwright');
 const http = require('http');
 (async () => {
-  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] }); // silent: never play sound on the owner's speakers
   const page = await browser.newPage({ viewport: { width: 1536, height: 864 } });
   const logs = [];
   page.on('console', m => logs.push(`[${m.type()}] ${m.text()}`));

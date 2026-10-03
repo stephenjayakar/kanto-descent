@@ -9,7 +9,7 @@ const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const jwt = `${b64({ alg: 'none' })}.${b64({ exp: Math.floor(Date.now() / 1000) + 86400 })}.x`;
 
 // two separate browsers, like two players (pages sharing a browser throttle whichever one is in the background)
-const args = ['--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
+const args = ['--mute-audio', '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
 const browsers = [await chromium.launch({ channel: 'chrome', headless: true, args }), await chromium.launch({ channel: 'chrome', headless: true, args })];
 const [hctx, gctx] = await Promise.all(browsers.map(b => b.newContext({ viewport: { width: 1536, height: 864 } })));
 const mock = async route => {

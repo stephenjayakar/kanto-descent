@@ -228,11 +228,19 @@ function boonCard(run, c) {
   };
 }
 
+// "Strikes for 15 power and 20% ..." vs the next level -> "Strikes for 15→19 power and 20→25% ..."
+function diffDesc(a, b) {
+  const num = /(\d+(?:\.\d+)?)/;
+  const pa = a.split(num), pb = b.split(num);
+  if (pa.length !== pb.length) return b;
+  return pb.map((t, i) => (i % 2 && t !== pa[i] ? `${pa[i]}→${t}` : t)).join('');
+}
+
 async function ppUp(scene) {
   const run = G.run;
   if (!run.boons.length) return;
   const opts = run.rng.sample(run.boons, Math.min(3, run.boons.length));
-  const cards = opts.map(b => { const def = BOONS[b.key]; const next = { ...b, level: b.level + 1 }; return { title: `${def.name} Lv${b.level} → ${b.level + 1}`, desc: def.desc(boonInstance(run, next)), portrait: LEGENDS[def.legend].dex, accent: LEGENDS[def.legend].color }; });
+  const cards = opts.map(b => { const def = BOONS[b.key]; const next = { ...b, level: b.level + 1 }; return { title: `${def.name} Lv${b.level} → ${b.level + 1}`, desc: diffDesc(def.desc(boonInstance(run, b)), def.desc(boonInstance(run, next))), portrait: LEGENDS[def.legend].dex, accent: LEGENDS[def.legend].color }; });
   const i = await choose('PP UP', cards, { footer: 'Choose a blessing to power up.' });
   if (i >= 0) { opts[i].level++; refreshPlayer(scene); Sound.playSE('se_m_stat_increase'); }
 }

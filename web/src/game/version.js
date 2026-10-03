@@ -21,6 +21,7 @@ export const PATCH_NOTES = [
         'Co-op rooms have twice as many foes, and twice as many can attack at once.',
         'Co-op: both players pick blessings at the same time, side by side. Player 2 can shop (shared money), talk to NURSE JOY, pick up rewards and change starter at the POKé BALLs in OAK’s lab.',
         'Bosses have twice the HP (each hit is softer, so fights are longer rather than deadlier).',
+        'PP UP shows what changes (e.g. 20 ➜ 25 power). BLIZZARD brings a real snowstorm with ice falling from the sky.',
         'A dash over water that gets interrupted no longer leaves you stuck in the water.',
         'Bosses: no longer stuck behind their own terrain; shots and beams pass over walls, they reposition when they lose sight of you, and every boss has an arena-wide attack. MISTY’s attacks reach the whole arena.',
         'Boons: see the boons you already have while choosing; you can skip a boon; a boon that replaces one you have comes at least one rarity higher.',
