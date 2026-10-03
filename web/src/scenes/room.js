@@ -46,7 +46,7 @@ export class RoomScene {
     const run = this.run;
     const world = this.world = new World(this.room, { rng: run.rng });
     world.run = run;
-    world.maxAttackers = BIOMES[run.biome]?.maxAttackers ?? 2;
+    world.maxAttackers = (BIOMES[run.biome]?.maxAttackers ?? 2) * (Coop.active ? 2 : 1); // co-op: two players to pressure
     const ent = this.room.entry;
     const p = world.player = makePlayer(run, ent.x, ent.y);
     p.brain = playerBrain; p.facing = -Math.PI / 2;
@@ -99,7 +99,7 @@ export class RoomScene {
     const run = this.run, B = BIOMES[run.biome];
     const nw = run.rng.int(B.waves[0], B.waves[1]);
     for (let i = 0; i < nw; i++) {
-      const n = run.rng.int(B.perWave[0], B.perWave[1]) + Math.floor(run.roomInBiome / 3) + (run.heat >= 7 ? 1 : 0);
+      const n = (run.rng.int(B.perWave[0], B.perWave[1]) + Math.floor(run.roomInBiome / 3) + (run.heat >= 7 ? 1 : 0)) * (Coop.active ? 2 : 1); // co-op: twice the foes
       this.waves.push(rollWave(run, n).map(e => ({ ...e, elite: run.depth > 2 && run.rng.chance(0.08 + run.biome * 0.03 + (run.heat >= 4 ? 0.1 : 0)) })));
     }
     this.waveT = 0.9; this.waveI = 0;
@@ -117,7 +117,9 @@ export class RoomScene {
     const ex = this.room.exits[0] || this.room.center;
     const npc = this.addNpc({ sprite: trainerSprite(t), x: ex.x, y: ex.y + 8, dir: 'down', name: `${t.className} ${t.name}`, trainer: true });
     // two at a time
-    for (let i = 0; i < party.length; i += 2) this.waves.push(party.slice(i, i + 2).map(e => ({ ...e, trainerMon: true, elite: this.spec.kind === 'trainer' })));
+    const per = Coop.active ? 4 : 2; // co-op: the party comes out twice as fast, plus a second helping of wild ones
+    for (let i = 0; i < party.length; i += per) this.waves.push(party.slice(i, i + per).map(e => ({ ...e, trainerMon: true, elite: this.spec.kind === 'trainer' })));
+    if (Coop.active) this.waves.push(rollWave(run, party.length + Math.floor(run.roomInBiome / 3)).map(e => ({ ...e, trainerMon: true })));
     // small parties get backup from the area's other POKéMON
     if (party.length < 3) this.waves.push(rollWave(run, 2 + Math.floor(run.roomInBiome / 3)).map(e => ({ ...e, trainerMon: true })));
     this.waveT = 99; this.waveI = 0;
@@ -191,7 +193,7 @@ export class RoomScene {
       else w.vfx.push({ kind: 'custom', t: 0, life: 0.5, draw: (ctx, v, k) => { drawBA(ctx, 'leaf', a.x + Math.cos(k * 9) * 10 * (1 - k), a.y - k * 10, k, { anim: true, alpha: 1 - k }); } });
     }
     if (list.some(e => e.trainerMon)) Sound.playSE('se_ball_open'); else Sound.playSE('se_m_razor_wind2');
-    this.world.maxAttackers = Math.max(BIOMES[this.run.biome]?.maxAttackers ?? 2, 1);
+    this.world.maxAttackers = Math.max(BIOMES[this.run.biome]?.maxAttackers ?? 2, 1) * (Coop.active ? 2 : 1);
   }
 
   updateWaves(dt) {

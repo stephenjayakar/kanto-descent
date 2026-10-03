@@ -86,6 +86,15 @@ console.log('moves', JSON.stringify(moves));
 const heal = await host.evaluate(async () => { const { coopHeal } = await import('/src/game/coop.js'); const a = window.__room.world.p2; a.hp = 5; coopHeal(window.__room, 0.5); return { hp: a.hp, max: a.maxHp }; });
 console.log('heal', JSON.stringify(heal));
 await host.screenshot({ path: 'tests/out/coop_host.png' });
+// co-op rooms have twice the foes
+console.log('waves', JSON.stringify(await host.evaluate(async () => {
+  const { Coop } = await import('/src/game/coop.js'); const r = window.__room, keep = r.waves, rng = r.run.rng.state ?? null;
+  const count = () => { r.waves = []; r.setupWaves(); return r.waves.reduce((n, w) => n + w.length, 0); };
+  let solo = 0, coop = 0;
+  for (let i = 0; i < 20; i++) coop += count();
+  const g = Coop.guest; Coop.guest = null; for (let i = 0; i < 20; i++) solo += count(); Coop.guest = g;
+  r.waves = keep; return { solo: solo / 20, coop: coop / 20, maxAttackers: r.world.maxAttackers };
+})));
 // a new run resets player 2 to its starter (it used to stay evolved)
 await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); Coop.p2.run.species = 'VENUSAUR'; const R = await import('/src/scenes/rewards.js'); R.toHub(); });
 await host.waitForTimeout(3500);
