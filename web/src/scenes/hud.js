@@ -6,6 +6,7 @@ import { pixBox, rect } from '../engine/ui.js';
 import { D, TYPE_COLORS } from '../game/data.js';
 import { BOONS, LEGENDS, RARITY } from '../game/boons.js';
 import { BIOMES, HELD, areaOf } from '../game/content.js';
+import { Input } from '../engine/input.js';
 import { expProgress } from '../game/run.js';
 import { drawPortrait, ICON } from './ui.js';
 import { profile } from '../game/moves_rt.js';
@@ -29,10 +30,11 @@ export function drawHud(ctx, world, run, opts = {}) {
   // exp bar
   rect(ctx, px + 52, py + 44, hw, 3, '#203040'); rect(ctx, px + 52, py + 44, Math.round(hw * expProgress(run)), 3, '#40c8f8');
   // revives
-  for (let i = 0; i < run.revives; i++) { const im = img('gfx/items/revive.png'); if (ready(im)) ctx.drawImage(im, px + 52 + i * 14, py + 33, 12, 12); }
+  // revives: the 24x24 REVIVE icon at 1:1 above the panel, with a count
+  if (run.revives > 0) { const im = img('gfx/items/revive.png'); if (ready(im)) ctx.drawImage(im, px + 196, py - 16); if (run.revives > 1) text(ctx, `×${run.revives}`, px + 220, py - 6, { font: 'small', color: 'white' }); }
 
   // ---- slots (bottom right)
-  const slots = [['attack', 'J', 'ATK'], ['special', 'K', 'SP'], ['cast', 'Q', 'CAST']];
+  const slots = [['attack', Input.label('attack'), 'ATK'], ['special', Input.label('special'), 'SP'], ['cast', Input.label('cast'), 'CAST']];
   let sx = W - 8 - slots.length * 76;
   const sy = H - 46;
   for (const [slot, key, label] of slots) {
@@ -58,20 +60,20 @@ export function drawHud(ctx, world, run, opts = {}) {
     const x = W - 8 - slots.length * 76 + i * 12, y = sy - 12;
     pixBox(ctx, x, y, 10, 8, i < dl ? '#80d8ff' : '#304050', '#0d1018', 2);
   }
-  text(ctx, 'DASH', W - 8 - slots.length * 76 + p.dashCharges * 12 + 2, sy - 15, { font: 'small', color: 'gray' });
+  text(ctx, Input.usingPad ? 'DASH RB' : 'DASH', W - 8 - slots.length * 76 + p.dashCharges * 12 + 2, sy - 15, { font: 'small', color: 'gray' });
   // balls
   const bim = img(`gfx/ui/balls/${run.ballType.replace("_ball", "")}.png`);
   const bx = W - 92;
   if (ready(bim)) ctx.drawImage(bim, 0, 0, 16, 16, bx, sy - 20, 16, 16);
   text(ctx, `×${run.balls}`, bx + 18, sy - 18, { color: 'white', font: 'small' });
-  text(ctx, 'R', bx + 40, sy - 18, { color: 'gray', font: 'small' });
+  text(ctx, Input.label('ball'), bx + 40, sy - 18, { color: 'gray', font: 'small' });
   // call gauge
   const cx = W - 8 - slots.length * 76 - 64, cy = H - 46;
   pixBox(ctx, cx, cy, 58, 38, 'rgba(24,28,40,0.88)', run.callGauge >= 1 ? '#f8d030' : '#405060', 3);
   if (run.partner) {
     const ic = img(`gfx/pokemon/${D.species[run.partner.species].sprites.icon.split('/')[0]}/icon.png`);
     if (ready(ic)) ctx.drawImage(ic, 0, Math.floor(Engine.time * 4) % 2 * 32, 32, 32, cx + 2, cy + 1, 32, 32);
-    text(ctx, 'F', cx + 52, cy + 2, { font: 'small', color: 'gray', align: 'right' });
+    text(ctx, Input.label('call'), cx + 52, cy + 2, { font: 'small', color: 'gray', align: 'right' });
   } else text(ctx, 'no partner', cx + 29, cy + 12, { font: 'small', color: 'gray', align: 'center' });
   rect(ctx, cx + 4, cy + 32, 50, 3, '#203040'); rect(ctx, cx + 4, cy + 32, Math.round(50 * run.callGauge), 3, run.callGauge >= 1 ? '#f8d030' : '#a0a0ff');
 
@@ -85,10 +87,10 @@ export function drawHud(ctx, world, run, opts = {}) {
   for (const b of run.boons) {
     const def = BOONS[b.key]; const L = LEGENDS[def.legend];
     const ic = img(ICON.portrait(L.dex));
-    pixBox(ctx, 6, by, 22, 22, RARITY[b.rarity].color, '#0d1018', 2);
-    if (ready(ic)) ctx.drawImage(ic, 8, by + 2, 18, 18);
-    if (b.level > 1) text(ctx, String(b.level), 27, by + 10, { font: 'small', color: 'white' });
-    by += 24;
+    pixBox(ctx, 6, by, 24, 24, RARITY[b.rarity].color, '#0d1018', 2);
+    if (ready(ic)) ctx.drawImage(ic, 8, by + 2, 20, 20); // 40x40 portraits at exactly half size
+    if (b.level > 1) text(ctx, String(b.level), 32, by + 12, { font: 'small', color: 'white' });
+    by += 26;
     if (by > H - 90) break;
   }
   if (run.held) { const im = img(ICON.item(run.held)); pixBox(ctx, 160, 6, 22, 22, 'rgba(24,28,40,0.8)', '#0d1018', 3); if (ready(im)) ctx.drawImage(im, 159, 5); }

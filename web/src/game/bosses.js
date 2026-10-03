@@ -170,6 +170,7 @@ function phaseBehind(w, a, t) {
 }
 
 function psychicTriple(w, a, t) {
+  w.bgFlash = { bg: 'psychic', t: 0, life: 1.1 };
   const p = P('PSYCHIC', { radius: 26, delay: 0.75, knock: 60 });
   for (let i = 0; i < 3; i++) w.later(i * 0.35, () => {
     if (a.dead) return;
@@ -192,6 +193,7 @@ function futureSight(w, a, t) {
 }
 
 function psystrikeStorm(w, a, t) {
+  w.bgFlash = { bg: 'psychic', t: 0, life: 1.6 };
   const p = P('PSYCHIC', { radius: 22, delay: 0.85, power: 90, knock: 40 });
   for (let i = 0; i < 9; i++) w.later(i * 0.12, () => {
     if (a.dead) return;

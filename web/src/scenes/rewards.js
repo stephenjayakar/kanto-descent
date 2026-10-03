@@ -1,7 +1,7 @@
 // Room flow helpers: rewards, prompts (level-up moves, evolution), shop, center, Deoxys, hub,
 // pause, death, victory and moving between rooms.
 import { Engine, W, H, setScene, pushOverlay, popOverlay } from '../engine/core.js';
-import { img, ready } from '../engine/assets.js';
+import { img, ready, preload, tinted } from '../engine/assets.js';
 import { text, measure, wrap } from '../engine/font.js';
 import { pixBox, rect, windowFrame } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
@@ -71,26 +71,72 @@ export function rewardLabel(r) {
   return REWARD_INFO[r.kind]?.name + (REWARD_INFO[r.kind]?.desc ? ` - ${REWARD_INFO[r.kind].desc}` : '');
 }
 
-export function drawDoor(ctx, scene, d) {
-  const t = d.t || 0, pulse = 0.5 + 0.5 * Math.sin(t * 4);
-  const col = d.reward.kind === 'boss' ? '255,80,60' : d.reward.kind === 'boon' ? hexToRgb(LEGENDS[d.reward.legend].color) : d.reward.kind === 'chaos' ? '208,80,160' : '255,240,160';
-  ctx.fillStyle = `rgba(${col},${0.25 + 0.2 * pulse})`;
-  ctx.beginPath(); ctx.ellipse(d.x, d.y, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = `rgba(${col},0.9)`; ctx.beginPath(); ctx.ellipse(d.x, d.y, 9 + pulse * 3, 6 + pulse * 2, 0, 0, Math.PI * 2); ctx.stroke();
-  // light pillar
-  const g = ctx.createLinearGradient(0, d.y - 40, 0, d.y);
-  g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(1, `rgba(${col},0.35)`);
-  ctx.fillStyle = g; ctx.fillRect(d.x - 7, d.y - 40, 14, 40);
-  // icon
-  const iy = d.y - 30 + Math.sin(t * 3) * 2;
-  pixBox(ctx, d.x - 11, iy - 11, 22, 22, 'rgba(16,20,32,0.85)', `rgb(${col})`, 3);
-  const r = d.reward;
-  if (r.kind === 'boon') { const im = img(ICON.portrait(LEGENDS[r.legend].dex)); if (ready(im)) ctx.drawImage(im, d.x - 9, iy - 9, 18, 18); }
-  else if (r.kind === 'chaos') { const im = img(ICON.portrait(386)); if (ready(im)) ctx.drawImage(im, d.x - 9, iy - 9, 18, 18); }
-  else if (r.kind === 'boss' || r.kind === 'next' || r.kind === 'victory') { const im = img('gfx/misc/emotes/double_exclamation.png'); if (ready(im)) ctx.drawImage(im, 0, 0, 16, 16, d.x - 8, iy - 8, 16, 16); }
-  else { const ic = REWARD_INFO[r.kind]?.icon; const im = ic && img(ic); if (im && ready(im)) ctx.drawImage(im, d.x - 12, iy - 12); }
+// Doors: FireRed's blinking warp arrow (gfx/misc/field_effects/arrow.png, 16x16 frames: up, up, down, down,
+// left, left, right, right) on the exit, pointing out of the room. The reward floats above it in a FireRed
+// window (drawDoorIcon, drawn as a vfx so it sits above the sprites and the dark crop mask).
+const ARROW = 'gfx/misc/field_effects/arrow.png';
+const ARROW_ROW = { up: 0, down: 2, left: 4, right: 6 };
+export function drawWarpArrow(ctx, dir, x, y, t) {
+  const im = img(ARROW);
+  if (!ready(im)) return;
+  const f = ARROW_ROW[dir] + (Math.floor(t * 3.75) % 2);
+  ctx.drawImage(im, 0, f * 16, 16, 16, Math.round(x - 8), Math.round(y - 8), 16, 16);
 }
-const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(',');
+// which way an exit leads: the room edge it's on, else the side that's blocked (a door in a wall), else away from the middle
+export function exitDir(room, d) {
+  const w = room.w, h = room.h, tx = d.tx ?? Math.floor(d.x / TILE), ty = d.ty ?? Math.floor(d.y / TILE);
+  if (ty <= 1) return 'up';
+  if (tx <= 1) return 'left';
+  if (tx >= w - 2) return 'right';
+  if (ty >= h - 2) return 'down';
+  const open = (x, y) => x >= 0 && y >= 0 && x < w && y < h && (!room.reach || room.reach[y * w + x]);
+  if (!open(tx, ty - 1)) return 'up';
+  if (!open(tx, ty + 1)) return 'down';
+  if (!open(tx - 1, ty)) return 'left';
+  if (!open(tx + 1, ty)) return 'right';
+  const c = room.center || { x: w * 8, y: h * 8 }, dx = d.x - c.x, dy = d.y - c.y;
+  return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+}
+export function drawDoor(ctx, scene, d) {
+  d.dir ??= exitDir(scene.room, d);
+  const v = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[d.dir];
+  drawWarpArrow(ctx, d.dir, d.x + v[0] * 2, d.y + v[1] * 2, d.t || 0);
+}
+// The picture for a reward, at world scale (1 unit = 1 GBA pixel). Portraits are 40x40 and drawn at exactly half
+// size, which is 1:1 on screen since the world is drawn at 2x.
+function rewardSprite(r) {
+  const info = REWARD_INFO[r.kind] || {};
+  if (r.kind === 'boon') return { src: ICON.portrait(LEGENDS[r.legend].dex), w: 20, h: 20, sw: 40, sh: 40 };
+  if (r.kind === 'chaos') return { src: ICON.portrait(386), w: 20, h: 20, sw: 40, sh: 40 };
+  if (r.kind === 'boss' || r.kind === 'next' || r.kind === 'victory') return { src: 'gfx/misc/emotes/double_exclamation.png', w: 16, h: 16, sw: 16, sh: 16 };
+  if (info.ow) return { src: ICON.ow(info.ow), w: 16, h: 22, sw: 16, sh: 22, sy: 10 }; // the clerk / Nurse Joy (frame 0, minus empty rows)
+  if (info.icon) return { src: info.icon, w: 24, h: 24, sw: 24, sh: 24, pad: 0 }; // item icons have their own margins
+  return null;
+}
+// a reward picture in a small FireRed window, centred on (x, y) in world units
+export function drawRewardIcon(ctx, r, x, y) {
+  const s = rewardSprite(r);
+  if (!s) return;
+  const pad = s.pad ?? 3, bw = s.w + 2 * pad + 4, bh = s.h + 2 * pad + 4;
+  x = Math.round(x); y = Math.round(y);
+  const bx = x - Math.round(bw / 2), by = y - Math.round(bh / 2);
+  const portrait = s.sw === 40;
+  if (portrait) { // a portrait fills its window: a thin frame in the legend's colour reads better than a white border
+    const col = r.kind === 'boon' ? LEGENDS[r.legend].color : r.kind === 'chaos' ? '#d050a0' : '#f8f8f8';
+    pixBox(ctx, x - 12, y - 12, 24, 24, '#f8f8f8', '#283040', 2);
+    rect(ctx, x - 11, y - 11, 22, 22, col);
+  } else windowFrame(ctx, bx, by, bw, bh, 'type1');
+  const im = img(s.src);
+  if (ready(im)) ctx.drawImage(im, 0, s.sy || 0, s.sw, s.sh, x - s.w / 2, y - s.h / 2, s.w, s.h);
+}
+export function drawDoorIcon(ctx, scene, d) {
+  if (d.used && scene.state === 'exiting') return;
+  drawRewardIcon(ctx, d.reward, d.x, d.y - 22 + Math.round(Math.sin((d.t || 0) * 3) * 1.5));
+}
+// doors get their floating icon as a long-lived vfx (above sprites and the map's over layer)
+export function addDoorIcons(scene) {
+  for (const d of scene.doors) scene.world.vfx.push({ kind: 'custom', t: 0, life: 1e9, door: d, draw: c => drawDoorIcon(c, scene, d) });
+}
 
 // ---------------------------------------------------------------- rewards in the room
 export function spawnReward(scene, reward, at) {
@@ -98,12 +144,36 @@ export function spawnReward(scene, reward, at) {
   const info = REWARD_INFO[reward.kind] || {};
   const pt = w.reachable(at.x, at.y) ? at : w.nearestReachable(at.x, at.y);
   const k = { x: pt.x, y: pt.y, z: 20, vz: 60, t: 0, magnet: false, reward, icon: reward.kind === 'boon' ? ICON.portrait(LEGENDS[reward.legend].dex) : reward.kind === 'held' ? 'gfx/items/leftovers.png' : info.icon };
-  if (reward.kind === 'boon') { k.icon = null; k.boon = reward.legend; }
+  if (reward.kind === 'boon') { k.icon = BALL_ICON; k.boon = reward.legend; }
   w.pickups.push(k);
   scene.rewardPickup = k;
-  // a boon pickup is drawn as a glowing orb with the legend's portrait
-  if (k.boon) w.vfx.push({ kind: 'custom', t: 0, life: 9999, pick: k, draw: (ctx) => { if (k.dead) return; const y = k.y - 12 + Math.sin(w.time * 3) * 2; const L = LEGENDS[k.boon]; ctx.fillStyle = L.color + '55'; ctx.beginPath(); ctx.arc(k.x, y, 14, 0, Math.PI * 2); ctx.fill(); const im = img(ICON.portrait(L.dex)); if (ready(im)) ctx.drawImage(im, Math.round(k.x - 10), Math.round(y - 10), 20, 20); drawBA(ctx, 'sparkle_2', k.x + Math.cos(w.time * 2) * 14, y + Math.sin(w.time * 2) * 10, w.time, { anim: true, scale: 0.5 }); } });
+  // a boon pickup is FireRed's overworld item ball on a ring of the legend's colour, its portrait bobbing above
+  if (k.boon) w.vfx.push({ kind: 'custom', t: 0, life: 9999, pick: k, draw: (ctx) => { if (!k.dead) drawBoonBall(ctx, k, w.time); } });
   Sound.playSE('se_ball_bounce_1');
+}
+
+const BALL_ICON = 'gfx/overworld/misc/item_ball.png';
+function drawBoonBall(ctx, k, t) {
+  const L = LEGENDS[k.boon], gx = Math.round(k.x), gy = Math.round(k.y + 5);
+  // the ring on the ground, pulsing, in the legend's colour
+  const p = 0.5 + 0.5 * Math.sin(t * 4);
+  ctx.save();
+  ctx.globalAlpha = 0.35 + 0.25 * p; ctx.fillStyle = L.color;
+  ctx.beginPath(); ctx.ellipse(gx, gy, 11, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = L.color; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(gx, gy, 10 + p * 2, 4.5 + p, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  // the ball again on top of the ring (same bob as the pickup itself)
+  const by = k.y - (k.z || 0) - Math.sin(t * 4 + k.x) * 1.5;
+  const bim = img(BALL_ICON);
+  if (ready(bim)) ctx.drawImage(bim, Math.round(k.x - 8), Math.round(by - 8));
+  // the legend's portrait above, 1:1 on screen (40x40 drawn at half size in the 2x world)
+  if ((k.z || 0) > 2) return;
+  const py = Math.round(k.y - 22 + Math.sin(t * 3) * 2);
+  drawRewardIcon(ctx, { kind: 'boon', legend: k.boon }, k.x, py);
+  // FireRed's small field sparkle twinkling at the window's corners (2 frames: small, big)
+  const sp = img('gfx/misc/field_effects/small_sparkle.png');
+  if (ready(sp)) { const n = Math.floor(t * 2.5), corner = n % 4, f = Math.floor(t * 10) % 2; ctx.drawImage(sp, 0, f * 16, 16, 16, Math.round(k.x + (corner % 2 ? 9 : -9) - 8), Math.round(py + (corner < 2 ? -9 : 9) - 8), 16, 16); }
 }
 
 export async function onPickup(scene, k) {
@@ -349,6 +419,7 @@ async function evolutionSequence(scene) {
   }
   const fromDex = D.species[run.species].dex, toDex = D.species[into].dex;
   await preloadPmd([toDex]);
+  await preload([run.species, into].map(s => `gfx/pokemon/${D.species[s].sprites.front}`)); // the real front sprites (PMD fallback if missing)
   await new Promise(res => pushOverlay(new EvolutionOverlay(fromDex, toDex, run.species, into, res)));
   evolve(run, into);
   refreshPlayer(scene);
@@ -363,28 +434,66 @@ class EvolutionOverlay {
     if (this.stage === 0 && this.t > 5) { this.stage = 1; this.t = 0; Sound.playFanfare('mus_evolved'); Sound.playCry(this.to); }
     if (this.stage === 1 && this.t > 0.6 && (Input.justPressed('confirm') || Engine.mouse.clicked || this.t > 4)) { popOverlay(this); Sound.playBGM(areaOf(G.run)?.music || 'mus_pallet'); this.done(); }
   }
+  // FireRed's evolution scene at 2x: the static background's top 112 rows (its bottom 48 are the textbox's
+  // magenta placeholder), the battle textbox below, and the real front sprites (PMD fallback while they load).
+  // While evolving: the swirl background (4 frames, ~8 fps), white silhouettes of both forms trading size
+  // faster and faster, and sparkles spiralling in, then a white flash.
   draw(ctx) {
-    const im = img('gfx/misc/evolution/static_bg.png');
+    const X = (W - 480) / 2, Y = (H - 320) / 2, t = this.t;
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-    if (ready(im)) ctx.drawImage(im, (W - 480) / 2, (H - 320) / 2, 480, 320);
-    const cx = W / 2, cy = H / 2 + 10;
+    const evolving = this.stage === 0 && t > 1 && t < 4.7;
+    if (evolving) { const sw = img('gfx/misc/evolution/swirl_frames.png'); if (ready(sw)) ctx.drawImage(sw, (Math.floor(t * 8) % 4) * 240, 22, 240, 112, X, Y, 480, 224); } // its eye (row 80) behind the POKéMON
+    else { const bg = img('gfx/misc/evolution/static_bg.png'); if (ready(bg)) ctx.drawImage(bg, 0, 0, 240, 112, X, Y, 480, 224); }
+    const cx = W / 2, cy = Y + 116; // the sprite's centre: FireRed puts the POKéMON in the middle of the top area
     if (this.stage === 0) {
-      // alternate silhouettes faster and faster
-      const freq = 1 + this.t * this.t * 0.8;
-      const showTo = this.t > 1 && Math.sin(this.t * freq * 3) > 0;
-      ctx.save(); ctx.scale(3, 3);
-      drawPmd(ctx, showTo ? this.tdex : this.f, cx / 3, cy / 3, { anim: 'Idle', t: this.t, tint: '#ffffff', tintA: this.t > 0.8 ? 1 : this.t / 0.8 });
-      ctx.restore();
-      windowFrame(ctx, (W - 520) / 2, H - 70, 520, 56, 'std');
-      text(ctx, `What? ${D.species[this.from].name} is evolving!`, (W - 520) / 2 + 16, H - 58, { color: 'dark' });
+      if (t <= 1) this.drawMon(ctx, this.from, this.f, cx, cy, 1, Math.max(0, t - 0.4) / 0.6);
+      else if (t < 4.7) {
+        // the two forms trade places, faster and faster (FireRed's shrinking/growing silhouettes)
+        const k = (t - 1) / 3.7, ph = Math.sin((t - 1) * (2.2 + k * 9) * Math.PI);
+        const sFrom = Math.max(0, ph), sTo = Math.max(0, -ph);
+        if (sFrom > 0.02) this.drawMon(ctx, this.from, this.f, cx, cy, 0.25 + 0.75 * sFrom, 1);
+        if (sTo > 0.02) this.drawMon(ctx, this.to, this.tdex, cx, cy, 0.25 + 0.75 * sTo, 1);
+        this.drawSparkles(ctx, cx, cy, t - 1);
+      } else this.drawMon(ctx, this.to, this.tdex, cx, cy, 1, 1);
+      if (t > 4.4) { ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (t - 4.4) / 0.3) * (t > 4.7 ? Math.max(0, 1 - (t - 4.7) / 0.3) : 1)})`; ctx.fillRect(X, Y, 480, 224); }
+      this.textbox(ctx, X, Y, [`What? ${D.species[this.from].name} is evolving!`]);
     } else {
-      ctx.save(); ctx.scale(3, 3);
-      drawPmd(ctx, this.tdex, cx / 3, cy / 3, { anim: 'Idle', t: this.t, tint: '#ffffff', tintA: Math.max(0, 1 - this.t * 2) });
-      ctx.restore();
-      windowFrame(ctx, (W - 520) / 2, H - 70, 520, 56, 'std');
-      text(ctx, `Congratulations! Your ${D.species[this.from].name}`, (W - 520) / 2 + 16, H - 62, { color: 'dark' });
-      text(ctx, `evolved into ${D.species[this.to].name}!`, (W - 520) / 2 + 16, H - 46, { color: 'dark' });
+      this.drawMon(ctx, this.to, this.tdex, cx, cy, 1, Math.max(0, 1 - t * 2));
+      this.textbox(ctx, X, Y, [`Congratulations! Your ${D.species[this.from].name}`, `evolved into ${D.species[this.to].name}!`]);
     }
+  }
+  // the front sprite (64x64, drawn 2x), as a white silhouette when white = 1; scale for the size trading
+  drawMon(ctx, species, dex, cx, cy, scale, white) {
+    const path = `gfx/pokemon/${D.species[species].sprites.front}`;
+    const im = img(path);
+    if (ready(im)) {
+      const s = Math.round(128 * scale / 2) * 2;
+      ctx.drawImage(im, Math.round(cx - s / 2), Math.round(cy - s / 2), s, s);
+      if (white > 0) { const wt = tinted(path, '#ffffff', 1); if (wt) { ctx.globalAlpha = Math.min(1, white); ctx.drawImage(wt, Math.round(cx - s / 2), Math.round(cy - s / 2), s, s); ctx.globalAlpha = 1; } }
+      return;
+    }
+    ctx.save(); ctx.scale(3, 3); // fallback (front sprites not in the asset pack): the PMD sprite
+    drawPmd(ctx, dex, cx / 3, (cy + 16) / 3, { anim: 'Idle', t: this.t, tint: '#ffffff', tintA: Math.min(1, white), scale });
+    ctx.restore();
+  }
+  drawSparkles(ctx, cx, cy, t) {
+    const sp = img('gfx/misc/evolution/sparkle.png');
+    if (!ready(sp)) return;
+    for (let i = 0; i < 8; i++) { // spiralling in from the edges, fading as they reach the POKéMON
+      const life = (t * 0.6 + i / 8) % 1, a = i / 8 * Math.PI * 2 + t * 2.4;
+      const r = 170 * (1 - life);
+      const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * 0.5;
+      ctx.globalAlpha = Math.min(1, life * 4, (1 - life) * 3) * 0.9;
+      ctx.drawImage(sp, Math.round(x - 8), Math.round(y - 8), 16, 16);
+    }
+    ctx.globalAlpha = 1;
+  }
+  // FireRed's battle textbox (240x48, 2x) with white text, 2x when it fits
+  textbox(ctx, X, Y, lines) {
+    const tb = img('gfx/ui/battle/textbox.png');
+    if (ready(tb)) ctx.drawImage(tb, X, Y + 224, 480, 96); else windowFrame(ctx, X, Y + 224, 480, 96, 'std');
+    const big = lines.every(l => measure(l) * 2 <= 480 - 40);
+    lines.forEach((l, i) => text(ctx, l, X + 22, Y + 224 + (big ? 14 + i * 32 : 26 + i * 18), { color: 'white', scale: big ? 2 : 1 }));
   }
 }
 
@@ -437,7 +546,7 @@ export async function openShop(scene) {
   await say([{ text: 'Hi there! May I help you?', name: 'CLERK' }]);
   while (true) {
     const cards = scene.stock.map(s => ({ title: s.name, sub: s.sold ? 'SOLD' : `¥${s.price}`, subColor: run.money >= s.price ? 'green' : 'red', desc: s.desc, icon: ICON.item(s.key), accent: '#3070c0', disabled: s.sold || run.money < s.price }));
-    const i = await choose(`POKé MART   ¥${run.money}`, cards, { cardH: 40, canSkip: true, skipLabel: 'LEAVE (X)' });
+    const i = await choose(`POKé MART   ¥${run.money}`, cards, { cardH: 36, canSkip: true, skipLabel: 'LEAVE (X)' });
     if (i < 0) break;
     const s = scene.stock[i];
     run.money -= s.price; s.sold = true; Sound.playSE('se_shop');
@@ -505,6 +614,7 @@ export async function bossDefeated(scene) {
   for (const e of w0.enemies()) { e.dead = true; e.deathT = 0; e.noExp = true; w0.vfx.push({ kind: 'sendout', x: e.x, y: e.y, t: 0, life: 0.4, recall: true }); }
   w0.strikes = w0.strikes.filter(s => s.team !== 'enemy'); w0.projectiles = w0.projectiles.filter(p => p.team !== 'enemy'); w0.zones = w0.zones.filter(z => z.team !== 'enemy');
   w0.player.iframes = 99; w0.player.status = {};
+  Input.rumble(450, 0.9, 0.6); // the boss goes down
   Sound.playBGM(key === 'MEWTWO' || key === 'MAROWAK' ? 'mus_victory_wild' : 'mus_victory_gym_leader');
   const name = def.sprite ? (D.trainers[def.trainer]?.name || key) : key === 'MAROWAK' ? 'MAROWAK' : 'MEWTWO';
   await new Promise(r => setTimeout(r, 900));
@@ -551,28 +661,46 @@ class PauseOverlay {
     ];
   }
   draw(ctx) {
-    const run = G.run;
-    ctx.fillStyle = 'rgba(8,10,20,0.78)'; ctx.fillRect(0, 0, W, H);
-    text(ctx, 'PAUSED', 24, 16, { color: 'white', scale: 2 });
-    this.items().forEach((it, i) => { if (i === this.sel) { const im = img('gfx/ui/cursors/red_arrow.png'); if (ready(im)) ctx.drawImage(im, 24, 58 + i * 18); } text(ctx, it.label, 36, 56 + i * 18, { color: i === this.sel ? 'gold' : 'white' }); });
+    // FireRed START-menu style: white type1 windows with dark text and the red arrow cursor
+    const run = G.run, items = this.items();
+    ctx.fillStyle = 'rgba(8,10,20,0.55)'; ctx.fillRect(0, 0, W, H);
+    const mx = 12, my = 12, mw = 236, mh = 36 + items.length * 18 + 8;
+    windowFrame(ctx, mx, my, mw, mh, 'type1');
+    text(ctx, 'PAUSED', mx + 14, my + 10, { color: 'blue' });
+    items.forEach((it, i) => { const iy = my + 32 + i * 18; if (i === this.sel) { const im = img('gfx/ui/cursors/red_arrow.png'); if (ready(im)) ctx.drawImage(im, mx + 12, iy + 2); } text(ctx, it.label, mx + 30, iy, { color: 'dark' }); });
     // controls
-    const ctl = ['WASD / arrows: move', 'J or Left click: ATTACK', 'K or Right click: SPECIAL', 'Q: CAST (status move)', 'SPACE / SHIFT: DASH', 'R: throw POKé BALL (weak wild foes)', 'F: call your partner', 'E: talk / interact', 'Mouse aims when moved; gamepad works too'];
-    ctl.forEach((c, i) => text(ctx, c, 24, 170 + i * 13, { font: 'small', color: 'whiteSoft' }));
-    // boons + moves
-    let x = 300, y = 20;
-    text(ctx, `${D.species[run.species].name}  Lv${run.level}`, x, y, { color: 'white' }); y += 18;
-    for (const s of ['attack', 'special', 'cast']) { const m = run.slots[s]; text(ctx, `${SLOT_NAMES[s]}: ${m ? D.moves[m].name : '-'}`, x, y, { font: 'small', color: m ? [TYPE_COLORS[D.moves[m].type], '#101010'] : 'gray' }); y += 12; }
-    if (run.held) { text(ctx, `HELD: ${HELD[run.held].name} - ${HELD[run.held].desc}`, x, y, { font: 'small', color: 'gold' }); y += 12; }
-    if (run.partner) { text(ctx, `PARTNER: ${D.species[run.partner.species].name} Lv${run.partner.level}`, x, y, { font: 'small', color: 'whiteSoft' }); y += 12; }
-    y += 6;
-    text(ctx, 'BLESSINGS', x, y, { color: 'white' }); y += 16;
-    for (const b of run.boons) {
-      const def = BOONS[b.key], L = LEGENDS[def.legend];
-      text(ctx, `${def.name} (${SLOT_NAMES[def.slot]}) Lv${b.level}`, x, y, { font: 'small', color: [L.color, '#101010'] }); y += 11;
-      for (const ln of wrap(def.desc(boonInstance(run, b)), 440, 'small').slice(0, 2)) { text(ctx, ln, x + 8, y, { font: 'small', color: 'whiteSoft' }); y += 11; }
-      if (y > H - 20) break;
+    const ctl = ['WASD / arrows: move', 'J or Left click: ATTACK', 'K or Right click: SPECIAL', 'Q: CAST (status move)', 'SPACE / SHIFT: DASH', 'R: throw POKé BALL (weak wild foes)', 'F: call your partner', 'E: talk / interact', 'Mouse aims when moved; gamepad too'];
+    const cy0 = my + mh + 8;
+    windowFrame(ctx, mx, cy0, mw, 30 + ctl.length * 13, 'type1');
+    text(ctx, 'CONTROLS', mx + 14, cy0 + 8, { color: 'blue', font: 'small' });
+    ctl.forEach((c, i) => text(ctx, c, mx + 14, cy0 + 22 + i * 13, { font: 'small', color: 'dark' }));
+    // the POKéMON, its moves, item, partner and blessings
+    const bx = 260, bw = W - bx - 12;
+    const rowsH = run.boons.reduce((s, b) => s + Math.max(28, 11 * (1 + Math.min(2, wrap(BOONS[b.key].desc(boonInstance(run, b)), bw - 60, 'small').length)) + 5), 0);
+    const bh = Math.min(H - 24, Math.max(mh, 10 + 18 + 42 + (run.held ? 12 : 0) + (run.partner ? 12 : 0) + 6 + 18 + rowsH + run.chaos.length * 12 + 12)), bottom = 12 + bh - 14;
+    windowFrame(ctx, bx, 12, bw, bh, 'type1');
+    let x = bx + 14, y = 22;
+    text(ctx, `${D.species[run.species].name}  Lv${run.level}`, x, y, { color: 'dark' }); y += 18;
+    for (const s of ['attack', 'special', 'cast']) {
+      const m = run.slots[s];
+      if (m) { const ti = img(ICON.type(D.moves[m].type)); if (ready(ti)) ctx.drawImage(ti, x, y); }
+      text(ctx, `${SLOT_NAMES[s]}: ${m ? D.moves[m].name : '-'}`, x + 38, y, { font: 'small', color: m ? 'dark' : 'gray' }); y += 14;
     }
-    for (const c of run.chaos) { text(ctx, c.active ? `DEOXYS: ${c.blessing.name}` : `DEOXYS curse: ${c.curse.name} (${c.rooms} rooms)`, x, y, { font: 'small', color: 'pink' }); y += 12; }
+    if (run.held) { text(ctx, `HELD: ${HELD[run.held].name} - ${HELD[run.held].desc}`, x, y, { font: 'small', color: 'dark' }); y += 12; }
+    if (run.partner) { text(ctx, `PARTNER: ${D.species[run.partner.species].name} Lv${run.partner.level}`, x, y, { font: 'small', color: 'dark' }); y += 12; }
+    y += 6;
+    text(ctx, run.boons.length ? 'BLESSINGS' : 'BLESSINGS: none yet', x, y, { color: 'blue' }); y += 18;
+    for (const b of run.boons) {
+      const def = BOONS[b.key], L = LEGENDS[def.legend], rar = RARITY[b.rarity];
+      const lines = wrap(def.desc(boonInstance(run, b)), bw - 60, 'small').slice(0, 2);
+      if (y + 11 * (1 + lines.length) > bottom) { text(ctx, '...', x, y, { font: 'small', color: 'gray' }); break; }
+      pixBox(ctx, x, y, 24, 24, rar.color, '#283040', 2);
+      const pim = img(ICON.portrait(L.dex)); if (ready(pim)) ctx.drawImage(pim, x + 2, y + 2, 20, 20);
+      text(ctx, `${def.name}  (${SLOT_NAMES[def.slot]}${b.level > 1 ? ' Lv' + b.level : ''})`, x + 30, y, { font: 'small', color: 'black' });
+      lines.forEach((ln, j) => text(ctx, ln, x + 30, y + 11 + j * 11, { font: 'small', color: 'dark' }));
+      y += Math.max(28, 11 * (1 + lines.length) + 5);
+    }
+    for (const c of run.chaos) { if (y > bottom) break; text(ctx, c.active ? `DEOXYS: ${c.blessing.name}` : `DEOXYS curse: ${c.curse.name} (${c.rooms} rooms)`, x, y, { font: 'small', color: 'red' }); y += 12; }
   }
 }
 
@@ -661,6 +789,7 @@ export function setupHub(scene) {
   const ex = scene.room.exits[0];
   scene.doors = [{ ...ex, reward: { kind: 'start' }, t: 0 }];
   scene.doorsOpen = true; scene.cleared = true;
+  addDoorIcons(scene);
   scene.world.noBalls = true;
   scene.world.player.brain = hubBrain(scene.world.player.brain);
   if (!G.meta.seenIntro) { G.meta.seenIntro = true; saveMeta(); setTimeout(() => tutorial(scene, true), 600); }

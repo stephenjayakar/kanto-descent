@@ -45,6 +45,11 @@ export async function listAssets() {
   for (const f of ['maps/index.json', 'maps/rooms_candidates.json', 'pmd/index.json']) files.push(f);
   for (const l of layouts) add('maps/' + l);
   for (const d of dexes) add('pmd/' + d);
-  // pokemon front/back battle sprites are never drawn (the game uses PMD sprites + menu icons)
-  return { files: files.filter(f => !/^gfx\/pokemon\/[^/]+\/(front|back)/.test(f)), dexes, layouts };
+  // pokemon front/back battle sprites are never drawn (the game uses PMD sprites + menu icons), except the
+  // evolution screen's front.png for the player's own lines: the starters, everything they evolve into, Eevee's
+  // choices and the SPECIAL_EVOS targets
+  const evoLine = new Set([...STARTERS.map(s => s.species), ...EEVEE_CHOICES, ...Object.values(SPECIAL_EVOS).map(([, into]) => into)]);
+  for (let more = true; more;) { more = false; for (const k of [...evoLine]) for (const e of species[k]?.evolutions || []) if (!evoLine.has(e.into)) { evoLine.add(e.into); more = true; } }
+  const keepFront = new Set([...evoLine].map(k => species[k]?.sprites?.front).filter(Boolean).map(f => 'gfx/pokemon/' + f));
+  return { files: files.filter(f => keepFront.has(f) || !/^gfx\/pokemon\/[^/]+\/(front|back)/.test(f)), dexes, layouts };
 }

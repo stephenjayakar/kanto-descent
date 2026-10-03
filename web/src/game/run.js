@@ -306,11 +306,12 @@ export const REWARD_INFO = {
   star_piece: { name: 'STAR PIECE', icon: 'gfx/items/star_piece.png', desc: 'Lots of STARDUST' },
   balls: { name: 'POKé BALLS', icon: 'gfx/items/poke_ball.png', desc: '+3 POKé BALLS' },
   held: { name: 'HELD ITEM', icon: 'gfx/items/leftovers.png', desc: 'An item to hold' },
-  shop: { name: 'POKé MART', icon: 'gfx/items/poke_doll.png', desc: 'Buy items' },
-  center: { name: 'POKéMON CENTER', icon: 'gfx/items/full_restore.png', desc: 'Heal up' },
+  shop: { name: 'POKé MART', icon: 'gfx/items/poke_doll.png', ow: 'clerk', desc: 'Buy items' }, // doors show the overworld NPC (ow)
+  center: { name: 'POKéMON CENTER', icon: 'gfx/items/full_restore.png', ow: 'nurse', desc: 'Heal up' },
   chaos: { name: 'DEOXYS', desc: 'A strange bargain' },
   trainer: { name: 'TRAINER BATTLE', icon: 'gfx/items/exp_share.png', desc: 'Tough fight, a held item' },
   boss: { name: 'BOSS', desc: '' },
+  start: { name: 'Set out', icon: 'gfx/items/town_map.png', desc: '' }, // the lab door
 };
 
 const LEGEND_KEYS = ['ZAPDOS', 'ARTICUNO', 'MOLTRES', 'MEW', 'LUGIA', 'HOOH'];

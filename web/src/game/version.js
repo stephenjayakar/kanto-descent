@@ -1,8 +1,27 @@
 // Game version and patch notes (shown from the title screen). Only cut a new version when asked.
-export const VERSION = 'v0.0.3';
+export const VERSION = 'v0.0.4';
 
 // Newest first. Each entry: { v, sections: [[TITLE, [lines]]] } (an empty title means no heading).
 export const PATCH_NOTES = [
+  {
+    v: 'v0.0.4',
+    sections: [
+      ['ART PASS (REAL FIRERED ART)', [
+        'Beams are streams of FireRed particles: PSYBEAM rings, ICE BEAM crystals, HYDRO PUMP water, sparks for electric beams, each with its own hit.',
+        'THUNDERBOLT chains are built from spark tiles and THUNDER is a column of lightning. WATER GUN fires droplets. BLIZZARD and WHIRLPOOL use the game’s ice crystals and water orbs. SMOKESCREEN now shows its smoke.',
+        'HP bars are the GBA’s own bar tiles, with the status icon beside them, the caught-ball mark and stat arrows. Shadows, dust and grass rustles are FireRed’s field effects.',
+        'Bursts and rings are made of each move’s particles. Effects stay inside the arena and are drawn at clean pixel sizes. Damage numbers are sharper, fan out and add up over time.',
+        'The evolution screen is FireRed’s (swirl, sparkles, the real sprites), and the magenta band is gone.',
+        'Doors use FireRed’s warp arrows with the reward in a window; locked exits show an X. The pause menu is a START menu. Item balls for rewards.',
+        'Boss bars no longer cover the boss, dialogue hides the HUD, the shop list fits, and icons are no longer blurry. MEWTWO’s psychic attacks flash the Psychic background.',
+      ]],
+      ['CONTROLLERS', [
+        'Xbox (XInput) controllers: every connected pad works, the left stick navigates menus with auto-repeat, and pads that report the raw XInput layout are supported too.',
+        'Rumble when you are hit, catch a POKéMON or beat a boss (toggle it in SETTINGS).',
+        'Button prompts show Xbox buttons (X, Y, B, RB, RT, A) while you play with a pad.',
+      ]],
+    ],
+  },
   {
     v: 'v0.0.3',
     sections: [

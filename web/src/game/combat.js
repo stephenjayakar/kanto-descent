@@ -236,6 +236,7 @@ export class World {
     this.updateProjectiles(dt);
     this.updateZones(dt);
     this.updateStrikes(dt);
+    if (this.bgFlash) this.bgFlash.t += dt;
     this.updatePickups(dt);
     this.updateVfx(dt);
     // remove fully dead
@@ -335,7 +336,7 @@ export class World {
     if (kind === 'burn') s.stacks = Math.min(s.stacks, 5);
     a.status[kind] = s;
     if (kind === 'sleep' || kind === 'freeze') this.cancelAction(a);
-    this.text(a, { burn: 'BRN', poison: 'PSN', toxic: 'PSN', para: 'PAR', sleep: 'SLP', confuse: '???', freeze: 'FRZ', trap: 'TRAPPED', slow: 'SLOW' }[kind] || '', '#ffd0a0', true);
+    if (a.team === 'player' || !['burn', 'poison', 'toxic', 'para', 'sleep', 'freeze'].includes(kind)) this.text(a, { burn: 'BRN', poison: 'PSN', toxic: 'PSN', para: 'PAR', sleep: 'SLP', confuse: '???', freeze: 'FRZ', trap: 'TRAPPED', slow: 'SLOW' }[kind] || '', '#ffd0a0', true); // foes show the status icon instead
   }
   updateStatus(a, dt) {
     const S = a.status;
@@ -1014,7 +1015,14 @@ export class World {
     if (b.status.freeze && o.slot !== 'dot' && o.slot !== 'env') { b.wasFrozen = this.time; delete b.status.freeze; this.vfx.push({ kind: 'shatter', x: b.x, y: b.y - 8, t: 0, life: 0.4 }); Sound.playSE('se_ice_break'); }
     // numbers
     const col = o.color || (b.team === 'player' ? 'red' : o.crit ? 'gold' : o.eff > 1 ? 'orange' : o.eff < 1 ? 'gray' : 'white');
-    this.texts.push({ str: String(dmg) + (o.crit ? '!' : ''), x: b.x + (this.rand() - 0.5) * 8, y: b.y - 18 - b.r, t: 0, life: 0.7, color: col, big: o.crit || o.eff > 1 });
+    if (o.slot === 'dot') { // damage-over-time ticks add up in one number per target
+      const prev = this.texts.find(t => t.tid === b.id && t.dot && t.t < 0.5);
+      if (prev) { prev.n += dmg; prev.str = String(prev.n); prev.t = Math.min(prev.t, 0.15); }
+      else this.texts.push({ str: String(dmg), n: dmg, dot: true, tid: b.id, x: b.x, y: b.y - 16 - b.r, t: 0, life: 0.7, color: col });
+    } else {
+      const near = this.texts.filter(t => t.tid === b.id && !t.dot && t.t < 0.25).length; // fan out stacked hits
+      this.texts.push({ str: String(dmg) + (o.crit ? '!' : ''), tid: b.id, x: b.x, dx: near ? (near % 2 ? 1 : -1) * (4 + 3 * Math.floor((near - 1) / 2)) : 0, y: b.y - 18 - b.r - near * 3, t: 0, life: 0.7, color: col, big: o.crit || o.eff > 1 });
+    }
     if (o.eff > 1 && !o.silent && b.team === 'enemy' && (!b._seT || this.time - b._seT > 3)) { b._seT = this.time; this.text(b, 'Super effective!', '#ffb060', true, 0.7); }
     if (!o.silent && o.slot !== 'dot') Sound.playSE(o.eff > 1 ? 'se_super_effective' : o.eff < 1 ? 'se_not_effective' : 'se_effective');
     // knockback / stagger

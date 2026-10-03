@@ -44,6 +44,7 @@ export class Dialog {
   constructor(lines, opts = {}) {
     this.lines = lines.map(l => typeof l === 'string' ? { text: l } : l);
     this.i = 0; this.chars = 0; this.opts = opts; this.done = false;
+    this.hidesHud = true; // the room skips its HUD under a dialogue box
   }
   enter() { Input.clear(); }
   update(dt) {
@@ -122,7 +123,7 @@ export class Choice {
     const n = this.cards.length, ch = this.opts.cardH || 62, gap = 8;
     const total = n * ch + (n - 1) * gap;
     const y0 = Math.max(this.opts.top ?? 70, (H - total) / 2 + 14);
-    const h = Math.min(total, H - 40 - y0);
+    const h = Math.min(total, H - 38 - y0); // stop above the footer line and the SKIP button
     return { y0, h, ch, gap, total, max: Math.max(0, total - h) };
   }
   layout() {

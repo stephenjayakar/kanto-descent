@@ -58,6 +58,7 @@ async function boot() {
   Input.init(canvas);
   canvas.focus();
   loadMeta();
+  Input.rumbleOn = G.meta.settings?.rumble !== false;
   registerRoomScene(RoomScene);
   const soundP = Sound.init('assets/sound/').then(() => {
     const s = G.meta.settings;

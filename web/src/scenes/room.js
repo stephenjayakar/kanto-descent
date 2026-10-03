@@ -10,7 +10,7 @@ import { D, TYPE_COLORS } from '../game/data.js';
 import { World, STEP, TILE, makeActor, setAnim } from '../game/combat.js';
 import '../game/combat_boons.js';
 import { loadLayout, buildRoom, candidates, drawTileAnims, mapIndex } from '../game/rooms.js';
-import { drawWorld, drawVignette, drawBA } from '../game/render.js';
+import { drawWorld, drawWorldTexts, drawVignette, drawBA } from '../game/render.js';
 import { playerBrain, updateBalls, updateAllies } from '../game/player.js';
 import { G, makePlayer, buildHooks, gainExp, expFor, rollDoors, saveMeta, REWARD_INFO, playerMaxHp, rank, saveRunSnapshot } from '../game/run.js';
 import { BIOMES, STAGES, ACTS, areaOf, actOf } from '../game/content.js';
@@ -190,7 +190,7 @@ export class RoomScene {
       w.hooks.onSpawn?.(w, a);
       G.meta.dex.seen[e.species] = true;
       if (e.trainerMon) w.vfx.push({ kind: 'sendout', x: a.x, y: a.y, t: 0, life: 0.5 });
-      else w.vfx.push({ kind: 'custom', t: 0, life: 0.5, draw: (ctx, v, k) => { drawBA(ctx, 'leaf', a.x + Math.cos(k * 9) * 10 * (1 - k), a.y - k * 10, k, { anim: true, alpha: 1 - k }); } });
+      else w.vfx.push({ kind: 'custom', t: 0, life: 0.45, draw: (ctx, v, k) => { const grass = w.room.grass?.[Math.floor(a.y / TILE) * w.room.w + Math.floor(a.x / TILE)]; const im = img(`gfx/misc/field_effects/${grass ? 'jump_tall_grass' : 'ground_impact_dust'}.png`); if (!ready(im)) return; if (grass) { const f = Math.min(1, Math.floor(k * 2)); ctx.drawImage(im, 0, f * 16, 16, 16, Math.round(a.x - 8), Math.round(a.y - 12), 16, 16); } else { const f = Math.min(2, Math.floor(k * 3)); ctx.drawImage(im, 0, f * 8, 16, 8, Math.round(a.x - 8), Math.round(a.y - 6), 16, 8); } } }); // FireRed field effects: grass rustle / ground dust
     }
     if (list.some(e => e.trainerMon)) Sound.playSE('se_ball_open'); else Sound.playSE('se_m_razor_wind2');
     this.world.maxAttackers = Math.max(areaOf(this.run)?.maxAttackers ?? 2, 1) * (Coop.active ? 2 : 1);
@@ -236,6 +236,7 @@ export class RoomScene {
     }
     const pl = this.world.player;
     for (const d of this.doors) { d.t = 0; d.armed = Math.hypot(d.x - pl.x, d.y - pl.y) > 16; if (d.reward.kind === 'boon') preloadPmd([LEGENDS[d.reward.legend].dex]); }
+    R.addDoorIcons(this);
     Sound.playSE('se_door');
   }
 
@@ -301,12 +302,12 @@ export class RoomScene {
         break;
       }
       case 'money': run.money += Math.round(e.amount * (w.player.moneyMul || 1)); w.texts.push({ str: `¥${e.amount}`, x: e.x, y: e.y - 10, t: 0, life: 0.9, color: 'gold' }); break;
-      case 'catch': if (e.by?.p2) asP2Sync(this, () => R.onCatch(this, e.actor, e.ball)); else R.onCatch(this, e.actor, e.ball); break; // co-op: P2's catch is P2's partner
+      case 'catch': Input.rumble(200, 0.3, 0.8); if (e.by?.p2) asP2Sync(this, () => R.onCatch(this, e.actor, e.ball)); else R.onCatch(this, e.actor, e.ball); break; // co-op: P2's catch is P2's partner
       case 'revive': this.banners.push(new Banner('REVIVED!', 'Back on your feet!', { color: '#f8d060', life: 1.6 })); w.vfx.push({ kind: 'heal', x: w.player.x, y: w.player.y, t: 0, life: 0.8 }); Sound.playSE('se_m_morning_sun'); break;
       case 'bossPhase': w.shake = 8; Sound.playCry(e.actor.species, { mode: 'roar_1' }); if (e.actor.species === 'MAROWAK' && e.phase === 1) this.banners.push(new Banner('The GHOST was MAROWAK!', 'Its spirit rages!', { color: '#a080ff' })); if (e.actor.species === 'MEWTWO' && e.phase === 2) this.banners.push(new Banner('MEWTWO is enraged!', '', { color: '#f85888', life: 1.6 })); break;
       case 'banner': this.banners.push(new Banner(e.text, '', { life: 1.6, color: '#f8f8f8' })); break;
       case 'pickup': R.onPickup(this, e.pickup); break;
-      case 'hurt': if (G.meta.settings.shake) Engine.shake = 0; break;
+      case 'hurt': if (G.meta.settings.shake) Engine.shake = 0; { const f = Math.min(1, (e.dmg || 0) / Math.max(1, w.player.maxHp) * 5); Input.rumble(90 + f * 160, 0.25 + 0.6 * f, 0.5 + 0.4 * f); } break;
     }
   }
 
@@ -373,7 +374,12 @@ export class RoomScene {
     let x = fx - VIEW_W / 2, y = fy - 8 - VIEW_H / 2;
     if (Input.mouseAiming() && Input.mouseWorld && this.state === 'play') { x += (Input.mouseWorld.x - p.x) * 0.12; y += (Input.mouseWorld.y - p.y) * 0.12; }
     if (rw <= VIEW_W) x = (rw - VIEW_W) / 2; else x = Math.max(-16, Math.min(rw - VIEW_W + 16, x));
-    if (rh <= VIEW_H + 8) y = (rh - VIEW_H) / 2 + 14; else y = Math.max(-24, Math.min(rh - VIEW_H + 40, y));
+    const pad = bosses.length ? bosses.length * 13 + 16 : 0; // the boss bars cover the top of the screen
+    if (rh <= VIEW_H + 8) y = (rh - VIEW_H) / 2 + 14; else y = Math.max(-24 - pad, Math.min(rh - VIEW_H + 40, y));
+    if (pad) { // keep the bosses (and the trainer behind them) below their bars, as long as the player stays in view
+      const top = Math.min(...bosses.map(a => a.y)) - 36;
+      y = Math.min(y, Math.max(top - pad, p.y - VIEW_H + 40, -24 - pad));
+    }
     return { x, y };
   }
   updateCamera(dt) {
@@ -397,21 +403,25 @@ export class RoomScene {
       tileAnims: c => drawTileAnims(c, this.room, tick),
       underlay: c => this.drawDoors(c),
       extraSprites: items => { for (const n of this.npcs) items.push({ y: n.y - 2, draw: c => this.drawNpc(c, n) }); },
+      screenTexts: true,
     });
     ctx.restore();
+    // a move's battle background flashes over the screen (FireRed's Psychic etc.)
+    if (w.bgFlash) { const f = w.bgFlash, k = f.t / f.life; if (k >= 1) w.bgFlash = null; else { const im = img(`gfx/battle_anims/backgrounds/${f.bg}.png`); if (ready(im)) { ctx.save(); ctx.globalAlpha = 0.22 * Math.sin(k * Math.PI); const ox = (this.t * 40) % im.naturalWidth; for (let x = -ox; x < W; x += im.naturalWidth * 2) for (let y = 0; y < H; y += im.naturalHeight * 2) ctx.drawImage(im, x, y, im.naturalWidth * 2, im.naturalHeight * 2); ctx.restore(); } } }
+    drawWorldTexts(ctx, w, { x: cx, y: cy });
     const B = areaOf(this.run);
     if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette);
     if (this.world.player.hp < this.world.player.maxHp * 0.25 && !this.world.player.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
     // NPC labels (screen space)
     for (const n of this.npcs) if (n.label && this.nearNpc !== n) { const sx = (n.x - this.cam.x) * 2, sy = (n.y - 36 - this.cam.y) * 2; text(ctx, n.label, sx, sy, { font: 'small', color: ['#f8f8f8', '#202020'], align: 'center' }); }
     // prompts
-    if (this.nearNpc && !topOverlay()) this.prompt(ctx, `E: ${this.nearNpc.verb || 'Talk'}`, this.nearNpc.x, this.nearNpc.y - 40);
+    if (this.nearNpc && !topOverlay()) this.prompt(ctx, `${Input.label('interact')}: ${this.nearNpc.verb || 'Talk'}`, this.nearNpc.x, this.nearNpc.y - 40);
     if (this.nearDoor && this.doorsOpen) {
       const info = R.rewardLabel(this.nearDoor.reward);
-      this.prompt(ctx, info + (this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind) ? `   (E: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
+      this.prompt(ctx, info + (this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind) ? `   (${Input.label('interact')}: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
     }
     if (this.doorsOpen && this.spec.kind !== 'hub') this.drawDoorArrows(ctx);
-    if (this.spec.kind !== 'hub' || this.run) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub' });
+    if ((this.spec.kind !== 'hub' || this.run) && !topOverlay()?.hidesHud) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub' }); // dialogue boxes cover the HUD
     this.drawCoop(ctx);
     for (const b of this.banners) b.draw(ctx);
     if (this.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${this.fade})`; ctx.fillRect(0, 0, W, H); }
@@ -451,21 +461,23 @@ export class RoomScene {
   }
 
   // arrows at the screen edge pointing to exits that are off screen
+  // (FireRed's warp arrow at 2x, like the doors themselves, with the reward's icon beside it)
   drawDoorArrows(ctx) {
-    const pulse = 0.6 + 0.4 * Math.sin(this.t * 5);
     for (const d of this.doors) {
-      const sx = (d.x - this.cam.x) * 2, sy = (d.y - 20 - this.cam.y) * 2;
-      if (sx > 20 && sx < W - 20 && sy > 20 && sy < H - 70) continue;
-      const cx = W / 2, cy = H / 2 - 20, ang = Math.atan2(sy - cy, sx - cx);
-      const k = Math.min((W / 2 - 30) / Math.abs(Math.cos(ang) || 1e-6), (H / 2 - 60) / Math.abs(Math.sin(ang) || 1e-6));
-      const ax = cx + Math.cos(ang) * k, ay = cy + Math.sin(ang) * k;
-      ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang);
-      ctx.fillStyle = d.reward.kind === 'boss' ? `rgba(255,90,70,${pulse})` : `rgba(255,240,160,${pulse})`;
-      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-6, -10); ctx.lineTo(-2, 0); ctx.lineTo(-6, 10); ctx.closePath(); ctx.fill();
+      const sx = (d.x - this.cam.x) * 2, sy = (d.y - this.cam.y) * 2;
+      if (sx > 12 && sx < W - 12 && sy > 12 && sy < H - 64) continue;
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      let dir, px, py; // at the screen edge nearest the door, clear of the HUD
+      if (sy <= 12) { dir = 'up'; px = clamp(sx, 64, W - 40); py = 44; }
+      else if (sy >= H - 64) { dir = 'down'; px = clamp(sx, 64, W - 40); py = H - 84; }
+      else if (sx <= 12) { dir = 'left'; px = 56; py = clamp(sy, 60, H - 110); }
+      else { dir = 'right'; px = W - 24; py = clamp(sy, 60, H - 110); }
+      const ax = Math.round(px / 2), ay = Math.round(py / 2); // in 2x units
+      const off = { up: [0, 1], down: [0, -1], left: [1, 0], right: [-1, 0] }[dir]; // the icon sits on the inner side
+      ctx.save(); ctx.scale(2, 2);
+      R.drawWarpArrow(ctx, dir, ax, ay, this.t);
+      R.drawRewardIcon(ctx, d.reward, ax + off[0] * 24, ay + off[1] * 24);
       ctx.restore();
-      const r = d.reward;
-      let icon = r.kind === 'boon' ? ICON.portrait(LEGENDS[r.legend].dex) : REWARD_INFO[r.kind]?.icon;
-      if (icon) { const im = img(icon); if (ready(im)) ctx.drawImage(im, ax - Math.cos(ang) * 26 - 12, ay - Math.sin(ang) * 26 - 12, 24, 24); }
     }
   }
 
@@ -487,7 +499,9 @@ export class RoomScene {
   drawDoors(ctx) {
     if (!this.doorsOpen) {
       // locked exits glow faintly so the player knows where they'll be
-      for (const e of this.room.exits) { if (this.spec.kind === 'hub') continue; ctx.fillStyle = 'rgba(255,80,60,0.18)'; ctx.beginPath(); ctx.ellipse(e.x, e.y, 9, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+      // locked exits show FireRed's X emote so the player knows where they'll be
+      const xim = img('gfx/misc/emotes/x.png');
+      if (ready(xim) && this.spec.kind !== 'hub') { ctx.save(); ctx.globalAlpha = 0.7; for (const e of this.room.exits) ctx.drawImage(xim, 32, 0, 16, 16, Math.round(e.x - 8), Math.round(e.y - 10), 16, 16); ctx.restore(); }
       return;
     }
     for (const d of this.doors) R.drawDoor(ctx, this, d);
