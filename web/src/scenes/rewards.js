@@ -17,8 +17,8 @@ import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT, HEAT
 import { BOSSES } from '../game/bosses.js';
 import { candidates } from '../game/rooms.js';
 import { preloadPmd, drawPmd } from '../game/pmd.js';
-import { say, choose, Banner, drawPortrait, ICON, drawOW, Choice } from './ui.js';
-import { Coop, asP2, coopHeal, coopRefreshP2, coopWrapHooks, coopTeam, coopSendRun } from '../game/coop.js';
+import { say, choose, chooseBoth, Banner, drawPortrait, ICON, drawOW, Choice } from './ui.js';
+import { Coop, asP2, coopHeal, coopRefreshP2, coopWrapHooks, coopTeam, coopSendRun, coopResetP2 } from '../game/coop.js';
 recordRun.after = entry => coopSendRun(entry, Cloud.me?.name || 'P1');
 import { drawBA } from '../game/render.js';
 
@@ -117,7 +117,7 @@ export async function applyReward(scene, r) {
   const run = G.run, w = scene.world;
   const mm = w.player.moneyMul || 1;
   switch (r.kind) {
-    case 'boon': await offerBoons(scene, r.legend); await asP2(scene, () => offerBoons(scene, r.legend)); break; // co-op: each player picks their own
+    case 'boon': await offerBoons(scene, r.legend); break; // co-op: both players pick their own at the same time
     case 'rare_candy': {
       Sound.playFanfare('mus_level_up');
       const target = run.level + 2;
@@ -129,8 +129,9 @@ export async function applyReward(scene, r) {
       await levelPrompts(scene);
       break;
     }
-    case 'hp_up': run.maxHpMul += 0.15; refreshPlayer(scene); w.heal(w.player, Math.round(w.player.maxHp * 0.25)); run.hp = w.player.hp;
-      if (Coop.p2) { Coop.p2.run.maxHpMul += 0.15; coopRefreshP2(scene); coopHeal(scene, 0.25); }
+    case 'hp_up': run.maxHpMul += 0.15; refreshPlayer(scene);
+      if (run.isP2) coopHeal(scene, 0.25); else { w.heal(w.player, Math.round(w.player.maxHp * 0.25)); run.hp = w.player.hp; }
+      if (Coop.p2 && !run.isP2 && !r.mine) { Coop.p2.run.maxHpMul += 0.15; coopRefreshP2(scene); coopHeal(scene, 0.25); }
       Sound.playSE('se_m_stat_increase'); await say([Coop.p2 ? 'Max HP rose by 15% for both of you!' : 'Max HP rose by 15%!']); break;
     case 'pp_up': await ppUp(scene); await asP2(scene, () => ppUp(scene)); break;
     case 'money': { const n = Math.round((70 + run.biome * 30 + run.rng.int(0, 20)) * mm); run.money += n; Sound.playSE('se_shop'); scene.banners.push(new Banner(`¥${n}`, 'You sold the NUGGET.', { life: 1.4, color: '#f8d030' })); break; }
@@ -142,6 +143,7 @@ export async function applyReward(scene, r) {
 }
 
 async function offerBoons(scene, legend) {
+  if (Coop.active && scene.world?.p2 && Coop.p2 && !G.run.isP2) return offerBoonsBoth(scene, legend);
   const run = G.run, L = LEGENDS[legend];
   Sound.playCry(L.cry);
   const ch = boonChoices(run, legend);
@@ -162,6 +164,38 @@ async function offerBoons(scene, legend) {
     refreshPlayer(scene);
     Sound.playSE('se_m_stat_increase');
   }
+}
+
+// Co-op: the legend offers each player their own three blessings, picked at the same time.
+async function offerBoonsBoth(scene, legend) {
+  const L = LEGENDS[legend], runs = [G.run, Coop.p2.run];
+  const chs = runs.map(r => boonChoices(r, legend));
+  if (!chs[0].length && !chs[1].length) { await say([{ text: `${L.name} has nothing more to offer. It leaves you a RARE CANDY.`, portrait: L.dex }]); return applyReward(scene, { kind: 'rare_candy' }); }
+  Sound.playCry(L.cry);
+  const picks = await chooseBoth(runs.map((r, i) => ({
+    title: i === 0 ? `PLAYER 1 - ${Cloud.me?.name || 'YOU'}` : `PLAYER 2 - ${Coop.guest?.name || 'P2'}`,
+    cards: chs[i].map(c => boonCard(r, c)),
+    empty: `${L.name} has nothing more for this player.`,
+    owned: (ctx, x, y, w, sel) => drawOwnedCompact(ctx, r, BOONS[chs[i][sel]?.key]?.slot, x, y, w),
+  })), {
+    header: ctx => {
+      drawPortrait(ctx, L.dex, W / 2 - 120, 10, 'Normal');
+      text(ctx, L.name, W / 2 - 70, 12, { color: [L.color, '#202020'], scale: 2 });
+      text(ctx, L.title + ' offers each of you its power.', W / 2 - 70, 42, { color: 'whiteSoft', font: 'small' });
+    },
+  });
+  picks.forEach((p, i) => { if (p >= 0) addBoon(runs[i], chs[i][p]); });
+  refreshPlayer(scene); coopRefreshP2(scene);
+  if (picks.some(p => p >= 0)) Sound.playSE('se_m_stat_increase');
+}
+function drawOwnedCompact(ctx, run, slot, x, y, w) {
+  const list = [...run.boons];
+  text(ctx, list.length ? 'BLESSINGS' : 'No blessings yet.', x + 4, y, { font: 'small', color: 'gray' });
+  list.slice(0, 8).forEach((b, i) => {
+    const def = BOONS[b.key], rar = RARITY[b.rarity], cx = x + 4 + (i % 2) * (w / 2), cy = y + 12 + Math.floor(i / 2) * 11;
+    const repl = slot && slot !== 'passive' && def.slot === slot;
+    text(ctx, (repl ? 'x ' : '') + def.name, cx, cy, { font: 'small', color: repl ? 'red' : [rar.color, '#202020'] });
+  });
 }
 
 // Left panel on the boon screen: the blessings you already have; the one the highlighted card would replace is marked.
@@ -372,7 +406,7 @@ function shopStock(run, center) {
     { key: 'POKE_BALL', name: 'POKé BALL ×3', price: 40 + b * 10, desc: 'Weaken a wild POKéMON, then throw (R).', buy: () => { run.balls += 3; } },
     { key: 'GREAT_BALL', name: 'GREAT BALL ×2', price: 90 + b * 15, desc: 'Better catch rate. Upgrades your balls.', buy: () => { run.balls += 2; if (run.ballType === 'poke_ball') run.ballType = 'great_ball'; } },
     { key: 'ULTRA_BALL', name: 'ULTRA BALL ×2', price: 150 + b * 20, desc: 'Best catch rate.', buy: () => { run.balls += 2; run.ballType = 'ultra_ball'; }, need: () => b >= 2 },
-    { key: 'HP_UP', name: 'HP UP', price: 80 + b * 25, desc: '+15% max HP, heal 25%.', buy: (s) => applyReward(s, { kind: 'hp_up' }) },
+    { key: 'HP_UP', name: 'HP UP', price: 80 + b * 25, desc: '+15% max HP, heal 25%.', buy: (s) => applyReward(s, { kind: 'hp_up', mine: true }) },
     { key: 'TM01', name: 'TM', price: 110 + b * 30, desc: 'Teach a new move.', buy: (s) => applyReward(s, { kind: 'tm' }) },
     { key: 'LEFTOVERS', name: 'HELD ITEM', price: 150 + b * 30, desc: 'Choose an item to hold.', buy: (s) => applyReward(s, { kind: 'held' }) },
     { key: 'SACRED_ASH', name: 'SACRED ASH', price: 260 + b * 40, desc: '+1 Revive this run.', buy: () => { run.revives++; } },
@@ -384,7 +418,10 @@ function shopStock(run, center) {
   const rest = run.rng.sample(pool.filter(x => !always.includes(x) && (!x.need || x.need(run))), 5);
   return [...always, ...rest];
 }
-function healPct(scene, f) { const p = scene.world.player; scene.world.heal(p, Math.round(p.maxHp * f)); G.run.hp = p.hp; coopHeal(scene, f); Sound.playSE('se_use_item'); }
+function healPct(scene, f) {
+  if (G.run.isP2) { coopHeal(scene, f); Sound.playSE('se_use_item'); return; } // P2 bought it
+  const p = scene.world.player; scene.world.heal(p, Math.round(p.maxHp * f)); G.run.hp = p.hp; Sound.playSE('se_use_item');
+}
 
 export async function openShop(scene) {
   const run = G.run;
@@ -398,6 +435,24 @@ export async function openShop(scene) {
     run.money -= s.price; s.sold = true; Sound.playSE('se_shop');
     await s.buy(scene);
   }
+}
+
+// Co-op: player 2 talks to an NPC. The shop and Nurse Joy work for P2 (shared money; purchases are P2's),
+// the starter POKé BALLs in OAK's lab change P2's starter, and the rest belongs to player 1.
+export async function coopTalk(scene, n) {
+  const a = scene.world.p2;
+  if (n.name === 'CLERK' || n.name === 'NURSE JOY') return asP2(scene, () => n.onTalk(n));
+  if (/BALL$/.test(n.name)) {
+    const list = STARTERS.filter(starterUnlocked);
+    Coop.menuP2 = true;
+    let i = -1;
+    try {
+      i = await choose('PLAYER 2: choose your partner POKéMON', list.map(s => { const sp = D.species[s.species]; return { title: sp.name, sub: sp.types.join('/'), portrait: sp.dex, accent: TYPE_COLORS[sp.types[0]], desc: `${s.blurb}  ${D.moves[s.slots.attack].name} / ${D.moves[s.slots.special].name} / ${D.moves[s.slots.cast].name}` }; }), { cardH: 46, canSkip: true, skipLabel: 'CANCEL (X)' });
+    } finally { Coop.menuP2 = false; }
+    if (i >= 0) { coopResetP2(scene, list[i].species); Sound.playCry(list[i].species); }
+    return;
+  }
+  scene.world.text(a, `${n.name}: player 1 handles that.`, '#ffffff', true, 1.6);
 }
 
 export async function nurse(scene) {

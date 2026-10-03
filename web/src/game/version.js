@@ -19,6 +19,8 @@ export const PATCH_NOTES = [
         'CO-OP (beta): HOST CO-OP on the title screen gives a link. Player 2 joins with their own POKéMON, picks their own blessings, TMs, held items and moves, catches their own partner, and shares your level, money and POKé BALLS.',
         'Co-op runs show both players in the HALL OF FAME and RECORDS, and player 2 gets the run on their own account.',
         'Co-op rooms have twice as many foes, and twice as many can attack at once.',
+        'Co-op: both players pick blessings at the same time, side by side. Player 2 can shop (shared money), talk to NURSE JOY, pick up rewards and change starter at the POKé BALLs in OAK’s lab.',
+        'Bosses have twice the HP (each hit is softer, so fights are longer rather than deadlier).',
         'A dash over water that gets interrupted no longer leaves you stuck in the water.',
         'Bosses: no longer stuck behind their own terrain; shots and beams pass over walls, they reposition when they lose sight of you, and every boss has an arena-wide attack. MISTY’s attacks reach the whole arena.',
         'Boons: see the boons you already have while choosing; you can skip a boon; a boon that replaces one you have comes at least one rarity higher.',

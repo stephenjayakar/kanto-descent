@@ -248,6 +248,14 @@ export function coopSpawnP2(scene) {
   w.vfx.push({ kind: 'sendout', x: a.x, y: a.y, t: 0, life: 0.5 });
 }
 
+// P2 picked another starter (Oak's lab): start its run state over and swap the actor.
+export function coopResetP2(scene, starter) {
+  if (!Coop.guest) return;
+  Coop.guest.starter = starter; Coop.p2 = null;
+  removeP2(scene.world);
+  coopSpawnP2(scene);
+}
+
 function removeP2(w) {
   if (!w?.p2) return;
   w.p2.removed = true; w.actors = w.actors.filter(x => x !== w.p2); w.p2 = null;

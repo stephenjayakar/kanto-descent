@@ -1036,13 +1036,15 @@ export class World {
 
   // ---- pickups (money, health drops)
   updatePickups(dt) {
-    const p = this.player; if (!p) return;
+    if (!this.player) return;
+    const players = [this.player, this.p2].filter(a => a && !a.dead); // co-op: either player collects
     for (const k of this.pickups) {
       k.t += dt;
+      const p = players.reduce((b, a) => (Math.hypot(a.x - k.x, a.y - k.y) < Math.hypot(b.x - k.x, b.y - k.y) ? a : b), players[0] || this.player);
       if (k.vz !== undefined) { k.z += k.vz * dt; k.vz -= 400 * dt; if (k.z <= 0) { k.z = 0; k.vz = k.vz < -60 ? -k.vz * 0.4 : undefined; } }
       const d = Math.hypot(p.x - k.x, p.y - k.y);
       if (k.t > 0.4 && d < 50 && k.magnet !== false) { k.x += (p.x - k.x) * Math.min(1, dt * 8); k.y += (p.y - k.y) * Math.min(1, dt * 8); }
-      if (k.t > 0.4 && d < 10) { k.dead = true; this.emit({ type: 'pickup', pickup: k }); }
+      if (k.t > 0.4 && d < 10) { k.dead = true; this.emit({ type: 'pickup', pickup: k, by: p }); }
     }
     this.pickups = this.pickups.filter(k => !k.dead);
   }

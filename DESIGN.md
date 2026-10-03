@@ -222,4 +222,5 @@ Rules that came out of two adversarial review rounds and the sim:
   4. `codex exec ... < tests/out/sites_staging_redeploy_prompt.txt`; the prompt must package dist-staging as "dist".
 
 ## TODO (owner's suggestions)
-* Co-op: each player gets their own boon list and their own reward choices (today P2 shares P1's blessings and P1 picks everything).
+* ~~Co-op: each player gets their own boon list and their own reward choices.~~ Done: per-player runs, parallel boon picks.
+* More boons, inspired by Hades: more per legend, more duos, more ways to build (e.g. Hades-style status curses that stack, cast/dash variants, legendary-tier boons with prerequisites).

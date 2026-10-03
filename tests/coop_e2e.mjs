@@ -66,9 +66,11 @@ console.log('p2 before', JSON.stringify(before), 'after', JSON.stringify(after))
 console.log('guest video', JSON.stringify(gv));
 // per-player rewards: a blessing for each player, chosen on each player's own keyboard
 await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); window.__rw = R.applyReward(window.__room, { kind: 'boon', legend: 'ZAPDOS' }).then(() => (window.__rwDone = true)); });
-await host.waitForTimeout(900); await host.keyboard.press('Enter'); // P1 picks the first card
-await host.waitForTimeout(1200);
-await guest.screenshot({ path: 'tests/out/coop_guest_choice.png' });
+await host.waitForTimeout(900);
+await guest.screenshot({ path: 'tests/out/coop_guest_choice.png' }); // both columns at once
+await host.keyboard.press('Enter'); // P1 picks the first card
+await host.waitForTimeout(600);
+await guest.screenshot({ path: 'tests/out/coop_guest_choice2.png' });
 await guest.keyboard.press('ArrowDown'); await guest.waitForTimeout(150); await guest.keyboard.press('Enter'); // P2 picks the second
 await host.waitForTimeout(800);
 const boons = await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); const { G } = await import('/src/game/run.js'); return { done: !!window.__rwDone, p1: G.run.boons.map(b => b.key), p2: Coop.p2.run.boons.map(b => b.key), isP2: !!G.run.isP2 }; });
@@ -82,6 +84,13 @@ for (let i = 0; i < 4; i++) { await guest.waitForTimeout(450); await guest.keybo
 await host.waitForTimeout(800);
 const moves = await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); const { G } = await import('/src/game/run.js'); return { done: !!window.__rwDone, p1: G.run.slots, p2: Coop.p2.run.slots, p2actor: window.__room.world.p2.slots || window.__room.world.p2.run.slots }; });
 console.log('moves', JSON.stringify(moves));
+// P2 shops on its own (shared money; the POTION heals P2)
+const shop0 = await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); const { G } = await import('/src/game/run.js'); const r = window.__room; G.run.money = 500; r.world.p2.hp = 10; window.__shopDone = false; R.coopTalk(r, { name: 'CLERK', onTalk: () => R.openShop(r) }).then(() => (window.__shopDone = true)); return { money: G.run.money }; });
+await guest.waitForTimeout(700); await guest.keyboard.press('Enter'); // "Hi there!"
+await guest.waitForTimeout(700); await guest.keyboard.press('Enter'); // buy the first item (POTION)
+await guest.waitForTimeout(700); await guest.keyboard.press('x');     // leave
+await guest.waitForTimeout(700);
+console.log('shop', JSON.stringify({ before: shop0, after: await host.evaluate(async () => { const { G } = await import('/src/game/run.js'); const a = window.__room.world.p2; return { money: G.run.money, p2hp: a.hp, done: window.__shopDone, isP2: !!G.run.isP2 }; }) }));
 // heal reaches P2
 const heal = await host.evaluate(async () => { const { coopHeal } = await import('/src/game/coop.js'); const a = window.__room.world.p2; a.hp = 5; coopHeal(window.__room, 0.5); return { hp: a.hp, max: a.maxHp }; });
 console.log('heal', JSON.stringify(heal));

@@ -315,6 +315,13 @@ export class RoomScene {
     for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - p.x, n.y - 8 - p.y); if (d < (n.range || 30) && d < nd) { nd = d; near = n; } }
     this.nearNpc = near;
     if (near && Input.justPressed('interact') && !topOverlay()) { Input.consume('interact'); Sound.playSE('se_select'); near.onTalk(near); }
+    // co-op: player 2 talks to NPCs with its own interact button
+    const a = this.world.p2;
+    this.nearNpc2 = null;
+    if (!a || a.dead || !Coop.active || topOverlay()) return;
+    let nd2 = 1e9;
+    for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - a.x, n.y - 8 - a.y); if (d < (n.range || 30) && d < nd2) { nd2 = d; this.nearNpc2 = n; } }
+    if (this.nearNpc2 && Coop.remote.pressed('interact')) { Coop.remote.consume('interact'); Sound.playSE('se_select'); R.coopTalk(this, this.nearNpc2); }
   }
 
   checkDoors(dt) {
@@ -437,6 +444,7 @@ export class RoomScene {
         text(ctx, (D.moves[mv]?.name || '-').slice(0, 11), bx + 30, y + 24, { align: 'center', font: 'small', color: cd > 0 ? 'gray' : 'white' });
       });
     }
+    if (this.nearNpc2 && !topOverlay()) this.prompt(ctx, `${this.world.p2?.label || 'P2'}: E to ${this.nearNpc2.verb || 'talk'}`, this.nearNpc2.x, this.nearNpc2.y - 54);
     const s = coopStatusText();
     if (s) { const tw = measure(s, 'small') + 16; pixBox(ctx, W / 2 - tw / 2, 4, tw, 16, 'rgba(16,20,32,0.85)', '#80d0ff', 2); text(ctx, s, W / 2, 5, { align: 'center', font: 'small', color: 'white' }); }
   }
