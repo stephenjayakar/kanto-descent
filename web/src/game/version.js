@@ -24,7 +24,7 @@ export const PATCH_NOTES = [
         'Foes move faster. Each hit does a little less.',
         'Your dash crosses gaps (water, ledges) like in Hades. Walls still stop it, and an interrupted dash no longer leaves you stuck in the water.',
         'Contact abilities: hitting a POKéMON with STATIC, POISON POINT, FLAME BODY or EFFECT SPORE up close can paralyze, poison, burn or put you to sleep (and the same goes for foes touching yours).',
-        'FIRE BLAST explodes in its 大-shaped burst and leaves the ground burning. BLIZZARD brings a snowstorm with ice falling from the sky.',
+        'FIRE BLAST explodes in a five-pointed burst of flame and leaves the ground burning. BLIZZARD brings a snowstorm with ice falling from the sky.',
         'QUICK ATTACK, TACKLE and other lunges: a quick dash with afterimages instead of a jittery double move.',
         "ONIX's charge burrows through rock, and its leap no longer ends in a random teleport.",
         'Foes that get stuck on a wall find another way round.',

@@ -235,7 +235,7 @@ export class PatchNotesModal extends Modal {
     const by = y + h - 26;
     if (p + 1 < PATCH_NOTES.length && buttonAt(ctx, 'OLDER', x + 12, by, 74)) { this.page = p + 1; this.scroll = 0; }
     if (p > 0 && buttonAt(ctx, 'NEWER', x + 92, by, 74)) { this.page = p - 1; this.scroll = 0; }
-    text(ctx, 'LEFT/RIGHT: older/newer · ENTER: close', x + w - 104, by + 5, { align: 'right', color: 'gray', font: 'small' });
+    text(ctx, 'LEFT/RIGHT: versions', x + w - 104, by + 5, { align: 'right', color: 'gray', font: 'small' });
     if (buttonAt(ctx, 'CLOSE', x + w - 94, by, 82)) this.close();
     drawTips(ctx);
   }
