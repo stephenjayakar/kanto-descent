@@ -6,7 +6,7 @@ import { VERSION } from './version.js';
 import { scoreRun } from './score.js';
 import { makeActor } from './combat.js';
 import { BOONS, LEGENDS, CHAOS, RARITY, legendBoonPool, rollRarity, boonInstance } from './boons.js';
-import { BIOMES, STARTERS, HELD, RESEARCH, SPECIAL_EVOS } from './content.js';
+import { BIOMES, STARTERS, HELD, RESEARCH, SPECIAL_EVOS, areaOf, rollRoute } from './content.js';
 import { profile, slotFor } from './moves_rt.js';
 
 // Every player POKéMON levels on the same curve, so slow-growing species (DRATINI) aren't behind.
@@ -71,7 +71,7 @@ export function clearRunSave() {
   Cloud.putSave(null);
 }
 export function runLabel(run) {
-  const B = BIOMES[run.biome];
+  const B = areaOf(run);
   return `${D.species[run.species]?.name || run.species} Lv${run.level} - ${B ? B.name : ''} ${run.roomInBiome + 1}/${(B?.rooms || 0) + 1}`;
 }
 // finished runs go to the cloud history too (tagged with the game version, partner and score; the
@@ -100,7 +100,7 @@ export async function syncFromCloud() {
 }
 
 export const rank = key => G.meta.research[key] || 0;
-export function starterUnlocked(s) { return !s.unlock || G.meta.badges.includes(s.unlock); }
+export function starterUnlocked(s) { return !s.unlock || [].concat(s.unlock).some(k => G.meta.badges.includes(k)); }
 
 // ---------------------------------------------------------------- new run
 export function newRun(starterSpecies, seed = randomSeedString()) {
@@ -114,7 +114,7 @@ export function newRun(starterSpecies, seed = randomSeedString()) {
     boons: [], chaos: [], held: null, money: 50 + rank('money') * 25, balls: 3 + rank('balls'), ballType: 'poke_ball',
     callBonus: rank('call') * 2, heat,
     partner: null, callGauge: 0, revives: rank('revive'), reviveFrac: 0.3, rerolls: rank('reroll'),
-    biome: 0, roomInBiome: 0, depth: 0, kills: 0, time: 0, stardustGained: 0, caught: [],
+    biome: 0, roomInBiome: 0, depth: 0, kills: 0, time: 0, stardustGained: 0, caught: [], route: rollRoute(rng), // v0.0.3: areas change every run
     pendingLearn: [], pendingEvo: null, focusUsed: false, visited: {}, lastLayouts: [],
     history: [], over: false, won: false,
   };
@@ -318,7 +318,7 @@ const LEGEND_KEYS = ['ZAPDOS', 'ARTICUNO', 'MOLTRES', 'MEW', 'LUGIA', 'HOOH'];
 // Pick 1-3 door rewards for the rooms after this one.
 export function rollDoors(run, nExits) {
   const rng = run.rng;
-  const biome = BIOMES[run.biome];
+  const biome = areaOf(run);
   const next = run.roomInBiome + 1;
   const last = next >= biome.rooms; // next room is the boss
   if (last) return [{ kind: 'boss' }];
@@ -394,6 +394,6 @@ export function chaosOffer(run) {
   }));
 }
 
-export function roomsLeftInBiome(run) { return BIOMES[run.biome].rooms - run.roomInBiome; }
+export function roomsLeftInBiome(run) { return areaOf(run).rooms - run.roomInBiome; }
 
 export { LEGENDS, RARITY, BIOMES, STARTERS, RESEARCH, HELD, profile, slotFor };

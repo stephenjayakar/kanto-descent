@@ -41,11 +41,25 @@ export const BOSSES = {
     refLevel: 41, mons: [{ species: 'RHYHORN', level: 37, secs: 15, dmg: 1.0, tempo: 0.7 }, { species: 'KANGASKHAN', level: 35, secs: 15, dmg: 1.0, tempo: 0.7 }],
     finale: { species: 'NIDOQUEEN', level: 41, secs: 20, dmg: 0.85, tempo: 0.85, text: 'GIOVANNI sent out NIDOQUEEN!' },
   },
+  LT_SURGE: {
+    trainer: 'LEADER_LT_SURGE', sprite: 'lt_surge', title: 'VERMILION GYM LEADER', music: 'mus_vs_gym_leader', badge: 'THUNDER BADGE', badgeKey: 'THUNDER',
+    intro: ["Hey, kid! What do you think you're doing here?", "You won't live long in combat! That's for sure!"],
+    outro: ["Whoa! You're the real deal, kid!", "Fine, then, take the THUNDERBADGE!"],
+    refLevel: 24, mons: [{ species: 'RAICHU', level: 24, secs: 27, dmg: 0.62, tempo: 0.85 }],
+    adds: { at: [0.5], species: 'VOLTORB', level: 20, n: 2, text: 'LT. SURGE sent out VOLTORB!' },
+  },
+  LORELEI: {
+    trainer: 'ELITE_FOUR_LORELEI', sprite: 'lorelei', title: 'ELITE FOUR', music: 'mus_vs_gym_leader', badge: "LORELEI'S SEAL", badgeKey: 'ICE',
+    intro: ['Welcome to the POKéMON LEAGUE. I am LORELEI of the ELITE FOUR.', 'No one can best me when it comes to icy POKéMON. Freezing moves are powerful!'],
+    outro: ["...Things shouldn't be this way!", "You're better than I thought. Go on ahead."],
+    refLevel: 41, mons: [{ species: 'LAPRAS', level: 38, secs: 30, dmg: 0.68, tempo: 0.85 }],
+    adds: { at: [0.6, 0.3], species: 'DEWGONG', level: 34, n: 1, text: 'LORELEI sent out DEWGONG!' },
+  },
   MEWTWO: {
     sprite: null, title: 'THE GENETIC POKéMON', music: 'mus_vs_mewtwo', badge: 'MEWTWO', badgeKey: 'MEWTWO',
     intro: ['...', 'MEWTWO: Mew!'],
     outro: ['MEWTWO is exhausted...', 'The power in the cave fades.'],
-    refLevel: 45, mons: [{ species: 'MEWTWO', level: 62, secs: 60, dmg: 0.43, scale: 1 }],
+    refLevel: 45, mons: [{ species: 'MEWTWO', level: 62, secs: 72, dmg: 0.47, scale: 1 }],
   },
 };
 
@@ -95,6 +109,22 @@ const PATTERNS = {
     { w: 2, cd: 0.9, run: (w, a, t) => w.useMove(a, P('POISON_STING', { count: 5, spread: 0.7, speed: 220, windup: 0.45 }), { target: t, aim: aimAt(a, t) }) },
     { w: 1.5, cd: 1.3, run: (w, a, t) => storm(w, a, t, 'SLUDGE_BOMB', { n: 10, r: 22, text: 'TOXIC RAIN', color: '#a040a0' }) },
   ],
+  RAICHU: [
+    { w: 2.5, cd: 1.1, run: (w, a, t) => storm(w, a, t, 'THUNDER', { n: 9, r: 20, every: 0.13, text: 'THUNDER', color: '#f8d030', fx: 'lightning' }) },
+    { w: 2.5, cd: 0.9, run: (w, a, t) => w.useMove(a, P('THUNDERBOLT', { kind: 'chain', jumps: 3, range: 220, windup: 0.55 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 2, cd: 0.8, run: (w, a, t) => w.useMove(a, P('QUICK_ATTACK', { kind: 'charge', dist: 160, dur: 0.32, range: 20, windup: 0.5 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 2, cd: 1.1, run: (w, a, t) => w.useMove(a, P('THUNDER', { kind: 'nova', radius: 72, windup: 0.7, fx: 'spark', type: 'ELECTRIC', power: 60, status: { kind: 'para', chance: 0.3 } }), { target: t, aim: aimAt(a, t) }) },
+    { w: 1.5, phase: 1, cd: 0.9, run: (w, a, t) => w.useMove(a, P('SHOCK_WAVE', { kind: 'radial', count: 12, speed: 130, size: 6, life: 2.4, windup: 0.6, sprite: 'spark' }), { target: t, aim: aimAt(a, t) }) },
+  ],
+  VOLTORB: null,
+  LAPRAS: [
+    { w: 2.5, cd: 1.2, run: (w, a, t) => w.useMove(a, P('ICE_BEAM', { kind: 'sweep', sweep: 1.1, len: 320, width: 12, dur: 1.1, windup: 0.75, dir: w.rand() < 0.5 ? 1 : -1, status: { kind: 'chill', chance: 0.5 } }), { target: t, aim: aimAt(a, t) }) },
+    { w: 2.5, cd: 1.1, run: (w, a, t) => w.useMove(a, P('BLIZZARD', { count: 7, scatter: 70, delay: 0.9, radius: 24 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 2, cd: 1.0, run: (w, a, t) => w.useMove(a, P('SURF', { kind: 'radial', count: a.phase >= 1 ? 18 : 14, speed: 110, size: 7, life: 2.8, windup: 0.6, sprite: 'water', knock: 120 }), { target: t, aim: aimAt(a, t) }) },
+    { w: 1.5, cd: 1.0, run: (w, a, t) => w.useMove(a, P('BODY_SLAM', { kind: 'charge', dist: 170, dur: 0.6, range: 24, windup: 0.65, status: { kind: 'para', chance: 0.3 } }), { target: t, aim: aimAt(a, t) }) },
+    { w: 1, phase: 1, cd: 1.2, once: 0.4, run: (w, a) => w.useMove(a, { ...P('REST'), kind: 'channel', dur: 1.8, heal: 0.1, breakFrac: 0.05, windup: 0.2, breakText: 'LAPRAS woke up!' }, { aim: a.facing }) },
+  ],
+  DEWGONG: null,
   MEWTWO: [
     { w: 3, cd: 0.9, run: (w, a, t) => psychicTriple(w, a, t) },
     { w: 2.5, cd: 1.0, run: (w, a, t) => w.useMove(a, P('SWIFT', { count: 8, spread: 1.4, speed: 170, homing: 3, windup: 0.45 }), { target: t, aim: aimAt(a, t) }) },
@@ -250,8 +280,17 @@ export function bossHp(world, boss, secs, refLevel) {
   return Math.max(60, Math.round(kitDps(world, boss) * secs * levelFactor));
 }
 
+// v0.0.3: areas come in any order within an act, so a boss scales to the stage it appears at.
+const BOSS_REF = [15, 24, 34, 41, 45]; // the original refLevel of the boss at each stage
+export function scaledBoss(key, stage) {
+  const def = BOSSES[key], shift = BOSS_REF[Math.min(stage, BOSS_REF.length - 1)] - def.refLevel;
+  if (!shift) return def;
+  const lv = m => ({ ...m, level: Math.max(5, m.level + shift) });
+  return { ...def, refLevel: def.refLevel + shift, mons: def.mons.map(lv), adds: def.adds && lv(def.adds), finale: def.finale && lv(def.finale) };
+}
+
 export function spawnBoss(world, key, at) {
-  const def = BOSSES[key];
+  const def = scaledBoss(key, world.run?.biome ?? 0);
   world.bossDef = def;
   const list = [];
   def.mons.forEach((m, i) => {

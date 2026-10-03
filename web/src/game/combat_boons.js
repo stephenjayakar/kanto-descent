@@ -12,7 +12,9 @@ World.prototype.boonProfile = function (type, power, extra = {}) {
   return { ...bp[key], ...extra };
 };
 
-World.prototype.later = function (t, fn) { (this.timers ||= []).push({ t, fn }); };
+// co-op runs player 2's blessings against Object.create(world) views: timers must live on the real world
+const rootWorld = w => { while (!Object.prototype.hasOwnProperty.call(w, 'actors') && Object.getPrototypeOf(w) instanceof World) w = Object.getPrototypeOf(w); return w; };
+World.prototype.later = function (t, fn) { const w = rootWorld(this); (w.timers ||= []).push({ t, fn }); };
 World.prototype.tickTimers = function (dt) {
   if (!this.timers) return;
   for (const tm of this.timers) { tm.t -= dt; if (tm.t <= 0 && !tm.done) { tm.done = true; tm.fn(); } }
@@ -23,7 +25,26 @@ World.prototype.tickTimers = function (dt) {
 World.prototype.boonStrike = function (target, o) {
   const p = this.boonProfile(o.type, o.power, { fx: o.fx, status: o.status ? { kind: o.status, chance: o.chance ?? 1 } : null });
   const pl = this.player;
-  this.strikes.push({ owner: pl, act: { p, slot: 'boon', hits: new Set() }, x: target.x, y: target.y, r: o.r || 14, t: 0, delay: o.delay ?? 0.12, p, slot: 'boon', team: 'player' });
+  const r = (o.r || 14) * (o.fx === 'lightning' ? pl?.boltR || 1 : 1); // Zap Cannon widens lightning
+  this.strikes.push({ owner: pl, act: { p, slot: 'boon', hits: new Set() }, x: target.x, y: target.y, r, t: 0, delay: o.delay ?? 0.12, p, slot: 'boon', team: 'player' });
+};
+
+// Doom Desire: a mark that follows the target and bursts after a delay (only if the target is still there)
+World.prototype.boonDoom = function (target, o) {
+  const pl = this.player;
+  const p = this.boonProfile(o.type || 'FIRE', o.power, { fx: o.fx || 'fire', knock: 20 });
+  const delay = o.delay ?? 1.1;
+  this.vfx.push({ kind: 'custom', x: target.x, y: target.y, t: 0, life: delay, draw: (ctx, v, k) => {
+    if (target.dead) return;
+    const r = target.r + 6 - k * 4;
+    ctx.strokeStyle = `rgba(255,${Math.round(160 - 100 * k)},40,${0.35 + 0.55 * k})`; ctx.lineWidth = 1 + k;
+    ctx.beginPath(); ctx.ellipse(target.x, target.y, r, r * 0.75, 0, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1;
+  } });
+  this.later(delay, () => {
+    if (!pl || pl.dead || target.dead || target.untargetable || target.captured) return;
+    this.vfx.push({ kind: 'explode', x: target.x, y: target.y, r: 18, t: 0, life: 0.3, type: p.type, fx: p.fx });
+    this.hit(pl, target, { p, slot: 'boon', hits: new Set() }, { ang: Math.atan2(target.y - pl.y, target.x - pl.x) });
+  });
 };
 
 World.prototype.boonChain = function (from, o) {

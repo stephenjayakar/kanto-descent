@@ -5,7 +5,7 @@ import { text, measure } from '../engine/font.js';
 import { pixBox, rect } from '../engine/ui.js';
 import { D, TYPE_COLORS } from '../game/data.js';
 import { BOONS, LEGENDS, RARITY } from '../game/boons.js';
-import { BIOMES, HELD } from '../game/content.js';
+import { BIOMES, HELD, areaOf } from '../game/content.js';
 import { expProgress } from '../game/run.js';
 import { drawPortrait, ICON } from './ui.js';
 import { profile } from '../game/moves_rt.js';
@@ -78,7 +78,7 @@ export function drawHud(ctx, world, run, opts = {}) {
   // ---- top left: money, area, boons
   pixBox(ctx, 6, 6, 150, 20, 'rgba(24,28,40,0.8)', '#0d1018', 3);
   text(ctx, `¥${run.money}`, 12, 8, { color: 'gold' });
-  const B = BIOMES[run.biome];
+  const B = areaOf(run);
   if (B && !opts.hub) text(ctx, `${B.name} ${Math.min(run.roomInBiome + 1, B.rooms + 1)}/${B.rooms + 1}`, 150, 10, { font: 'small', color: 'whiteSoft', align: 'right' });
   if (run.heat) text(ctx, `HEAT ${run.heat}`, 12, H - 74, { font: 'small', color: ['#ff6040', '#301000'] });
   let by = 30;

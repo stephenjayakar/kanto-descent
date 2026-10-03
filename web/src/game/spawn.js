@@ -2,7 +2,7 @@
 import { D, defaultMoves } from './data.js';
 import { makeActor } from './combat.js';
 import { wildBrain, enemyMoves } from './ai.js';
-import { BIOMES, TUNING, heatAt } from './content.js';
+import { BIOMES, TUNING, heatAt, areaOf, levelShift } from './content.js';
 import { profile } from './moves_rt.js';
 
 const CLASS_SPRITE = {
@@ -31,9 +31,9 @@ export function trainersFor(biome) {
 
 // Enemy level grows across a biome: start of biome uses the table levels, later rooms add a bonus.
 export function enemyLevel(run, base) {
-  const b = BIOMES[run.biome];
+  const b = areaOf(run);
   const k = run.roomInBiome / Math.max(1, b.rooms - 1);
-  return Math.max(2, Math.round(base + b.levelBonus[0] + (b.levelBonus[1] - b.levelBonus[0]) * k));
+  return Math.max(2, Math.round(base + levelShift(run) + b.levelBonus[0] + (b.levelBonus[1] - b.levelBonus[0]) * k));
 }
 
 // enemy damage multiplier per area (realtime hits land far more often than turn-based ones)
@@ -56,7 +56,7 @@ export function makeEnemy(world, speciesKey, level, opts = {}) {
 
 // pick n wild enemies for a wave
 export function rollWave(run, n) {
-  const biome = BIOMES[run.biome];
+  const biome = areaOf(run);
   const pool = wildPool(biome);
   const out = [], count = {};
   const cap = Math.max(1, Math.ceil(n * 0.4)); // no species above ~40% of a wave, for variety
@@ -71,14 +71,14 @@ export function rollWave(run, n) {
 
 // silph/tower trainers: use their parties as enemy waves
 export function rollTrainer(run, used = new Set()) {
-  const biome = BIOMES[run.biome];
+  const biome = areaOf(run);
   const list = trainersFor(biome).filter(t => !used.has(t.key));
   if (!list.length) return null;
   return run.rng.pick(list);
 }
 
 export function trainerParty(run, t, bonus = 0) {
-  return t.party.map(p => ({ species: p.species, level: Math.max(2, p.level + bonus + Math.round(BIOMES[run.biome].levelBonus[0] * 0.3)), moves: p.moves || defaultMoves(p.species, p.level) }));
+  return t.party.map(p => ({ species: p.species, level: Math.max(2, p.level + bonus + levelShift(run) + Math.round(areaOf(run).levelBonus[0] * 0.3)), moves: p.moves || defaultMoves(p.species, p.level) }));
 }
 
 // how dangerous a species is (for wave budgets)

@@ -76,7 +76,7 @@ const P = {
   // ---- special projectiles
   EMBER: { kind: 'proj', speed: 210, size: 5, count: 1, life: 0.8, cd: 0.3, sprite: 'ember', sfx: 'se_m_ember' },
   FLAMETHROWER: { kind: 'stream', dur: 0.7, rate: 0.045, speed: 230, size: 6, life: 0.5, spread: 0.18, cd: 1.2, sprite: 'ember', sfx: 'se_m_flamethrower' },
-  FIRE_BLAST: { kind: 'proj', speed: 160, size: 11, count: 1, life: 1.2, cd: 1.6, sprite: 'fireblast', explode: 34, sfx: 'se_m_flame_wheel' },
+  FIRE_BLAST: { kind: 'proj', speed: 160, size: 11, count: 1, life: 1.2, cd: 1.6, sprite: 'fireblast', explode: 40, blast: true, sfx: 'se_m_flame_wheel' },
   FIRE_SPIN: { kind: 'cloud', radius: 24, dur: 3, at: 'target', cd: 1.6, tick: 0.35, sprite: 'ember', sfx: 'se_m_flame_wheel', status: { kind: 'trap', chance: 1 } },
   FLAME_WHEEL: { kind: 'charge', dist: 70, dur: 0.24, range: 16, cd: 0.7, fx: 'fire', sfx: 'se_m_flame_wheel', trail: 'fire' },
   HEAT_WAVE: { kind: 'nova', radius: 50, cd: 1.6, fx: 'fire', sfx: 'se_m_heat_wave' },

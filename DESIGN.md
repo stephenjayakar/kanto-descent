@@ -126,18 +126,28 @@ Environment variables:
 | `R='{"revive":1}'` | Sets individual research ranks |
 | `START='dev=boss&biome=1&level=24'` | Starts every run at a specific room |
 
-Current targets and measurements (v0.0.2 after playtest feedback, `TUNING = { enemyDmg: 1.8, bossDmg: 1.45, bossSecs: 2.1 }`;
-skill 0.7 is a "decent player"; 60 to 150 runs each). The owner asked for a fresh-save clear rate of about 20% for the bot:
+Current targets and measurements (v0.0.3, `TUNING = { enemyDmg: 1.8, bossDmg: 0.78, bossSecs: 4.2 }`; skill 0.7 is a "decent
+player"; 60 to 120 runs each). The owner wants the bot to clear about 20% of fresh-save runs:
 
 | Setup | Win rate |
 |---|---|
-| Fresh save | ~19% (perfect dodging ~16–23%) |
-| Full research | ~85% |
-| Full research, HEAT 10 | ~10% |
+| Fresh save | ~21% |
+| Full research | ~82% |
+| Full research, HEAT 10 | ~20% (small sample; it was ~10% before the v0.0.3 blessings) |
 
-* **Boss pass rates (fresh):** Brock ~91%, Misty ~88%, Marowak ~85%, Giovanni ~94%, Mewtwo ~48%. Fights take 43–52s.
-* **Foes are fast:** base speed 44 + 0.42 × Speed (max 100) against the player's ~95, so each hit is tuned lower.
-* **Starters:** Squirtle is the weakest (0/22 fresh wins); Gastly and Dratini the strongest (7/21).
+* **Boss pass rates (fresh):** Brock and Misty ~92%, Lt. Surge ~86%, Marowak ~97%, Lorelei ~79%, Giovanni ~67%, Mewtwo ~63%.
+  Boss fights take 55-85s (boss HP was doubled in v0.0.2).
+* **Co-op can't be simmed** (the bot plays P1 only). It is scaled by hand: twice the foes, foes x1.25 damage, bosses x1.8 HP and
+  x1.2 damage, and P2 revives after 15s.
+
+## Acts (v0.0.3)
+* A run is 3 acts (`ACTS` in content.js). Acts 1 and 2 each draw 2 of 3 areas in random order; act 3 is Cerulean Cave (6 rooms).
+  * Act 1: Viridian Forest (Brock), Mt. Moon (Misty), Rock Tunnel (Lt. Surge).
+  * Act 2: Pokémon Tower (Marowak), Silph Co. (Giovanni), Seafoam Islands (Lorelei).
+* `run.biome` is the stage (0-4) and drives all scaling. `run.route[stage]` is the area's key (`areaOf(run)`).
+* Wild levels shift by `STAGE_LEVEL[stage] - STAGE_LEVEL[area.design]`. Bosses use `scaledBoss(key, stage)`, which maps a boss
+  onto the reference level of the stage it appears at.
+* Records store `area` (its key); older runs fall back to the area index.
 
 Rules that came out of two adversarial review rounds and the sim:
 * **Telegraphs are readable.** Enemy ground blasts give at least 0.8s of warning (bosses 0.65s), enemy shots fly at 72% speed,
@@ -223,4 +233,6 @@ Rules that came out of two adversarial review rounds and the sim:
 
 ## TODO (owner's suggestions)
 * ~~Co-op: each player gets their own boon list and their own reward choices.~~ Done: per-player runs, parallel boon picks.
+* PvP mode: two players (co-op link) fight each other in an arena (or race the same seed), with their own builds.
+* Beam/stream clash (idea from upstream pokemon-emerald-arena 0.12): when the player's beam meets a boss beam head-on, the jets push against each other, then explode, with no damage.
 * More boons, inspired by Hades: more per legend, more duos, more ways to build (e.g. Hades-style status curses that stack, cast/dash variants, legendary-tier boons with prerequisites).

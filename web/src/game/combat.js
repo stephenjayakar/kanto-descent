@@ -19,6 +19,14 @@ const ACC_MULT = s => [33, 36, 43, 50, 60, 75, 100, 133, 166, 200, 233, 266, 300
 let nextId = 1;
 
 // ---- actors -------------------------------------------------------------------------------------
+// Gen 3 contact abilities (the defender's)
+const CONTACT_ABILITY = {
+  STATIC: { kind: 'para', name: 'STATIC', color: '#f8d030' },
+  POISON_POINT: { kind: 'poison', name: 'POISON POINT', color: '#c060c0' },
+  FLAME_BODY: { kind: 'burn', name: 'FLAME BODY', color: '#f08030' },
+  EFFECT_SPORE: { kind: ['poison', 'para', 'sleep'], name: 'EFFECT SPORE', color: '#78c850' },
+};
+
 export function makeActor(speciesKey, level, team, opts = {}) {
   const sp = D.species[speciesKey];
   const st = monStats(speciesKey, level, opts.iv ?? 15);
@@ -26,7 +34,7 @@ export function makeActor(speciesKey, level, team, opts = {}) {
   const maxHp = Math.max(1, Math.round(st.hp * hpMul));
   const height = sp.height || 8;
   return {
-    id: nextId++, team, species: speciesKey, dex: sp.dex, level, stats: st, types: sp.types.slice(),
+    id: nextId++, team, species: speciesKey, dex: sp.dex, level, stats: st, types: sp.types.slice(), ability: sp.abilities?.[0] || null,
     name: opts.name || sp.name, hp: opts.hp ?? maxHp, maxHp,
     x: opts.x || 0, y: opts.y || 0, z: 0, vx: 0, vy: 0, kx: 0, ky: 0,
     r: opts.r ?? Math.max(6, Math.min(15, 5 + height * 0.55)),
@@ -561,6 +569,8 @@ export class World {
         break;
       }
       case 'lunge': case 'charge': {
+        act.ghostT = (act.ghostT || 0) - dt;
+        if (act.ghostT <= 0 && !p.roll) { act.ghostT = 0.035; this.vfx.push({ kind: 'afterimage', dex: a.dex, x: a.x, y: a.y, dir: a.dir, anim: 'Walk', animT: a.animT, t: 0, life: 0.18 }); }
         let r;
         if (p.through) { // burrows through rock (Onix): only the arena's edge stops it
           const R = this.room, nx = a.x + act.vx * dt, ny = a.y + act.vy * dt;
@@ -804,6 +814,12 @@ export class World {
   explodeProjectile(pr) {
     const r = pr.explode || 16;
     this.vfx.push({ kind: 'explode', x: pr.x, y: pr.y, r, t: 0, life: 0.3, type: pr.type, sprite: pr.sprite });
+    if (pr.p.blast) { // FIRE BLAST: the 大-shaped fire burst, a shockwave and burning ground
+      this.vfx.push({ kind: 'fireblast', x: pr.x, y: pr.y, r, t: 0, life: 0.7 });
+      this.vfx.push({ kind: 'ring', x: pr.x, y: pr.y, r0: 6, r1: r * 1.5, t: 0, life: 0.4, fx: 'fire' });
+      this.shake = Math.max(this.shake, 6); this.hitstop = Math.max(this.hitstop, 0.05);
+      this.addZone({ owner: pr.owner, x: pr.x, y: pr.y + 6, r: r * 0.8, dur: 2.2, p: pr.p, slot: pr.slot, team: pr.team, tick: 0.5, fire: true, sprite: 'ember', dmgFrac: 0.12, status: { kind: 'burn', chance: 0.3 } });
+    }
     if (r > 20) this.shake = Math.max(this.shake, 3);
     const owner = pr.owner;
     const fake = { ...pr.act, hits: new Set() };
@@ -930,6 +946,16 @@ export class World {
       if (p.money && src === this.player) this.emit({ type: 'money', amount: 1 + Math.floor(src.level / 8), x: b.x, y: b.y });
     }
     if (p.status && !b.dead && this.rand() < (p.status.chance ?? 1) * (src?.team === 'player' && p.status.kind !== 'trap' ? 0.8 : 1)) this.addStatus(b, p.status.kind, src);
+    // contact abilities: touching a STATIC / POISON POINT / FLAME BODY / EFFECT SPORE POKéMON can backfire
+    const ca = CONTACT_ABILITY[b.ability];
+    if (ca && p.melee && src && !src.dead && src.team !== b.team && !(src.iframes > 0 && src.team === 'player') && this.rand() < 0.12) {
+      const key = b.id + ':' + src.id; this._contactT ??= new Map();
+      if ((this._contactT.get(key) || -9) < this.time - 0.6) {
+        this._contactT.set(key, this.time);
+        const kind = Array.isArray(ca.kind) ? ca.kind[Math.floor(this.rand() * ca.kind.length)] : ca.kind;
+        this.addStatus(src, kind, b); this.text(src, ca.name, ca.color, true);
+      }
+    }
     this.hooks.onHit?.(this, info);
   }
 
@@ -1086,7 +1112,7 @@ function chargeAnimFor(p) {
 }
 function attackAnimFor(p) {
   if (p.kind === 'swipe' || p.kind === 'multi') return 'Attack';
-  if (p.kind === 'lunge' || p.kind === 'charge') return p.roll ? 'Rotate' : 'Attack';
+  if (p.kind === 'lunge' || p.kind === 'charge') return p.roll ? 'Rotate' : 'Walk';
   if (p.kind === 'proj' || p.kind === 'stream' || p.kind === 'beam' || p.kind === 'chain' || p.kind === 'seed') return 'Shoot';
   if (p.kind === 'nova' || p.kind === 'strike') return 'Strike';
   if (p.kind === 'buff' || p.kind === 'heal') return 'Pose';

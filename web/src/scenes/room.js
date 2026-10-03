@@ -13,7 +13,7 @@ import { loadLayout, buildRoom, candidates, drawTileAnims, mapIndex } from '../g
 import { drawWorld, drawVignette, drawBA } from '../game/render.js';
 import { playerBrain, updateBalls, updateAllies } from '../game/player.js';
 import { G, makePlayer, buildHooks, gainExp, expFor, rollDoors, saveMeta, REWARD_INFO, playerMaxHp, rank, saveRunSnapshot } from '../game/run.js';
-import { BIOMES } from '../game/content.js';
+import { BIOMES, STAGES, ACTS, areaOf, actOf } from '../game/content.js';
 import { LEGENDS } from '../game/boons.js';
 import { rollWave, makeEnemy, rollTrainer, trainerParty, trainerSprite } from '../game/spawn.js';
 import { BOSSES, spawnBoss, bossDirector, bossesDefeated } from '../game/bosses.js';
@@ -46,7 +46,7 @@ export class RoomScene {
     const run = this.run;
     const world = this.world = new World(this.room, { rng: run.rng });
     world.run = run;
-    world.maxAttackers = (BIOMES[run.biome]?.maxAttackers ?? 2) * (Coop.active ? 2 : 1); // co-op: two players to pressure
+    world.maxAttackers = (areaOf(run)?.maxAttackers ?? 2) * (Coop.active ? 2 : 1); // co-op: two players to pressure
     const ent = this.room.entry;
     const p = world.player = makePlayer(run, ent.x, ent.y);
     p.brain = playerBrain; p.facing = -Math.PI / 2;
@@ -67,11 +67,11 @@ export class RoomScene {
 
   // ---- content per room kind
   setup() {
-    const spec = this.spec, run = this.run, w = this.world, B = BIOMES[run.biome];
+    const spec = this.spec, run = this.run, w = this.world, B = areaOf(run);
     const music = B?.music || 'mus_pallet';
     if (spec.kind === 'combat' || spec.kind === 'trainer') {
       Sound.playBGM(music);
-      if (spec.first) this.banners.push(new Banner(B.name, B.intro, { life: 3.2 }));
+      if (spec.first) this.banners.push(new Banner(`${ACTS[actOf(run.biome)].name}: ${B.name}`, B.intro, { life: 3.4 }));
       if (spec.kind === 'trainer' || (B.trainerOnly && run.rng.chance(0.6))) this.setupTrainer();
       else this.setupWaves();
     } else if (spec.kind === 'boss') {
@@ -96,7 +96,7 @@ export class RoomScene {
   }
 
   setupWaves() {
-    const run = this.run, B = BIOMES[run.biome];
+    const run = this.run, B = areaOf(run);
     const nw = run.rng.int(B.waves[0], B.waves[1]);
     for (let i = 0; i < nw; i++) {
       const n = (run.rng.int(B.perWave[0], B.perWave[1]) + Math.floor(run.roomInBiome / 3) + (run.heat >= 7 ? 1 : 0)) * (Coop.active ? 2 : 1); // co-op: twice the foes
@@ -193,7 +193,7 @@ export class RoomScene {
       else w.vfx.push({ kind: 'custom', t: 0, life: 0.5, draw: (ctx, v, k) => { drawBA(ctx, 'leaf', a.x + Math.cos(k * 9) * 10 * (1 - k), a.y - k * 10, k, { anim: true, alpha: 1 - k }); } });
     }
     if (list.some(e => e.trainerMon)) Sound.playSE('se_ball_open'); else Sound.playSE('se_m_razor_wind2');
-    this.world.maxAttackers = Math.max(BIOMES[this.run.biome]?.maxAttackers ?? 2, 1) * (Coop.active ? 2 : 1);
+    this.world.maxAttackers = Math.max(areaOf(this.run)?.maxAttackers ?? 2, 1) * (Coop.active ? 2 : 1);
   }
 
   updateWaves(dt) {
@@ -212,7 +212,7 @@ export class RoomScene {
     this.cleared = true;
     const run = this.run, w = this.world;
     if (!quiet) {
-      if (this.trainer) { Sound.playBGM('mus_victory_trainer'); const prize = Math.round(D.trainerClasses?.[this.trainer.class]?.money || 10) * 2 + 10; run.money += Math.round(prize * (w.player.moneyMul || 1)); this.banners.push(new Banner(`Defeated ${this.trainer.className} ${this.trainer.name}!`, `Got ¥${Math.round(prize * (w.player.moneyMul || 1))} for winning!`, { life: 2.2 })); }
+      if (this.trainer) { Sound.playBGM('mus_victory_trainer'); this.musicBackAt = this.t + 6; const prize = Math.round(D.trainerClasses?.[this.trainer.class]?.money || 10) * 2 + 10; run.money += Math.round(prize * (w.player.moneyMul || 1)); this.banners.push(new Banner(`Defeated ${this.trainer.className} ${this.trainer.name}!`, `Got ¥${Math.round(prize * (w.player.moneyMul || 1))} for winning!`, { life: 2.2 })); }
       else Sound.playSE('se_success');
       w.hooks.onRoomClear?.(w);
       for (const c of run.chaos) if (!c.active) { c.rooms--; if (c.rooms <= 0) { c.active = true; this.banners.push(new Banner('DEOXYS\'s curse lifts!', c.blessing.name, { color: '#d050a0' })); } }
@@ -228,7 +228,7 @@ export class RoomScene {
     const run = this.run;
     if (this.spec.kind === 'hub') return;
     if (this.spec.kind === 'boss') {
-      const last = run.biome >= BIOMES.length - 1;
+      const last = run.biome >= STAGES - 1;
       this.doors = [{ ...this.room.exits[0], reward: { kind: last ? 'victory' : 'next' } }];
     } else {
       const rewards = rollDoors(run, this.room.exits.length);
@@ -251,6 +251,7 @@ export class RoomScene {
     if (this.state === 'exiting') { this.fade = Math.min(1, this.fade + dt * 3.5); if (this.fade >= 1 && this.next) { const n = this.next; this.next = null; n(); } return; }
     if (Input.justPressed('pause') && this.state === 'play') { R.openPause(this); return; }
     if (Coop.role === 'host') coopFrame(this, dt); // co-op: the guest's input drives player 2
+    if (this.musicBackAt && this.t > this.musicBackAt) { this.musicBackAt = 0; Sound.playBGM(areaOf(this.run)?.music || 'mus_pallet'); } // back to the area's music after a win
     // fixed-step simulation
     const scale = w.slowmo > 0 ? 0.35 : 1;
     this.acc += dt * scale;
@@ -398,7 +399,7 @@ export class RoomScene {
       extraSprites: items => { for (const n of this.npcs) items.push({ y: n.y - 2, draw: c => this.drawNpc(c, n) }); },
     });
     ctx.restore();
-    const B = BIOMES[this.run.biome];
+    const B = areaOf(this.run);
     if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette);
     if (this.world.player.hp < this.world.player.maxHp * 0.25 && !this.world.player.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
     // NPC labels (screen space)
@@ -422,7 +423,7 @@ export class RoomScene {
     const a = this.world.p2;
     if (a) {
       const sx = (a.x - this.cam.x) * 2, sy = (a.y - this.cam.y) * 2 - a.r * 2 - 46;
-      if (a.dead) text(ctx, `${a.label || 'P2'} fainted · back in ${Math.max(0, Math.ceil(8 - (Coop.p2?.downT || 0)))}s`, sx, sy, { align: 'center', font: 'small', color: ['#ff9080', '#202020'] });
+      if (a.dead) text(ctx, `${a.label || 'P2'} fainted · back in ${Math.max(0, Math.ceil(15 - (Coop.p2?.downT || 0)))}s`, sx, sy, { align: 'center', font: 'small', color: ['#ff9080', '#202020'] });
       else {
         text(ctx, a.label || 'P2', sx, sy - 2, { align: 'center', font: 'small', color: ['#80d0ff', '#202020'] });
         rect(ctx, sx - 20, sy + 11, 40, 4, '#202020'); rect(ctx, sx - 19, sy + 12, 38 * Math.max(0, a.hp / a.maxHp), 2, a.hp < a.maxHp * 0.25 ? '#f04040' : '#40d860');

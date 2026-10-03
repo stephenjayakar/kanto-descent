@@ -13,7 +13,7 @@ import { serializeRun, restoreRun, loadRunSave, clearRunSave, recordRun, runLabe
 import { Cloud } from '../game/cloud.js';
 import { G, newRun, makePlayer, buildHooks, gainExp, evolve, learnMove, boonChoices, addBoon, tmChoices, heldChoices, chaosOffer, saveMeta, rank, playerMaxHp, REWARD_INFO, starterUnlocked } from '../game/run.js';
 import { BOONS, LEGENDS, RARITY, SLOT_NAMES, boonInstance } from '../game/boons.js';
-import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT, HEAT } from '../game/content.js';
+import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT, HEAT, ACTS, STAGES, areaOf, areaAt, areaByKey, actOf } from '../game/content.js';
 import { BOSSES } from '../game/bosses.js';
 import { candidates } from '../game/rooms.js';
 import { preloadPmd, drawPmd } from '../game/pmd.js';
@@ -28,7 +28,7 @@ const go = spec => setScene(new RoomSceneRef(spec));
 
 // ---------------------------------------------------------------- moving between rooms
 function pickRoom(run) {
-  const B = BIOMES[run.biome];
+  const B = areaOf(run);
   const opts = [];
   for (const [layout, idxs] of B.pools) for (const i of idxs) if (candidates(layout)[i]) opts.push({ layout, cropIndex: i });
   const fresh = opts.filter(o => !run.lastLayouts.includes(o.layout + o.cropIndex));
@@ -51,7 +51,7 @@ export function goNext(scene, reward) {
     return go({ kind: 'combat', ...pickRoom(run), reward: { kind: 'boon', legend: run.rng.pick(['ZAPDOS', 'ARTICUNO', 'MOLTRES', 'MEW', 'LUGIA', 'HOOH']) }, first: true });
   }
   run.roomInBiome++;
-  const B = BIOMES[run.biome];
+  const B = areaOf(run);
   switch (reward.kind) {
     case 'boss': return go({ kind: 'boss', layout: B.bossRoom[0], cropIndex: B.bossRoom[1], boss: B.boss });
     case 'center': (run.visited.center ??= {})[run.biome] = true; return go({ kind: 'center', layout: 'LAYOUT_POKEMON_CENTER_1F', cropIndex: 0, preBoss: run.roomInBiome >= B.rooms - 1, shopRoom: true });
@@ -64,10 +64,10 @@ export function goNext(scene, reward) {
 
 export function rewardLabel(r) {
   if (r.kind === 'boon') return `${LEGENDS[r.legend].name}'s blessing`;
-  if (r.kind === 'next') return `Onward to ${BIOMES[G.run.biome + 1]?.name || '...'}`;
+  if (r.kind === 'next') return `Onward to ${G.run.biome + 1 < STAGES ? areaAt(G.run, G.run.biome + 1).name : '...'}`;
   if (r.kind === 'victory') return 'Leave CERULEAN CAVE';
   if (r.kind === 'start') return 'Head out toward CERULEAN CAVE';
-  if (r.kind === 'boss') return `${BIOMES[G.run.biome].name}: the boss awaits`;
+  if (r.kind === 'boss') return `${areaOf(G.run).name}: the boss awaits`;
   return REWARD_INFO[r.kind]?.name + (REWARD_INFO[r.kind]?.desc ? ` - ${REWARD_INFO[r.kind].desc}` : '');
 }
 
@@ -361,7 +361,7 @@ class EvolutionOverlay {
     Input.poll();
     this.t += dt;
     if (this.stage === 0 && this.t > 5) { this.stage = 1; this.t = 0; Sound.playFanfare('mus_evolved'); Sound.playCry(this.to); }
-    if (this.stage === 1 && this.t > 0.6 && (Input.justPressed('confirm') || Engine.mouse.clicked || this.t > 4)) { popOverlay(this); Sound.playBGM(BIOMES[G.run.biome]?.music || 'mus_pallet'); this.done(); }
+    if (this.stage === 1 && this.t > 0.6 && (Input.justPressed('confirm') || Engine.mouse.clicked || this.t > 4)) { popOverlay(this); Sound.playBGM(areaOf(G.run)?.music || 'mus_pallet'); this.done(); }
   }
   draw(ctx) {
     const im = img('gfx/misc/evolution/static_bg.png');
@@ -524,7 +524,7 @@ export async function bossDefeated(scene) {
   const p = scene.world.player; scene.world.heal(p, Math.round(p.maxHp * 0.25)); run.hp = p.hp; coopHeal(scene, 0.25);
   await levelPrompts(scene);
   scene.openDoors();
-  Sound.playBGM(BIOMES[run.biome]?.music || 'mus_pallet');
+  Sound.playBGM(areaOf(run)?.music || 'mus_pallet');
 }
 
 // ---------------------------------------------------------------- pause
@@ -580,7 +580,7 @@ class PauseOverlay {
 export async function gameOver(scene) {
   const run = G.run;
   G.meta.deaths++;
-  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: false, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now(), coop: coopTeam() };
+  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: false, area: areaOf(run).key, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now(), coop: coopTeam() };
   G.meta.history.unshift(entry);
   clearRunSave(); recordRun(entry);
   G.meta.history = G.meta.history.slice(0, 20);
@@ -593,7 +593,7 @@ function victory() {
   G.meta.wins++;
   G.meta.maxHeatWon = Math.max(G.meta.maxHeatWon ?? -1, run.heat || 0);
   if (!G.meta.bestTime || run.time < G.meta.bestTime) G.meta.bestTime = Math.round(run.time);
-  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: true, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now(), coop: coopTeam() };
+  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: true, area: areaOf(run).key, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now(), coop: coopTeam() };
   run.coopTeam = entry.coop; // the Hall of Fame shows both players
   G.meta.history.unshift(entry);
   clearRunSave(); recordRun(entry);
@@ -611,7 +611,7 @@ class SummaryOverlay {
     text(ctx, `${D.species[run.species].name} fainted!`, W / 2, 80, { align: 'center', color: 'white', scale: 2 });
     text(ctx, 'You blacked out... and woke up in PROF. OAK\'s lab.', W / 2, 120, { align: 'center', color: 'whiteSoft' });
     const lines = [
-      `Reached: ${BIOMES[run.biome].name}, room ${run.roomInBiome + 1}`, `Level ${run.level}   KOs ${run.kills}   Time ${fmtTime(run.time)}`,
+      `Reached: ${areaOf(run).name} (${ACTS[actOf(run.biome)].name}), room ${run.roomInBiome + 1}`, `Level ${run.level}   KOs ${run.kills}   Time ${fmtTime(run.time)}`,
       `STARDUST earned: ${run.stardustGained}  (total ${G.meta.stardust})`, `Blessings: ${run.boons.map(b => BOONS[b.key].name).join(', ') || 'none'}`,
     ];
     lines.forEach((l, i) => text(ctx, l, W / 2, 170 + i * 20, { align: 'center', color: 'white', font: i === 3 ? 'small' : 'normal' }));
@@ -695,7 +695,7 @@ export function drawHubHints(ctx, scene) {
 async function chooseStarter(scene) {
   const cards = STARTERS.map(s => {
     const sp = D.species[s.species], ok = starterUnlocked(s);
-    return { title: sp.name, sub: ok ? sp.types.join('/') : 'LOCKED', subColor: ok ? 'blue' : 'red', desc: ok ? `${s.blurb}  ${D.moves[s.slots.attack].name} / ${D.moves[s.slots.special].name} / ${D.moves[s.slots.cast].name}` : `Defeat ${s.unlock} to unlock.`, portrait: ok ? sp.dex : null, icon: ok ? null : 'gfx/overworld/misc/item_ball.png', accent: ok ? TYPE_COLORS[sp.types[0]] : '#606060', disabled: !ok };
+    return { title: sp.name, sub: ok ? sp.types.join('/') : 'LOCKED', subColor: ok ? 'blue' : 'red', desc: ok ? `${s.blurb}  ${D.moves[s.slots.attack].name} / ${D.moves[s.slots.special].name} / ${D.moves[s.slots.cast].name}` : `Defeat ${[].concat(s.unlock).map(k => D.trainers[BOSSES[k]?.trainer]?.name || k).join(' or ')} to unlock.`, portrait: ok ? sp.dex : null, icon: ok ? null : 'gfx/overworld/misc/item_ball.png', accent: ok ? TYPE_COLORS[sp.types[0]] : '#606060', disabled: !ok };
   });
   const i = await choose('Choose your partner POKéMON', cards, { cardH: 46, canSkip: true, skipLabel: 'CANCEL (X)' });
   if (i < 0) return;
@@ -732,7 +732,7 @@ async function records(scene) {
   await say([
     { text: `Runs: ${m.runs}   Escapes: ${m.wins}   Best time: ${m.bestTime ? fmtTime(m.bestTime) : '--'}`, name: 'AIDE' },
     { text: `POKéDEX: seen ${seen}, caught ${caught}. Bosses beaten: ${m.badges.join(', ') || 'none yet'}.`, name: 'AIDE' },
-    ...(last ? [{ text: `Last run: ${D.species[last.species]?.name} Lv${last.level}, reached ${BIOMES[last.biome].name} (${last.won ? 'ESCAPED!' : 'fainted'}).`, name: 'AIDE' }] : []),
+    ...(last ? [{ text: `Last run: ${D.species[last.species]?.name} Lv${last.level}, reached ${(last.area ? areaByKey(last.area) : BIOMES[last.biome])?.name || '?'} (${last.won ? 'ESCAPED!' : 'fainted'}).`, name: 'AIDE' }] : []),
     { text: 'Here are the full RECORDS: everyone\'s runs, yours, and the top trainers.', name: 'AIDE' },
   ]);
   const { RecordsScene } = await import('./records.js'); // BACK returns to the lab
@@ -755,12 +755,13 @@ export { STARTERS };
 // ?dev=combat|boss|shop|center|chaos|trainer&biome=N&starter=X&level=L
 export function devStart(q) {
   const run = newRun(q.get('starter') || G.meta.lastStarter || 'CHARMANDER', q.get('seed') || undefined);
-  run.biome = +(q.get('biome') || 0); run.roomInBiome = +(q.get('room') || 1); run.depth = run.biome * 7 + run.roomInBiome;
+  run.biome = +(q.get('biome') || 0); run.roomInBiome = +(q.get('room') || 1);
+  if (q.get('area')) run.route[run.biome] = q.get('area'); // dev: force an area at this stage run.depth = run.biome * 7 + run.roomInBiome;
   const lvl = +(q.get('level') || 0);
   if (lvl) { run.level = lvl; run.exp = 0; run.hp = playerMaxHp(run); }
   if (q.get('boons')) for (const k of q.get('boons').split(',')) addBoon(run, { key: k, rarity: 1, level: 1 });
   const kind = q.get('dev');
-  if (kind === 'boss') { run.roomInBiome = BIOMES[run.biome].rooms; return goNext({ spec: { kind: 'x' } }, { kind: 'boss' }) || run; }
+  if (kind === 'boss') { run.roomInBiome = areaOf(run).rooms; return goNext({ spec: { kind: 'x' } }, { kind: 'boss' }) || run; }
   run.roomInBiome--; run.depth--;
   goNext({ spec: { kind: 'x' } }, kind === 'combat' ? { kind: 'rare_candy' } : { kind });
 }

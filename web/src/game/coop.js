@@ -211,6 +211,7 @@ export function coopWrapHooks(w) {
   if (!w?.p2 || !Coop.p2) return;
   const host = w.hooks?._host || w.hooks;
   const pw = Object.create(w); pw.player = w.p2;
+  for (const k of ['sunny', 'slowmo', 'hitstop', 'shake']) Object.defineProperty(pw, k, { get: () => w[k], set: v => { w[k] = v; } }); // shared world state P2's blessings may set
   const p2h = buildHooks(Coop.p2.run, pw);
   const mine = a => !!a && (a === w.p2 || a.owner === w.p2);
   const by = (pick, name) => (W, x, ...rest) => (pick(x, ...rest) ? p2h[name]?.(pw, x, ...rest) : host[name]?.(W, x, ...rest));
@@ -229,7 +230,14 @@ export function coopWrapHooks(w) {
     onTick: (W, dt) => { host.onTick?.(W, dt); if (w.p2 && !w.p2.dead) p2h.onTick?.(pw, dt); },
     onRoomStart: W => { host.onRoomStart?.(W); p2h.onRoomStart?.(pw); },
     onRoomClear: W => { host.onRoomClear?.(W); p2h.onRoomClear?.(pw); },
-    onSpawn: (W, e) => host.onSpawn?.(W, e),
+    onSpawn: (W, e) => {
+      host.onSpawn?.(W, e);
+      if (e.team === 'enemy' && !e.coopScaled) { // co-op: two players' worth of pressure
+        e.coopScaled = true;
+        e.dmgScale = (e.dmgScale || 1) * (e.boss ? 1.2 : 1.25);
+        if (e.boss) e.maxHp = e.hp = Math.round(e.maxHp * 1.8);
+      }
+    },
   };
 }
 
@@ -321,7 +329,7 @@ export function coopFrame(scene, dt) {
   const a = w.p2, st = Coop.p2;
   if (a.dead) {
     st.downT += dt;
-    if (st.downT > 8 || scene.cleared) reviveP2(w, a, 0.5); // back up next to P1 with half HP
+    if (st.downT > 15 || scene.cleared) reviveP2(w, a, 0.5); // back up next to P1 with half HP
     return;
   }
   st.run.hp = a.hp;

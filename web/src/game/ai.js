@@ -98,6 +98,13 @@ export function wildBrain(world, a, dt) {
     mx += (-dy / d) * ai.strafe * 0.7; my += (dx / d) * ai.strafe * 0.7;
   }
   if (a.flying) { mx += Math.cos(world.time * 3 + a.id) * 0.25; my += Math.sin(world.time * 2.3 + a.id) * 0.25; }
+  // unstick: wanting to move but barely moving for 0.4s -> flip the strafe and follow the path field for a moment
+  ai.stuckT = (ai.stuckT || 0) + dt; ai.lx ??= a.x; ai.ly ??= a.y;
+  if (ai.stuckT >= 0.4) {
+    if (Math.hypot(mx, my) > 0.1 && Math.hypot(a.x - ai.lx, a.y - ai.ly) < 1.5 && !a.flying && mode !== 'ghost') { ai.strafe *= -1; ai.think = 0; ai.flowT = 0.6; }
+    ai.stuckT = 0; ai.lx = a.x; ai.ly = a.y;
+  }
+  if (ai.flowT > 0) { ai.flowT -= dt; const f = world.flowDir(a.x, a.y); if (f) { mx = f.x; my = f.y; } }
   const l = Math.hypot(mx, my);
   if (l > 0.01) { a.vx = (mx / l) * sp; a.vy = (my / l) * sp; } else { a.vx = a.vy = 0; }
   // face the target while strafing

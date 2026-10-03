@@ -22,7 +22,7 @@ export async function listAssets() {
   const species = J('data/species.json'), encounters = J('data/encounters.json'), trainers = J('data/trainers.json');
 
   // which POKéMON can ever be on screen
-  const keys = new Set(['ONIX', 'GEODUDE', 'STARMIE', 'STARYU', 'MAROWAK', 'GASTLY', 'RHYHORN', 'KANGASKHAN', 'NIDOQUEEN', 'MEWTWO']);
+  const keys = new Set(['ONIX', 'GEODUDE', 'STARMIE', 'STARYU', 'MAROWAK', 'GASTLY', 'RHYHORN', 'KANGASKHAN', 'NIDOQUEEN', 'MEWTWO', 'RAICHU', 'VOLTORB', 'LAPRAS', 'DEWGONG']);
   for (const b of BIOMES) {
     for (const m of b.encounters) for (const s of encounters[m]?.land || []) keys.add(s.species);
     for (const t of Object.values(trainers)) if (!t.dummy && t.maps?.some(m => b.trainerMaps.includes(m))) for (const p of t.party || []) keys.add(p.species);

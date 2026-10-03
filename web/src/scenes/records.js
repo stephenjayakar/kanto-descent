@@ -8,7 +8,7 @@ import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { D } from '../game/data.js';
 import { G } from '../game/run.js';
-import { BIOMES, STARTERS } from '../game/content.js';
+import { BIOMES, STARTERS, areaByKey } from '../game/content.js';
 import { Cloud, rename, signOut, createInviteLink, leaderboard, topTrainers, myRuns, starterRecords } from '../game/cloud.js';
 import { scoreRun } from '../game/score.js';
 import { VERSION, PATCH_NOTES } from '../game/version.js';
@@ -47,7 +47,7 @@ function localRow(e) {
   return {
     name: Cloud.me?.name || 'YOU', me: true, score: e.score ?? scoreRun(e), result: e.won ? 'win' : 'lose', version: e.version || 'v0.0.1',
     heat: e.heat || 0, starter: e.starter, species: e.species, partner: e.partner || null, level: e.level || 0,
-    biome: e.biome || 0, room: e.room || 0, time: e.time || 0, kills: e.kills || 0, at: e.at || Date.now(), coop: e.coop || null,
+    biome: e.biome || 0, room: e.room || 0, area: e.area || null, time: e.time || 0, kills: e.kills || 0, at: e.at || Date.now(), coop: e.coop || null,
   };
 }
 
@@ -188,7 +188,8 @@ export class RecordsScene {
       text(ctx, String(i + 1), 20, ty, { color: i < 3 && this.tab === 'all' && this.sort === 'score' ? 'gold' : 'white', font: 'small' });
       text(ctx, r.name, 44, ty, { color: r.me ? 'gold' : 'white', font: 'small' });
       text(ctx, (r.score || 0).toLocaleString(), 150, ty, { color: 'white', font: 'small' });
-      text(ctx, label, 214, ty, { color, font: 'small' });
+      text(ctx, label, 214, r.coop ? y + 1 : ty, { color, font: 'small' });
+      if (r.coop) text(ctx, 'CO-OP', 214, y + 13, { color: ['#80d0ff', '#202020'], font: 'small' }); // co-op runs are marked
       text(ctx, r.heat ? String(r.heat) : '-', 290, ty, { color: r.heat ? 'orange' : 'gray', font: 'small', align: 'center' });
       // team: the starter (as it ended up) and the partner caught on the way
       const mon = r.species || r.starter;
@@ -197,7 +198,7 @@ export class RecordsScene {
       else if (r.partner) drawMonIcon(ctx, r.partner, 354, y - 6);
       if (hover(322, y - 2, 64, 28)) tip(speciesName(mon) + (r.level ? ` Lv${r.level}` : ''), `${r.starter && r.starter !== mon ? `Started as ${speciesName(r.starter)}. ` : ''}${r.coop ? `Co-op with ${r.coop.name} (${speciesName(r.coop.species)}). ` : ''}${r.partner ? `Partner: ${speciesName(r.partner)}.` : 'No partner caught.'}${r.kills ? ` ${r.kills} KOs.` : ''}${r.time ? ` Time ${fmt(r.time)}.` : ''}`, { width: 200 });
       if (r.level) text(ctx, `Lv${r.level}`, 392, ty, { color: 'whiteSoft', font: 'small' });
-      const B = BIOMES[r.biome];
+      const B = (r.area && areaByKey(r.area)) || BIOMES[r.biome];
       const reached = r.result === 'win' ? 'ESCAPED CERULEAN CAVE' : B ? `${B.name} ${r.room >= B.rooms ? 'BOSS' : `${r.room + 1}/${B.rooms + 1}`}` : '?';
       text(ctx, reached, 466, ty, { color: r.result === 'win' ? 'lime' : 'whiteSoft', font: 'small' });
       text(ctx, ago(r.at), 648, y + 1, { color: 'gray', font: 'small' });
@@ -209,7 +210,7 @@ export class RecordsScene {
   drawStarters(ctx) {
     const y0 = 70;
     for (const [h, x] of [['STARTER', 18], ['YOUR RUNS', 190], ['ESCAPES', 270], ['YOUR BEST', 350], ['RECORD', 540]]) text(ctx, h, x, y0, { color: 'gray', font: 'small' });
-    const reachedOf = r => { if (!r) return ''; if (r.result === 'win') return 'ESCAPED'; const B = BIOMES[r.biome]; return B ? `${B.name} ${r.room >= B.rooms ? 'BOSS' : `${r.room + 1}/${B.rooms + 1}`}` : ''; };
+    const reachedOf = r => { if (!r) return ''; if (r.result === 'win') return 'ESCAPED'; const B = (r.area && areaByKey(r.area)) || BIOMES[r.biome]; return B ? `${B.name} ${r.room >= B.rooms ? 'BOSS' : `${r.room + 1}/${B.rooms + 1}`}` : ''; };
     this.rows.forEach((s, i) => {
       const y = y0 + 14 + i * 38;
       const m = s.mine || {}, unlocked = s.best || m.runs;
