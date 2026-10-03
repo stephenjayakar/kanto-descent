@@ -7,7 +7,7 @@ import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { D, TYPE_COLORS } from '../game/data.js';
 import { STARTERS } from '../game/content.js';
-import { G, starterUnlocked } from '../game/run.js';
+import { G, starterUnlocked, recordRun, saveMeta } from '../game/run.js';
 import { Cloud } from '../game/cloud.js';
 import { Coop, joinCoop, guestPacket } from '../game/coop.js';
 import { choose } from './ui.js';
@@ -16,6 +16,8 @@ export class GuestScene {
   constructor(code) { this.code = code.toUpperCase(); this.t = 0; this.stage = 'pick'; this.msg = ''; }
   enter() {
     Input.clear();
+    // the host's run ended: keep it in this account's records too (as player 2)
+    Coop.onRun = entry => { G.meta.history.unshift(entry); G.meta.history = G.meta.history.slice(0, 20); saveMeta(); recordRun(entry); this.lastRun = entry; };
     const v = this.video = document.createElement('video');
     v.autoplay = true; v.playsInline = true;
     Object.assign(v.style, { position: 'fixed', width: '1px', height: '1px', opacity: '0', pointerEvents: 'none' });

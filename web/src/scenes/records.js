@@ -47,7 +47,7 @@ function localRow(e) {
   return {
     name: Cloud.me?.name || 'YOU', me: true, score: e.score ?? scoreRun(e), result: e.won ? 'win' : 'lose', version: e.version || 'v0.0.1',
     heat: e.heat || 0, starter: e.starter, species: e.species, partner: e.partner || null, level: e.level || 0,
-    biome: e.biome || 0, room: e.room || 0, time: e.time || 0, kills: e.kills || 0, at: e.at || Date.now(),
+    biome: e.biome || 0, room: e.room || 0, time: e.time || 0, kills: e.kills || 0, at: e.at || Date.now(), coop: e.coop || null,
   };
 }
 
@@ -193,8 +193,9 @@ export class RecordsScene {
       // team: the starter (as it ended up) and the partner caught on the way
       const mon = r.species || r.starter;
       drawMonIcon(ctx, mon, 322, y - 6);
-      if (r.partner) drawMonIcon(ctx, r.partner, 354, y - 6);
-      if (hover(322, y - 2, 64, 28)) tip(speciesName(mon) + (r.level ? ` Lv${r.level}` : ''), `${r.starter && r.starter !== mon ? `Started as ${speciesName(r.starter)}. ` : ''}${r.partner ? `Partner: ${speciesName(r.partner)}.` : 'No partner caught.'}${r.kills ? ` ${r.kills} KOs.` : ''}${r.time ? ` Time ${fmt(r.time)}.` : ''}`, { width: 200 });
+      if (r.coop?.species) drawMonIcon(ctx, r.coop.species, 354, y - 6); // co-op teammate
+      else if (r.partner) drawMonIcon(ctx, r.partner, 354, y - 6);
+      if (hover(322, y - 2, 64, 28)) tip(speciesName(mon) + (r.level ? ` Lv${r.level}` : ''), `${r.starter && r.starter !== mon ? `Started as ${speciesName(r.starter)}. ` : ''}${r.coop ? `Co-op with ${r.coop.name} (${speciesName(r.coop.species)}). ` : ''}${r.partner ? `Partner: ${speciesName(r.partner)}.` : 'No partner caught.'}${r.kills ? ` ${r.kills} KOs.` : ''}${r.time ? ` Time ${fmt(r.time)}.` : ''}`, { width: 200 });
       if (r.level) text(ctx, `Lv${r.level}`, 392, ty, { color: 'whiteSoft', font: 'small' });
       const B = BIOMES[r.biome];
       const reached = r.result === 'win' ? 'ESCAPED CERULEAN CAVE' : B ? `${B.name} ${r.room >= B.rooms ? 'BOSS' : `${r.room + 1}/${B.rooms + 1}`}` : '?';

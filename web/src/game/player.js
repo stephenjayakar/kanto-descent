@@ -9,7 +9,7 @@ import { Sound } from '../audio/sound.js';
 const DASH_DIST = 54, DASH_TIME = 0.13;
 
 export function playerBrain(world, a, dt) {
-  const run = world.run;
+  const run = a.run || world.run; // co-op: P2 has its own run (moves, blessings, partner)
   const I = a.input || Input; // co-op: P2 is driven by the guest's remote input
   const slots = a.slots || run.slots;
   const pc = a.pc || (a.pc = { dashLeft: a.dashCharges, dashT: 0, combo: 0, comboT: 0, lastDash: -9, castT: 0 });
@@ -82,8 +82,8 @@ export function playerBrain(world, a, dt) {
   if (I.down('attack') || I.pressed('attack')) { if (tryUse('attack')) { I.consume('attack'); return; } }
   if (I.down('special') || I.pressed('special')) { if (tryUse('special')) { I.consume('special'); return; } }
   if (I.pressed('cast')) { if (tryUse('cast')) { I.consume('cast'); return; } }
-  if (I.pressed('ball') && !world.noBalls && !a.p2) { I.consume('ball'); throwBall(world, a, aim); return; }
-  if (I.pressed('call') && !a.p2) { I.consume('call'); callPartner(world, a); return; }
+  if (I.pressed('ball') && !world.noBalls) { I.consume('ball'); throwBall(world, a, aim); return; }
+  if (I.pressed('call')) { I.consume('call'); callPartner(world, a); return; }
 }
 
 
@@ -113,14 +113,14 @@ function aimTarget(world, a, ang, range, cone = 0.9) {
 
 // ---- Poké Balls: weaken a wild Pokémon and throw (R). A catch makes it your partner.
 function throwBall(world, a, aim) {
-  const run = world.run;
+  const run = world.run; // POKé BALLS are shared in co-op
   if (run.balls <= 0) { world.text(a, 'No POKé BALLS!', '#ffffff'); Sound.playSE('se_failure'); return; }
   run.balls--;
   Sound.playSE('se_ball_throw');
   const t = aimTarget(world, a, aim, 160, 0.7);
   const to = t ? { x: t.x, y: t.y } : { x: a.x + Math.cos(aim) * 90, y: a.y + Math.sin(aim) * 90 };
   world.balls ??= [];
-  world.balls.push({ x: a.x, y: a.y - 8, from: { x: a.x, y: a.y - 8 }, to, target: t, t: 0, life: 0.45, ball: run.ballType || 'poke_ball', state: 'fly' });
+  world.balls.push({ x: a.x, y: a.y - 8, from: { x: a.x, y: a.y - 8 }, to, target: t, t: 0, life: 0.45, ball: run.ballType || 'poke_ball', state: 'fly', by: a });
 }
 
 export function updateBalls(world, dt) {
@@ -152,7 +152,7 @@ export function updateBalls(world, dt) {
       } else if (b.shakes >= 4 && b.t > 2.0) {
         Sound.playSE('se_ball_click');
         b.dead = true;
-        world.emit({ type: 'catch', actor: e, ball: b.ball });
+        world.emit({ type: 'catch', actor: e, ball: b.ball, by: b.by });
         e.dead = true; e.deathT = 9; e.hp = 0;
         if (!world.enemies().length) world.slowmo = 0.5;
       }
@@ -176,15 +176,15 @@ function catchShakes(world, e, ball) {
 
 // ---- partner Call (F): your caught partner fights at your side for a while.
 function callPartner(world, a) {
-  const run = world.run;
+  const run = a.run || world.run;
   if (!run.partner) { world.text(a, 'No partner yet! Catch one with R', '#ffffff', true); Sound.playSE('se_failure'); return; }
   if (run.callGauge < 1) { world.text(a, 'Call gauge not full', '#ffffff', true); Sound.playSE('se_failure'); return; }
-  if (world.actors.some(x => x.team === 'ally' && !x.dead)) return;
+  if (world.actors.some(x => x.team === 'ally' && !x.dead && (x.owner || world.player) === a)) return; // one partner out per player
   run.callGauge = 0;
   const pt = run.partner;
   const lvl = Math.max(pt.level, run.level - 2);
   const ally = makeActor(pt.species, lvl, 'ally', { x: a.x + Math.cos(a.facing) * 18, y: a.y + Math.sin(a.facing) * 18, moves: enemyMoves(pt.species, lvl), hpMul: 3 });
-  ally.brain = allyBrain; ally.lifeT = 10 + (run.callBonus || 0); ally.spawnT = 0.35; ally.iframes = 99; ally.dmgMul = 0.8 + (run.callPower || 0);
+  ally.owner = a; ally.brain = allyBrain; ally.lifeT = 10 + (run.callBonus || 0); ally.spawnT = 0.35; ally.iframes = 99; ally.dmgMul = 0.8 + (run.callPower || 0);
   if (world.collides(ally.x, ally.y, 6, 'walk')) { ally.x = a.x; ally.y = a.y; }
   world.add(ally);
   world.vfx.push({ kind: 'sendout', x: ally.x, y: ally.y, t: 0, life: 0.5 });

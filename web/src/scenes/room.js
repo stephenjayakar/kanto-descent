@@ -21,7 +21,7 @@ import { preloadPmd, drawPmd } from '../game/pmd.js';
 import { drawHud } from './hud.js';
 import { Banner, say, drawOW, ICON } from './ui.js';
 import * as R from './rewards.js';
-import { Coop, coopFrame, coopStatusText } from '../game/coop.js';
+import { Coop, coopFrame, coopStatusText, asP2Sync } from '../game/coop.js';
 
 const VIEW_W = W / 2, VIEW_H = H / 2;
 
@@ -56,7 +56,7 @@ export class RoomScene {
     // preload sprites we'll need
     const dexes = [p.dex];
     if (run.partner) dexes.push(D.species[run.partner.species].dex);
-    if (Coop.p2) dexes.push(D.species[Coop.p2.species].dex);
+    if (Coop.p2) dexes.push(D.species[Coop.p2.run.species].dex);
     await preloadPmd(dexes);
     this.setup();
     world.hooks.onRoomStart?.(world);
@@ -298,7 +298,7 @@ export class RoomScene {
         break;
       }
       case 'money': run.money += Math.round(e.amount * (w.player.moneyMul || 1)); w.texts.push({ str: `¥${e.amount}`, x: e.x, y: e.y - 10, t: 0, life: 0.9, color: 'gold' }); break;
-      case 'catch': R.onCatch(this, e.actor, e.ball); break;
+      case 'catch': if (e.by?.p2) asP2Sync(this, () => R.onCatch(this, e.actor, e.ball)); else R.onCatch(this, e.actor, e.ball); break; // co-op: P2's catch is P2's partner
       case 'revive': this.banners.push(new Banner('REVIVED!', 'Back on your feet!', { color: '#f8d060', life: 1.6 })); w.vfx.push({ kind: 'heal', x: w.player.x, y: w.player.y, t: 0, life: 0.8 }); Sound.playSE('se_m_morning_sun'); break;
       case 'bossPhase': w.shake = 8; Sound.playCry(e.actor.species, { mode: 'roar_1' }); if (e.actor.species === 'MAROWAK' && e.phase === 1) this.banners.push(new Banner('The GHOST was MAROWAK!', 'Its spirit rages!', { color: '#a080ff' })); if (e.actor.species === 'MEWTWO' && e.phase === 2) this.banners.push(new Banner('MEWTWO is enraged!', '', { color: '#f85888', life: 1.6 })); break;
       case 'banner': this.banners.push(new Banner(e.text, '', { life: 1.6, color: '#f8f8f8' })); break;
@@ -424,6 +424,8 @@ export class RoomScene {
       const x = 258, y = H - 46, wdt = 200;
       pixBox(ctx, x, y, wdt, 40, 'rgba(16,20,32,0.85)', '#80d0ff', 2);
       text(ctx, `${a.label || 'P2'} · ${D.species[a.species]?.name || ''} Lv${a.level}`, x + 6, y + 3, { font: 'small', color: ['#80d0ff', '#202020'] });
+      const r2 = a.run; // its own partner and Call gauge
+      if (r2?.partner) text(ctx, `${D.species[r2.partner.species]?.name || ''} ${r2.callGauge >= 1 ? 'F!' : Math.floor(r2.callGauge * 100) + '%'}`, x + wdt - 6, y + 3, { align: 'right', font: 'small', color: r2.callGauge >= 1 ? 'gold' : 'gray' });
       rect(ctx, x + 6, y + 16, wdt - 12, 4, '#202020'); rect(ctx, x + 7, y + 17, (wdt - 14) * Math.max(0, a.hp / a.maxHp), 2, a.hp < a.maxHp * 0.25 ? '#f04040' : '#40d860');
       ['attack', 'special', 'cast'].forEach((slot, i) => {
         const mv = a.slots?.[slot], cd = a.cds?.['slot_' + slot] || 0, max = a.cdMax?.['slot_' + slot] || 1;

@@ -81,6 +81,7 @@ export function recordRun(entry) {
   if (entry.partner === undefined) entry.partner = G.run?.partner?.species || null;
   entry.score = scoreRun(entry);
   Cloud.addRun(entry);
+  recordRun.after?.(entry); // co-op: the guest gets the run too
 }
 
 // Signing in: take whichever progression is further along, and the newer run in progress.

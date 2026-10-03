@@ -95,6 +95,8 @@ async function publicRun(ctx: QueryCtx, r: Doc<"runs">, names: Names, me: string
     species: typeof e.species === "string" ? e.species : null, partner: typeof e.partner === "string" ? e.partner : null,
     level: Number(e.level) || 0, biome: Number(e.biome) || 0, room: Number(e.room) || 0,
     time: Number(e.time) || 0, kills: Number(e.kills) || 0, at: r.at,
+    // co-op: the teammate (name and POKéMON only)
+    coop: e.coop && typeof e.coop === "object" ? { name: String(e.coop.name || "").slice(0, 12), species: typeof e.coop.species === "string" ? e.coop.species : null } : null,
   };
 }
 

@@ -64,7 +64,36 @@ const after = await host.evaluate(() => { const a = window.__room.world.p2; retu
 const gv = await guest.evaluate(() => { const v = document.querySelector('video'); return v ? { ready: v.readyState, w: v.videoWidth, h: v.videoHeight, paused: v.paused, audio: v.srcObject?.getAudioTracks().length } : null; });
 console.log('p2 before', JSON.stringify(before), 'after', JSON.stringify(after));
 console.log('guest video', JSON.stringify(gv));
+// per-player rewards: a blessing for each player, chosen on each player's own keyboard
+await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); window.__rw = R.applyReward(window.__room, { kind: 'boon', legend: 'ZAPDOS' }).then(() => (window.__rwDone = true)); });
+await host.waitForTimeout(900); await host.keyboard.press('Enter'); // P1 picks the first card
+await host.waitForTimeout(1200);
+await guest.screenshot({ path: 'tests/out/coop_guest_choice.png' });
+await guest.keyboard.press('ArrowDown'); await guest.waitForTimeout(150); await guest.keyboard.press('Enter'); // P2 picks the second
+await host.waitForTimeout(800);
+const boons = await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); const { G } = await import('/src/game/run.js'); return { done: !!window.__rwDone, p1: G.run.boons.map(b => b.key), p2: Coop.p2.run.boons.map(b => b.key), isP2: !!G.run.isP2 }; });
+console.log('boons', JSON.stringify(boons));
+// TM for each
+await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); window.__rwDone = false; R.applyReward(window.__room, { kind: 'tm' }).then(() => (window.__rwDone = true)); });
+await host.waitForTimeout(900); await host.keyboard.press('Enter'); await host.waitForTimeout(700);
+for (let i = 0; i < 4; i++) { await host.keyboard.press('Enter'); await host.waitForTimeout(450); } // slot prompt / dialogs
+await guest.waitForTimeout(600); await guest.keyboard.press('Enter');
+for (let i = 0; i < 4; i++) { await guest.waitForTimeout(450); await guest.keyboard.press('Enter'); }
+await host.waitForTimeout(800);
+const moves = await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); const { G } = await import('/src/game/run.js'); return { done: !!window.__rwDone, p1: G.run.slots, p2: Coop.p2.run.slots, p2actor: window.__room.world.p2.slots || window.__room.world.p2.run.slots }; });
+console.log('moves', JSON.stringify(moves));
+// heal reaches P2
+const heal = await host.evaluate(async () => { const { coopHeal } = await import('/src/game/coop.js'); const a = window.__room.world.p2; a.hp = 5; coopHeal(window.__room, 0.5); return { hp: a.hp, max: a.maxHp }; });
+console.log('heal', JSON.stringify(heal));
 await host.screenshot({ path: 'tests/out/coop_host.png' });
+// a new run resets player 2 to its starter (it used to stay evolved)
+await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); Coop.p2.run.species = 'VENUSAUR'; const R = await import('/src/scenes/rewards.js'); R.toHub(); });
+await host.waitForTimeout(3500);
+console.log('after new run', JSON.stringify(await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); const a = window.__room?.world?.p2; return { spec: window.__room?.spec?.kind, p2: a?.species, runSpecies: Coop.p2?.run.species, level: a?.level }; })));
+// the run's record reaches the guest's own account (as player 2)
+await host.evaluate(async () => { const { G, recordRun } = await import('/src/game/run.js'); const { coopTeam } = await import('/src/game/coop.js'); const run = G.run; recordRun({ starter: run.starter, species: run.species, level: run.level, biome: 2, room: 3, time: 600, won: false, kills: 40, heat: 0, boons: [], at: Date.now(), coop: coopTeam() }); });
+await guest.waitForTimeout(800);
+console.log('guest record', JSON.stringify(await guest.evaluate(async () => { const { G } = await import('/src/game/run.js'); const e = G.meta.history[0]; return e ? { starter: e.starter, coop: e.coop, guest: e.coopGuest, score: e.score } : null; })));
 await guest.screenshot({ path: 'tests/out/coop_guest.png' });
 console.log(logs.filter(l => !/AudioWorklet|ScriptProcessor/.test(l)).join('\n'));
 for (const b of browsers) await b.close();

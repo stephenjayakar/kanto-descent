@@ -244,6 +244,11 @@ export class World {
       if (!this.reachable(a.x, a.y)) { a.offT = (a.offT || 0) + dt; if (a.offT > 1.5) { const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y; a.offT = 0; } }
       else a.offT = 0;
     } else if (a.team === 'enemy' && (a.ghost || a.flying) && (a.x < 0 || a.y < 0 || a.x > this.room.w * TILE || a.y > this.room.h * TILE)) { const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y; }
+    // players too: a dash over water that got cut short (hit, stun) must not leave you stranded on a gap
+    if (a.team === 'player' && !a.dashing && !(a.action?.p.kind === 'dash') && !(a.z > 0)) {
+      if (this.collides(a.x, a.y, Math.min(a.r, 6), 'walk') || !this.reachable(a.x, a.y)) { a.offT = (a.offT || 0) + dt; if (a.offT > 0.25) { const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y; a.offT = 0; a.kx = a.ky = 0; } }
+      else a.offT = 0;
+    }
     for (const k in a.cds) if (a.cds[k] > 0) a.cds[k] -= dt;
     if (a.iframes > 0) a.iframes -= dt;
     if (a.flash > 0) a.flash -= dt;
@@ -476,7 +481,7 @@ export class World {
           if (b.team === 'player' && b.iframes > 0) continue;
           if (p.stat) this.changeStage(b, p.stat, -(p.stages || 1));
           if (p.status) this.addStatus(b, p.status, a);
-          if (act.slot === 'cast' && a === this.player) this.hooks.onCastHit?.(this, b);
+          if (act.slot === 'cast' && (a === this.player || a.p2)) this.hooks.onCastHit?.(this, b, a);
         }
         act.dur = 0.1;
         break;

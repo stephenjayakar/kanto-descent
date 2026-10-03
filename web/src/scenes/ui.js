@@ -6,6 +6,8 @@ import { windowFrame, pixBox, rect } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { TYPE_COLORS } from '../game/data.js';
+import { Coop } from '../game/coop.js';
+
 
 export const ICON = {
   item: k => `gfx/items/${k.toLowerCase()}.png`,
@@ -45,10 +47,10 @@ export class Dialog {
   }
   enter() { Input.clear(); }
   update(dt) {
-    Input.poll();
+    Input.poll(); if (Coop.menuP2) Coop.remote.poll();
     const L = this.lines[this.i];
     this.chars += dt * 70;
-    if (confirmPressed()) {
+    if (confirmPressed() || (Coop.menuP2 && Coop.remote.justPressed('confirm'))) {
       Engine.mouse.clicked = false;
       if (this.chars < L.text.length) this.chars = L.text.length;
       else {
@@ -83,13 +85,14 @@ export function say(lines, opts = {}) { return new Promise(res => pushOverlay(ne
 // ---- Hades-style choice cards. cards: [{title, sub, desc, icon, color, accent, badge, portrait}]
 export class Choice {
   constructor(title, cards, opts = {}) { this.title = title; this.cards = cards; this.opts = opts; this.sel = 0; this.t = 0; this.scroll = 0; }
-  enter() { Input.clear(); Sound.playSE('se_win_open'); }
+  enter() { Input.clear(); this.p2 = Coop.menuP2; Sound.playSE('se_win_open'); }
   update(dt) {
-    Input.poll(); this.t += dt;
+    const I = this.p2 ? Coop.remote : Input;
+    I.poll(); this.t += dt;
     const n = this.cards.length;
     let moved = false;
-    if (Input.justPressed('up')) { this.sel = (this.sel + n - 1) % n; Sound.playSE('se_select'); moved = true; }
-    if (Input.justPressed('down')) { this.sel = (this.sel + 1) % n; Sound.playSE('se_select'); moved = true; }
+    if (I.justPressed('up')) { this.sel = (this.sel + n - 1) % n; Sound.playSE('se_select'); moved = true; }
+    if (I.justPressed('down')) { this.sel = (this.sel + 1) % n; Sound.playSE('se_select'); moved = true; }
     const V = this.view();
     if (V.max > 0) {
       if (Engine.mouse.wheel) this.scroll += Engine.mouse.wheel * 40;
@@ -102,17 +105,17 @@ export class Choice {
     }
     const L = this.layout();
     const vis = r => r.y + r.h > V.y0 && r.y < V.y0 + V.h;
-    L.forEach((r, i) => { if (vis(r) && inRect(r.x, r.y, r.w, r.h) && (Engine.mouse.x !== this.mx || Engine.mouse.y !== this.my)) this.sel = i; });
+    if (!this.p2) L.forEach((r, i) => { if (vis(r) && inRect(r.x, r.y, r.w, r.h) && (Engine.mouse.x !== this.mx || Engine.mouse.y !== this.my)) this.sel = i; });
     this.mx = Engine.mouse.x; this.my = Engine.mouse.y;
     let pick = -1;
     const skip = this.opts.canSkip && this.skipRect();
-    if (Input.justPressed('confirm') && this.t > 0.4) pick = this.sel;
-    if (Engine.mouse.clicked && this.t > 0.4) L.forEach((r, i) => { if (vis(r) && inRect(r.x, r.y, r.w, r.h)) pick = i; });
+    if (I.justPressed('confirm') && this.t > 0.4) pick = this.sel;
+    if (Engine.mouse.clicked && this.t > 0.4 && !this.p2) L.forEach((r, i) => { if (vis(r) && inRect(r.x, r.y, r.w, r.h)) pick = i; });
     if (pick >= 0 && !this.cards[pick].disabled) {
       Sound.playSE('se_select');
       popOverlay(this); this.opts.onPick?.(pick, this.cards[pick]);
     } else if (pick >= 0) Sound.playSE('se_failure');
-    else if (skip && (Input.justPressed('back') || (Engine.mouse.clicked && this.t > 0.4 && inRect(skip.x, skip.y, skip.w, skip.h)))) { Sound.playSE('se_select'); popOverlay(this); this.opts.onPick?.(-1, null); }
+    else if (skip && (I.justPressed('back') || (!this.p2 && Engine.mouse.clicked && this.t > 0.4 && inRect(skip.x, skip.y, skip.w, skip.h)))) { Sound.playSE('se_select'); popOverlay(this); this.opts.onPick?.(-1, null); }
   }
   // the scrolling window the cards live in (scroll only when they don't fit)
   view() {
@@ -161,6 +164,10 @@ export class Choice {
       rect(ctx, x, V.y0, 3, V.h, '#ffffff22'); rect(ctx, x, barY, 3, barH, '#f8d038');
     }
     if (this.opts.footer) text(ctx, this.opts.footer, cx, H - 24, { align: 'center', color: 'whiteSoft', font: 'small' });
+    if (this.p2) { // whose pick this is
+      const s = `PLAYER 2 (${Coop.guest?.name || 'P2'}) CHOOSES  ·  arrows + Enter/Z, X to skip`, tw = measure(s, 'small') + 16;
+      pixBox(ctx, W / 2 - tw / 2, 4, tw, 16, 'rgba(16,40,64,0.95)', '#80d0ff', 2); text(ctx, s, W / 2, 5, { align: 'center', font: 'small', color: ['#80d0ff', '#202020'] });
+    }
     if (this.opts.canSkip) {
       const b = this.skipRect(), on = inRect(b.x, b.y, b.w, b.h);
       pixBox(ctx, b.x, b.y, b.w, b.h, on ? '#506080' : '#303848', '#101420', 2);
