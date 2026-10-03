@@ -126,17 +126,18 @@ Environment variables:
 | `R='{"revive":1}'` | Sets individual research ranks |
 | `START='dev=boss&biome=1&level=24'` | Starts every run at a specific room |
 
-Current targets and measurements (v0.0.3, `TUNING = { enemyDmg: 1.8, bossDmg: 0.78, bossSecs: 4.2 }`; skill 0.7 is a "decent
-player"; 60 to 120 runs each). The owner wants the bot to clear about 20% of fresh-save runs:
+Current targets and measurements (v0.0.3, `TUNING = { enemyDmg: 3.4, bossDmg: 1.5, bossSecs: 4.6 }`; skill 0.7 is a "decent
+player"; 60 to 120 runs each). The owner's target: the bot clears about 20% of HEAT 0 runs **with full research** (Hades-like:
+upgrades are needed to win):
 
 | Setup | Win rate |
 |---|---|
-| Fresh save | ~21% |
-| Full research | ~82% |
-| Full research, HEAT 10 | ~20% (small sample; it was ~10% before the v0.0.3 blessings) |
+| Full research, HEAT 0 | ~20% |
+| Half research | ~10% |
+| Full research, HEAT 5 | ~2% |
+| Fresh save | ~0% (most die in the first area) |
 
-* **Boss pass rates (fresh):** Brock and Misty ~92%, Lt. Surge ~86%, Marowak ~97%, Lorelei ~79%, Giovanni ~67%, Mewtwo ~63%.
-  Boss fights take 55-85s (boss HP was doubled in v0.0.2).
+* Boss fights take 60-90s (boss HP was doubled in v0.0.2 and raised 10% in v0.0.3).
 * **Co-op can't be simmed** (the bot plays P1 only). It is scaled by hand: twice the foes, foes x1.25 damage, bosses x1.8 HP and
   x1.2 damage, and P2 revives after 15s.
 

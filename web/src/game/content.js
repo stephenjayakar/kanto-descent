@@ -1,7 +1,7 @@
 // Biomes, starters, held items and shop stock.
 
 // Global difficulty knobs (tuned with tests/sim: a decent player with no research should win ~1 run in 4).
-export const TUNING = { enemyDmg: 1.8, bossDmg: 0.78, bossSecs: 4.2 }; // v0.0.2: boss HP doubled (bossSecs 2.1 -> 4.2), each hit softer
+export const TUNING = { enemyDmg: 3.4, bossDmg: 1.5, bossSecs: 4.6 }; // v0.0.3: a fully researched HEAT 0 run clears ~20% for the sim bot
 
 export const BIOMES = [
   {

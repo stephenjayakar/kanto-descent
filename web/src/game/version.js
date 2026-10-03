@@ -20,7 +20,8 @@ export const PATCH_NOTES = [
         'Co-op runs are marked CO-OP in RECORDS and show both players in the HALL OF FAME; player 2 gets the run on their own account.',
       ]],
       ['COMBAT', [
-        'Bosses have twice the HP (each hit is softer, so fights are longer rather than deadlier).',
+        'Much harder overall: tuned so a run with all of OAK’s research clears about 1 time in 5 at HEAT 0. Fresh files will need research to win.',
+        'Bosses have twice the HP.',
         'Foes move faster. Each hit does a little less.',
         'Your dash crosses gaps (water, ledges) like in Hades. Walls still stop it, and an interrupted dash no longer leaves you stuck in the water.',
         'Contact abilities: hitting a POKéMON with STATIC, POISON POINT, FLAME BODY or EFFECT SPORE up close can paralyze, poison, burn or put you to sleep (and the same goes for foes touching yours).',
