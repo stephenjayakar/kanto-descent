@@ -204,3 +204,19 @@ Rules that came out of two adversarial review rounds and the sim:
   * The ChatGPT Site is https://kanto-descent.stephenjayakar.chatgpt.site (project appgprj_6abfb709d628819189468cd9ce5a15b1).
     Its access is public; access control lives in the Convex backend.
   * Convex Auth env per deployment: AUTH_GOOGLE_ID/SECRET, JWT_PRIVATE_KEY and JWKS (`tools/gen_auth_keys.mjs`), and SITE_URL.
+
+## Co-op beta (staging, branch `coop`)
+* **Design:** host-streamed remote play. The host's browser runs the game with a second player (`web/src/game/coop.js`):
+  * P2 is its own starter that evolves with the shared level, sharing blessings, held item and money.
+  * When P2 faints it is revived after 8s, or when the room is cleared. It never uses the run's revives or ends the run.
+* **Streaming:** the guest (`scenes/guest.js`, link `?coop=CODE`) gets the host's canvas and audio as a WebRTC stream, and sends
+  keyboard/mouse/gamepad state over an unreliable data channel. Presses are sent as counters, so a dropped packet can't eat a tap.
+* **Signalling:** Convex `coop:create/get/answer` relays the offer and answer only. STUN only, with no TURN server yet.
+* **Test:** `node tests/coop_e2e.mjs` runs two headless Chromes with a mocked Convex and real WebRTC.
+* **Staging:** https://kanto-descent-staging.stephenjayakar.chatgpt.site (project appgprj_6ac14ba642f4819197cbfbb4c58ad4cf) uses the
+  **dev** Convex deployment (neat-kudu-314). That deployment has its own allowlist and packs, and its SITE_URL lists the staging origin.
+* **Deploy staging:**
+  1. `npx convex dev --once`
+  2. `node tools/upload_packs.mjs`
+  3. `OUT=dist-staging CONVEX_URL_PROD=https://neat-kudu-314.convex.cloud node tools/build_site.mjs`
+  4. `codex exec ... < tests/out/sites_staging_redeploy_prompt.txt`; the prompt must package dist-staging as "dist".
