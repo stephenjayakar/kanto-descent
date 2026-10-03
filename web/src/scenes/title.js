@@ -14,6 +14,7 @@ import { preloadPmd } from '../game/pmd.js';
 import { VERSION, PATCH_NOTES, LATEST_NOTES } from '../game/version.js';
 import { FocusNav, Modal, ChoiceModal, scrollArea, drawSections } from './modal.js';
 import { RecordsScene } from './records.js';
+import { Coop, hostCoop } from '../game/coop.js';
 
 export class TitleScene {
   // opts.saved: back from Save & quit. opts.started: skip "CLICK TO START" (coming back from RECORDS).
@@ -110,6 +111,8 @@ export class TitleScene {
       const w = inv ? 112 : aw;
       nav.button(ctx, 'signout', 'SIGN OUT', ax, y + 26, w, 20, { color: '#605070', font: 'small' }, () => signOut());
       if (inv) nav.button(ctx, 'invite', 'MAKE INVITE LINK', ax + aw - 120, y + 26, 120, 20, { color: '#3a9a58', font: 'small' }, () => this.makeInvite());
+      const coopLabel = Coop.role === 'host' && Coop.status === 'connected' ? 'CO-OP: PLAYER 2 CONNECTED' : Coop.role === 'host' && Coop.code ? `CO-OP CODE ${Coop.code} (SHOW LINK)` : 'HOST CO-OP (BETA)';
+      nav.button(ctx, 'coop', coopLabel, ax, y - 50, aw, 20, { color: '#2a7a9a', font: 'small' }, () => this.hostCoop());
     } else {
       text(ctx, 'Not signed in', acx, y + 8, { align: 'center', color: 'gray', font: 'small' });
       nav.button(ctx, 'signin', 'SIGN IN WITH GOOGLE', ax, y + 26, aw, 20, { color: '#3060c0', font: 'small' }, () => signIn().catch(e => { this.msg = e.message; }));
@@ -119,6 +122,26 @@ export class TitleScene {
   footer(ctx) {
     text(ctx, 'Fan project. Pokémon (c) Nintendo/Game Freak/Creatures. Sprites: PMDCollab (CC BY-NC).', 10, H - 16, { font: 'small', color: 'gray' });
     if (this.started) text(ctx, `Runs ${G.meta.runs}  ·  Escapes ${G.meta.wins}`, W - 10, H - 16, { align: 'right', font: 'small', color: 'gray' });
+  }
+
+  // Co-op (beta): open a room and share the link; then start or continue a run as usual.
+  async hostCoop() {
+    if (!(Coop.role === 'host' && Coop.code && Coop.status !== 'lost' && Coop.status !== 'error')) {
+      this.msg = 'Opening a co-op room...';
+      await hostCoop();
+      if (Coop.status === 'error') { this.msg = Coop.error; return; }
+    }
+    let copied = false;
+    try { await navigator.clipboard.writeText(Coop.link); copied = true; } catch { /* clipboard blocked */ }
+    this.msg = copied ? 'Co-op link copied to the clipboard.' : '';
+    pushOverlay(new ChoiceModal({ title: `CO-OP ROOM ${Coop.code}`, w: 500,
+      body: `Send this link to player 2:
+${Coop.link}
+
+${copied ? 'It is copied to your clipboard. ' : ''}They sign in, pick a POKéMON and join your game as player 2. You run the game; they see a live stream of your screen and control their own POKéMON (keyboard, mouse or gamepad). Start or continue a run whenever you like; they can join at any time.
+
+Beta: the stream adds a little delay for player 2, and some strict networks can't connect yet.`,
+      options: [{ label: 'OK', value: 0 }] }));
   }
 
   continue() { if (!continueRun()) toHub(); }

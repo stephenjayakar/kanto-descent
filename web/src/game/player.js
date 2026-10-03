@@ -10,22 +10,24 @@ const DASH_DIST = 54, DASH_TIME = 0.13;
 
 export function playerBrain(world, a, dt) {
   const run = world.run;
+  const I = a.input || Input; // co-op: P2 is driven by the guest's remote input
+  const slots = a.slots || run.slots;
   const pc = a.pc || (a.pc = { dashLeft: a.dashCharges, dashT: 0, combo: 0, comboT: 0, lastDash: -9, castT: 0 });
   // dash recharge
   if (pc.dashLeft < a.dashCharges) { pc.dashT += dt; if (pc.dashT >= a.dashRecharge) { pc.dashT = 0; pc.dashLeft++; } }
   pc.comboT -= dt;
-  const mv = Input.move;
+  const mv = I.move;
   const sp = moveSpeed(a);
   if (a.status.confuse) { const t = world.time * 3; mv.x += Math.cos(t) * 0.6; mv.y += Math.sin(t * 1.3) * 0.6; }
   a.vx = mv.x * sp; a.vy = mv.y * sp;
   a.lockFacing = false;
 
   const aim = playerAim(world, a);
-  world.playerAim = () => playerAim(world, a);
+  if (a === world.player) world.playerAim = () => playerAim(world, a);
 
   // dash (also cancels recovery)
-  if (Input.pressed('dash') && pc.dashLeft > 0 && !a.status.trap) {
-    Input.consume('dash');
+  if (I.pressed('dash') && pc.dashLeft > 0 && !a.status.trap) {
+    I.consume('dash');
     pc.dashLeft--; pc.dashT = 0; pc.lastDash = world.time;
     const ang = (mv.x || mv.y) ? Math.atan2(mv.y, mv.x) : a.facing;
     a.facing = ang;
@@ -45,7 +47,7 @@ export function playerBrain(world, a, dt) {
   if (busy) return;
 
   const tryUse = (slot) => {
-    const key = run.slots[slot];
+    const key = slots[slot];
     if (!key) return false;
     const p = profile(key);
     const cdKey = 'slot_' + slot;
@@ -54,7 +56,7 @@ export function playerBrain(world, a, dt) {
     // auto target for strikes/clouds: the enemy nearest the aim line, else a point ahead
     if (p.kind === 'strike' || (p.kind === 'cloud' && p.at === 'target') || p.lob) {
       const t = aimTarget(world, a, aim, 170);
-      opts.targetPt = t ? { x: t.x, y: t.y } : (Input.mouseAiming() && Input.mouseWorld ? { ...Input.mouseWorld } : { x: a.x + Math.cos(aim) * 70, y: a.y + Math.sin(aim) * 70 });
+      opts.targetPt = t ? { x: t.x, y: t.y } : (I.mouseAiming() && I.mouseWorld ? { ...I.mouseWorld } : { x: a.x + Math.cos(aim) * 70, y: a.y + Math.sin(aim) * 70 });
       opts.target = t;
     }
     // combos for the Attack button
@@ -77,18 +79,19 @@ export function playerBrain(world, a, dt) {
     return true;
   };
 
-  if (Input.down('attack') || Input.pressed('attack')) { if (tryUse('attack')) { Input.consume('attack'); return; } }
-  if (Input.down('special') || Input.pressed('special')) { if (tryUse('special')) { Input.consume('special'); return; } }
-  if (Input.pressed('cast')) { if (tryUse('cast')) { Input.consume('cast'); return; } }
-  if (Input.pressed('ball') && !world.noBalls) { Input.consume('ball'); throwBall(world, a, aim); return; }
-  if (Input.pressed('call')) { Input.consume('call'); callPartner(world, a); return; }
+  if (I.down('attack') || I.pressed('attack')) { if (tryUse('attack')) { I.consume('attack'); return; } }
+  if (I.down('special') || I.pressed('special')) { if (tryUse('special')) { I.consume('special'); return; } }
+  if (I.pressed('cast')) { if (tryUse('cast')) { I.consume('cast'); return; } }
+  if (I.pressed('ball') && !world.noBalls && !a.p2) { I.consume('ball'); throwBall(world, a, aim); return; }
+  if (I.pressed('call') && !a.p2) { I.consume('call'); callPartner(world, a); return; }
 }
 
 
 export function playerAim(world, a) {
-  if (Input.aim) return Math.atan2(Input.aim.y, Input.aim.x);
-  if (Input.mouseAiming() && Input.mouseWorld) return Math.atan2(Input.mouseWorld.y - (a.y - 6), Input.mouseWorld.x - a.x);
-  let ang = (Input.move.x || Input.move.y) ? Math.atan2(Input.move.y, Input.move.x) : a.facing;
+  const I = a.input || Input;
+  if (I.aim) return Math.atan2(I.aim.y, I.aim.x);
+  if (I.mouseAiming() && I.mouseWorld) return Math.atan2(I.mouseWorld.y - (a.y - 6), I.mouseWorld.x - a.x);
+  let ang = (I.move.x || I.move.y) ? Math.atan2(I.move.y, I.move.x) : a.facing;
   // soft auto-aim toward the nearest foe close to the aim direction
   const t = aimTarget(world, a, ang, 150, 0.6);
   if (t) ang = Math.atan2(t.y - a.y, t.x - a.x);

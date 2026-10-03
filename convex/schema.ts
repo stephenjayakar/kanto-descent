@@ -57,6 +57,17 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_email", ["email"]).index("by_nameLower", ["nameLower"]),
 
+  // co-op signalling (staging): the host's WebRTC offer and the guest's answer, keyed by a short room code
+  coopRooms: defineTable({
+    code: v.string(),
+    host: v.string(),
+    hostName: v.optional(v.string()),
+    offer: v.string(),
+    guest: v.optional(v.string()),
+    answer: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_code", ["code"]).index("by_createdAt", ["createdAt"]),
+
   // finished runs (deaths and escapes). `entry` is what the client sent; the top-level fields are
   // derived from it on the server for the leaderboards (runs from before v0.0.2 may lack them).
   runs: defineTable({

@@ -231,7 +231,7 @@ export class World {
     this.updatePickups(dt);
     this.updateVfx(dt);
     // remove fully dead
-    this.actors = this.actors.filter(a => !(a.dead && a.deathT > 1.2 && a !== this.player));
+    this.actors = this.actors.filter(a => !(a.dead && a.deathT > 1.2 && a !== this.player && !a.p2));
   }
 
   updateActor(a, dt) {
@@ -1010,6 +1010,10 @@ export class World {
   }
 
   kill(b, src, o = {}) {
+    if (b.p2) { // co-op player 2 faints: revived by the room (no shared revives, no game over)
+      b.hp = 0; b.dead = true; b.deathT = 0; this.cancelAction(b); setAnim(b, 'Hurt', true);
+      this.emit({ type: 'p2Down', actor: b }); return;
+    }
     if ((b.team === 'player' || b.team === 'ally') && !this.forceDeath) {
       const ctx = { target: b, prevent: false };
       this.hooks.beforeDeath?.(this, ctx);

@@ -17,3 +17,4 @@ tools/__pycache__/
 .env.*
 dist/
 web/config.js
+dist-staging/

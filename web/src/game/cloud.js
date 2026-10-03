@@ -169,3 +169,8 @@ export const starterRecords = (starters, version) => call('query', 'game:starter
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('pagehide', () => { if (pending) Cloud.flushMeta(true); });
 }
+
+// ---- co-op signalling (staging): WebRTC offer/answer under a short room code
+export const coopCreate = offer => call('mutation', 'coop:create', { offer });
+export const coopGet = code => call('query', 'coop:get', { code });
+export const coopAnswer = (code, answer) => call('mutation', 'coop:answer', { code, answer });

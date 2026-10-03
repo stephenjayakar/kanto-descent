@@ -21,6 +21,7 @@ import { preloadPmd, drawPmd } from '../game/pmd.js';
 import { drawHud } from './hud.js';
 import { Banner, say, drawOW, ICON } from './ui.js';
 import * as R from './rewards.js';
+import { Coop, coopFrame, coopStatusText } from '../game/coop.js';
 
 const VIEW_W = W / 2, VIEW_H = H / 2;
 
@@ -55,6 +56,7 @@ export class RoomScene {
     // preload sprites we'll need
     const dexes = [p.dex];
     if (run.partner) dexes.push(D.species[run.partner.species].dex);
+    if (Coop.p2) dexes.push(D.species[Coop.p2.species].dex);
     await preloadPmd(dexes);
     this.setup();
     world.hooks.onRoomStart?.(world);
@@ -246,6 +248,7 @@ export class RoomScene {
     if (this.state === 'intro') { this.fade = Math.max(0, this.fade - dt * 3); if (this.fade <= 0) { this.state = 'play'; if (this.pendingIntro) { const f = this.pendingIntro; this.pendingIntro = null; f(); } } }
     if (this.state === 'exiting') { this.fade = Math.min(1, this.fade + dt * 3.5); if (this.fade >= 1 && this.next) { const n = this.next; this.next = null; n(); } return; }
     if (Input.justPressed('pause') && this.state === 'play') { R.openPause(this); return; }
+    if (Coop.role === 'host') coopFrame(this, dt); // co-op: the guest's input drives player 2
     // fixed-step simulation
     const scale = w.slowmo > 0 ? 0.35 : 1;
     this.acc += dt * scale;
@@ -349,6 +352,8 @@ export class RoomScene {
   camTarget(p) {
     const Rm = this.room, rw = Rm.w * TILE, rh = Rm.h * TILE;
     let fx = p.x, fy = p.y;
+    const p2 = this.world.p2;
+    if (p2 && !p2.dead) { fx = (p.x + p2.x) / 2; fy = (p.y + p2.y) / 2; } // co-op: keep both players in view
     // frame bosses: look partway toward them
     const bosses = this.world.actors.filter(a => a.boss && !a.dead && a.spawnT <= 0);
     if (bosses.length) {
@@ -397,9 +402,39 @@ export class RoomScene {
     }
     if (this.doorsOpen && this.spec.kind !== 'hub') this.drawDoorArrows(ctx);
     if (this.spec.kind !== 'hub' || this.run) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub' });
+    this.drawCoop(ctx);
     for (const b of this.banners) b.draw(ctx);
     if (this.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${this.fade})`; ctx.fillRect(0, 0, W, H); }
     if (this.spec.kind === 'hub') R.drawHubHints(ctx, this);
+  }
+
+  // co-op: player 2's name and HP over its head, plus the connection status
+  drawCoop(ctx) {
+    const a = this.world.p2;
+    if (a) {
+      const sx = (a.x - this.cam.x) * 2, sy = (a.y - this.cam.y) * 2 - a.r * 2 - 46;
+      if (a.dead) text(ctx, `${a.label || 'P2'} fainted · back in ${Math.max(0, Math.ceil(8 - (Coop.p2?.downT || 0)))}s`, sx, sy, { align: 'center', font: 'small', color: ['#ff9080', '#202020'] });
+      else {
+        text(ctx, a.label || 'P2', sx, sy - 2, { align: 'center', font: 'small', color: ['#80d0ff', '#202020'] });
+        rect(ctx, sx - 20, sy + 11, 40, 4, '#202020'); rect(ctx, sx - 19, sy + 12, 38 * Math.max(0, a.hp / a.maxHp), 2, a.hp < a.maxHp * 0.25 ? '#f04040' : '#40d860');
+      }
+    }
+    // compact player-2 panel (bottom centre), since both players watch the same screen
+    if (a) {
+      const x = 258, y = H - 46, wdt = 200;
+      pixBox(ctx, x, y, wdt, 40, 'rgba(16,20,32,0.85)', '#80d0ff', 2);
+      text(ctx, `${a.label || 'P2'} · ${D.species[a.species]?.name || ''} Lv${a.level}`, x + 6, y + 3, { font: 'small', color: ['#80d0ff', '#202020'] });
+      rect(ctx, x + 6, y + 16, wdt - 12, 4, '#202020'); rect(ctx, x + 7, y + 17, (wdt - 14) * Math.max(0, a.hp / a.maxHp), 2, a.hp < a.maxHp * 0.25 ? '#f04040' : '#40d860');
+      ['attack', 'special', 'cast'].forEach((slot, i) => {
+        const mv = a.slots?.[slot], cd = a.cds?.['slot_' + slot] || 0, max = a.cdMax?.['slot_' + slot] || 1;
+        const bx = x + 6 + i * 64;
+        rect(ctx, bx, y + 24, 60, 12, '#283048');
+        if (cd > 0) rect(ctx, bx, y + 24, 60 * Math.min(1, cd / max), 12, '#101420');
+        text(ctx, (D.moves[mv]?.name || '-').slice(0, 11), bx + 30, y + 24, { align: 'center', font: 'small', color: cd > 0 ? 'gray' : 'white' });
+      });
+    }
+    const s = coopStatusText();
+    if (s) { const tw = measure(s, 'small') + 16; pixBox(ctx, W / 2 - tw / 2, 4, tw, 16, 'rgba(16,20,32,0.85)', '#80d0ff', 2); text(ctx, s, W / 2, 5, { align: 'center', font: 'small', color: 'white' }); }
   }
 
   // arrows at the screen edge pointing to exits that are off screen

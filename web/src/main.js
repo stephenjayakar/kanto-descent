@@ -36,7 +36,9 @@ function showSignIn() {
   document.getElementById('signin-out').onclick = () => { dropAuth(null); location.reload(); };
 }
 
+const COOP_KEY = 'kanto-descent.coop.v1'; // a co-op link's room code, kept across the Google sign-in redirect
 async function boot() {
+  { const c = new URLSearchParams(location.search).get('coop'); if (c) try { localStorage.setItem(COOP_KEY, JSON.stringify({ code: c, at: Date.now() })); } catch { /* storage off */ } }
   await initCloud();
   if (Cloud.packs) {
     if (!Cloud.email) return showSignIn();
@@ -73,7 +75,10 @@ async function boot() {
   document.getElementById('loading')?.remove();
   Object.assign(window, { G, D, __engine: engine, __sound: Sound, __rewards: rewards, __input: Input });
   const q = new URLSearchParams(location.search);
-  if (q.has('dev')) rewards.devStart(q); else if (q.has('hub')) toHub(); else setScene(new TitleScene());
+  let coop = null;
+  try { const c = JSON.parse(localStorage.getItem(COOP_KEY)); if (c && Date.now() - c.at < 30 * 60 * 1000) coop = c.code; localStorage.removeItem(COOP_KEY); } catch { /* none */ }
+  if (coop && Cloud.email) { const { GuestScene } = await import('./scenes/guest.js'); setScene(new GuestScene(coop)); } // co-op guest
+  else if (q.has('dev')) rewards.devStart(q); else if (q.has('hub')) toHub(); else setScene(new TitleScene());
   await soundP;
   window.__ready = true;
 }

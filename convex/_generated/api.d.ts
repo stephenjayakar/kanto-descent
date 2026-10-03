@@ -10,6 +10,7 @@
 
 import type * as access from "../access.js";
 import type * as auth from "../auth.js";
+import type * as coop from "../coop.js";
 import type * as game from "../game.js";
 import type * as http from "../http.js";
 import type * as invites from "../invites.js";
@@ -25,6 +26,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   access: typeof access;
   auth: typeof auth;
+  coop: typeof coop;
   game: typeof game;
   http: typeof http;
   invites: typeof invites;

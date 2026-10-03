@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { root } from './asset_list.mjs';
 
-const web = path.join(root, 'web'), out = path.join(root, 'dist');
+// OUT=dist-staging CONVEX_URL_PROD=<dev url> builds the staging site (co-op beta) instead
+const web = path.join(root, 'web'), out = path.join(root, process.env.OUT || 'dist');
 const PROD_URL = process.env.CONVEX_URL_PROD || 'https://enchanted-newt-545.convex.cloud';
 const sep = '[\\\\/]';
 const DEV = new RegExp(`${sep}dev($|${sep})`);
