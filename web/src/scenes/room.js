@@ -319,7 +319,9 @@ export class RoomScene {
     let near = null, nd = 1e9;
     for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - p.x, n.y - 8 - p.y); if (d < talkReach(n) && d < nd) { nd = d; near = n; } }
     this.nearNpc = near;
-    if (near && Input.justPressed('interact') && !topOverlay()) { Input.consume('interact'); Sound.playSE('se_select'); near.onTalk(near); }
+    // buffered press, not justPressed: this runs in fixed 60 Hz steps, and on 120/144 Hz screens many frames run no step,
+    // so a press that landed on one of those frames used to be lost ("A is hard to trigger")
+    if (near && Input.pressed('interact') && !topOverlay()) { Input.consume('interact'); Sound.playSE('se_select'); near.onTalk(near); }
     // co-op: player 2 talks to NPCs with its own interact button
     const a = this.world.p2;
     this.nearNpc2 = null;
@@ -340,8 +342,8 @@ export class RoomScene {
       if (dd < 10 && d.armed && this.state === 'play' && !d.used && !topOverlay()) { d.used = true; this.leave(d.reward); return; }
     }
     // Itemfinder reroll
-    if (this.nearDoor && Input.justPressed('interact') && !Input.down('dash') && !this.nearNpc && this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind)) {
-      this.run.rerolls--;
+    if (this.nearDoor && Input.pressed('interact') && !Input.down('dash') && !this.nearNpc && this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind)) {
+      this.run.rerolls--; Input.consume('interact');
       const r = rollDoors(this.run, 3).find(x => x.kind !== this.nearDoor.reward.kind && x.kind !== 'boss' && x.kind !== 'center');
       if (r) { this.nearDoor.reward = r; Sound.playSE('se_itemfinder'); if (r.kind === 'boon') preloadPmd([LEGENDS[r.legend].dex]); }
     }

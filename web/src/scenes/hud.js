@@ -60,7 +60,7 @@ export function drawHud(ctx, world, run, opts = {}) {
     const x = W - 8 - slots.length * 76 + i * 12, y = sy - 12;
     pixBox(ctx, x, y, 10, 8, i < dl ? '#80d8ff' : '#304050', '#0d1018', 2);
   }
-  text(ctx, Input.usingPad ? 'DASH RB' : 'DASH', W - 8 - slots.length * 76 + p.dashCharges * 12 + 2, sy - 15, { font: 'small', color: 'gray' });
+  text(ctx, Input.usingPad ? 'DASH ' + Input.label('dash') : 'DASH', W - 8 - slots.length * 76 + p.dashCharges * 12 + 2, sy - 15, { font: 'small', color: 'gray' });
   // balls
   const bim = img(`gfx/ui/balls/${run.ballType.replace("_ball", "")}.png`);
   const bx = W - 92;

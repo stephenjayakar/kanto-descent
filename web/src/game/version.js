@@ -8,7 +8,8 @@ export const PATCH_NOTES = [
     sections: [
       ['', [
         'HQ AUDIO (on by default): music and sounds are mixed at full precision with 12 voices instead of 5, smoothed between samples, with soft-limited peaks and the harsh top end filtered out. No more crunch or crackle in busy battle themes. Switch back to the authentic GBA sound in SETTINGS.',
-        'Talking to people and using things (A / E) works from much further away: NURSE JOY and the clerks from anywhere along their counter, everyone else from a couple of steps off.',
+        'Talking and using things no longer misses presses: on 120/144 Hz screens a quick tap of E / the talk button could be lost. They also work from further away (NURSE JOY and the clerks from anywhere along their counter).',
+        'Xbox controllers use Hades’ layout: X attack, Y special, B cast, A dash, RB talk / interact, RT call your partner, LT throw a POKé BALL, VIEW blessings, START pause.',
       ]],
     ],
   },

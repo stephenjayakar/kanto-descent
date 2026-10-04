@@ -99,6 +99,7 @@ export function pushOverlay(o) { Engine.mouse.clicked = false; Engine.mouse.rcli
 export function popOverlay(o) {
   for (const k of ['Enter', 'z', 'e']) if (Engine.keys.has(k)) { Engine.keys.delete(k); Engine.suppressed.add(k); }
   Engine.pressed.clear(); window.__input?.clear?.();
+  Engine.overlayClosedAt = (Engine.overlayClosedAt || 0) + 1; // pad buttons held at this moment are ignored until released
   const i = o ? Engine.overlays.indexOf(o) : Engine.overlays.length - 1;
   if (i >= 0) { const [x] = Engine.overlays.splice(i, 1); x.exit?.(); }
   Engine.mouse.clicked = false; Engine.pressed.clear();

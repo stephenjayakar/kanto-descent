@@ -253,8 +253,8 @@ const ABOUT = [
   ['CONTROLS (KEYBOARD / GAMEPAD)', [
     'Move: WASD or the arrow keys (left stick / d-pad).',
     'ATTACK: J or left click (X). SPECIAL: K or right click (Y). CAST your status move: Q or L (B).',
-    'DASH: SPACE or SHIFT (RB / LT). You can’t be hit mid-dash.',
-    'Throw a POKé BALL: R (RT). CALL your partner: F (LB). Talk / doors: E or ENTER (A).',
+    'DASH: SPACE or SHIFT (A). You can’t be hit mid-dash.',
+    'Throw a POKé BALL: R (LT). CALL your partner: F (RT). Talk / doors: E or ENTER (RB). On an Xbox pad the layout is Hades’.',
     'Pause and controls: ESC or P (START). From the pause menu you can Save & quit to the title.',
     'The mouse aims once you move it; otherwise attacks auto-aim at the nearest foe.',
     'Menus: arrows or d-pad to choose, ENTER / Z / E (A) to confirm, ESC / X (B) to go back.',

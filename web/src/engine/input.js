@@ -12,16 +12,18 @@ const KEYMAP = {
   call: ['f'], ball: ['r'], interact: ['e', 'Enter'], pause: ['Escape', 'p'],
   confirm: ['Enter', 'z', 'e'], back: ['Escape', 'x', 'Backspace'], dex: ['Tab'],
 };
-// XInput (Xbox) pads in the browser's "standard" mapping: A0 B1 X2 Y3 LB4 RB5 LT6 RT7 Back8 Start9 LS10 RS11 d-pad 12-15
+// XInput (Xbox) pads in the browser's "standard" mapping: A0 B1 X2 Y3 LB4 RB5 LT6 RT7 Back8 Start9 LS10 RS11 d-pad 12-15.
+// Hades' default layout: X attack, Y special, B cast, A dash, RB interact, RT call (god aid -> our partner),
+// LT summon (-> POKé BALL), View boon info, Start pause; A / B confirm / back in menus.
 const PADMAP = {
-  attack: [2], special: [3], dash: [5, 6], cast: [1], call: [4], ball: [7], interact: [0], pause: [9],
-  confirm: [0], back: [1], up: [12], down: [13], left: [14], right: [15], dex: [8],
+  attack: [2], special: [3], cast: [1], dash: [0], interact: [5], call: [7], ball: [6], pause: [9],
+  confirm: [0], back: [1], up: [12], down: [13], left: [14], right: [15], dex: [8, 4],
 };
 // Some browsers (Firefox on Windows) report XInput pads without the standard mapping: raw XInput order
 // A0 B1 X2 Y3 LB4 RB5 Back6 Start7 LS8 RS9, triggers on axes 2 / 5, d-pad on buttons 11-14 or axes 6 / 7.
-const RAWMAP = { attack: [2], special: [3], dash: [5], cast: [1], call: [4], interact: [0], pause: [7], confirm: [0], back: [1], dex: [6] };
+const RAWMAP = { attack: [2], special: [3], cast: [1], dash: [0], interact: [5], pause: [7], confirm: [0], back: [1], dex: [6, 4] };
 // on-screen prompts while playing with a pad (Xbox button names)
-export const PAD_LABEL = { attack: 'X', special: 'Y', cast: 'B', dash: 'RB', call: 'LB', ball: 'RT', interact: 'A', pause: 'START', confirm: 'A', back: 'B' };
+export const PAD_LABEL = { attack: 'X', special: 'Y', cast: 'B', dash: 'A', call: 'RT', ball: 'LT', interact: 'RB', pause: 'START', confirm: 'A', back: 'B' };
 const KEY_LABEL = { attack: 'J', special: 'K', cast: 'Q', dash: 'SPACE', call: 'F', ball: 'R', interact: 'E', pause: 'ESC', confirm: 'ENTER', back: 'X' };
 const BUFFER_FRAMES = 8; // a press stays "pressed" this many frames unless consumed (input buffering)
 const DIRS = ['up', 'down', 'left', 'right'];
@@ -65,8 +67,8 @@ export const Input = {
       let rx, ry;
       if (std) { rx = pad.axes[2] || 0; ry = pad.axes[3] || 0; }
       else { // raw XInput: triggers are axes 2 / 5 (-1 released .. 1 pulled), right stick 3 / 4, d-pad buttons or axes 6 / 7
-        if ((pad.axes[2] ?? -1) > 0.2) { held.add('dash'); any = true; }
-        if ((pad.axes[5] ?? -1) > 0.2) { held.add('ball'); any = true; }
+        if ((pad.axes[2] ?? -1) > 0.2) { held.add('ball'); any = true; } // LT
+        if ((pad.axes[5] ?? -1) > 0.2) { held.add('call'); any = true; } // RT
         rx = pad.axes[3] || 0; ry = pad.axes[4] || 0;
         const hx = pad.axes[6] || 0, hy = pad.axes[7] || 0;
         if (btn(11) || hy < -0.5) held.add('up'); if (btn(12) || hy > 0.5) held.add('down');
@@ -95,6 +97,9 @@ export const Input = {
     }
     // buffered presses
     for (const [k, v] of this._buffer) { if (v <= 1) this._buffer.delete(k); else this._buffer.set(k, v - 1); }
+    // a menu just closed: whatever is still held (A confirmed the menu; A is also dash) waits for a release
+    if (Engine.overlayClosedAt !== this._closeSeen) { this._closeSeen = Engine.overlayClosedAt; this._buffer.clear(); this._sup = new Set([...held].filter(a => !DIRS.includes(a))); }
+    if (this._sup?.size) for (const a of [...this._sup]) { if (held.has(a)) held.delete(a); else this._sup.delete(a); }
     for (const a of held) if (!this._prevHeld.has(a)) this._buffer.set(a, BUFFER_FRAMES);
     // held directions auto-repeat (menus): after 0.35s, a fresh press every 0.11s
     for (const d of DIRS) {

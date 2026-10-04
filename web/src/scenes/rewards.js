@@ -669,7 +669,9 @@ class PauseOverlay {
     text(ctx, 'PAUSED', mx + 14, my + 10, { color: 'blue' });
     items.forEach((it, i) => { const iy = my + 32 + i * 18; if (i === this.sel) { const im = img('gfx/ui/cursors/red_arrow.png'); if (ready(im)) ctx.drawImage(im, mx + 12, iy + 2); } text(ctx, it.label, mx + 30, iy, { color: 'dark' }); });
     // controls
-    const ctl = ['WASD / arrows: move', 'J or Left click: ATTACK', 'K or Right click: SPECIAL', 'Q: CAST (status move)', 'SPACE / SHIFT: DASH', 'R: throw POKé BALL (weak wild foes)', 'F: call your partner', 'E: talk / interact', 'Mouse aims when moved; gamepad too'];
+    const ctl = Input.usingPad // Xbox pad: Hades' layout
+      ? ['Left stick: move   Right stick: aim', 'X: ATTACK   Y: SPECIAL   B: CAST', 'A: DASH', 'RB: talk / interact', 'RT: call your partner', 'LT: throw POKé BALL (weak wild foes)', 'VIEW: blessings   START: pause']
+      : ['WASD / arrows: move', 'J or Left click: ATTACK', 'K or Right click: SPECIAL', 'Q: CAST (status move)', 'SPACE / SHIFT: DASH', 'R: throw POKé BALL (weak wild foes)', 'F: call your partner', 'E: talk / interact', 'Mouse aims when moved; gamepad too'];
     const cy0 = my + mh + 8;
     windowFrame(ctx, mx, cy0, mw, 30 + ctl.length * 13, 'type1');
     text(ctx, 'CONTROLS', mx + 14, cy0 + 8, { color: 'blue', font: 'small' });
