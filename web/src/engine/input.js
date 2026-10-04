@@ -31,7 +31,7 @@ const DIRS = ['up', 'down', 'left', 'right'];
 export const Input = {
   move: { x: 0, y: 0 }, aim: null, aimSource: 'move',
   mouseWorld: null, // set by the scene each frame (world coordinates of the mouse)
-  usingPad: false, lastMouseMove: -1e9, rumbleOn: true, _padIdx: -1, _dirHeldT: {},
+  usingPad: false, lastMouseMove: -1e9, rumbleOn: true, _padIdx: -1, _dirHeldT: {}, _rest: new Map(),
   _held: new Set(), _prevHeld: new Set(), _buffer: new Map(), _padPrev: [],
   _lastMouse: { x: -1, y: -1 }, _mouseBtn: { l: false, r: false },
 
@@ -58,26 +58,41 @@ export const Input = {
     let pads = [];
     try { pads = [...(navigator.getGamepads?.() || [])].filter(p => p && p.connected); } catch { /* no gamepads */ }
     this.aim = null;
-    let best = 0.25, bestAim = 0.4;
+    let best = 0, bestAim = 0.15;
     for (const pad of pads) {
       const std = pad.mapping === 'standard';
+      // calibrate: an axis that doesn't rest near the centre (a trigger or throttle-style axis, or a device that isn't a
+      // gamepad) never counts as a stick, and a worn stick's resting offset is subtracted (no "perpetual walking")
+      const key = pad.index + ':' + pad.id;
+      // (a stick that's being pushed when the pad is first seen can't be told from a trigger: assume a centre of 0 there)
+      if (!this._rest.has(key)) this._rest.set(key, pad.axes.map((v, i) => (Math.abs(v || 0) > 0.5 && i < 4 && pad.mapping === 'standard' ? 0 : v || 0)));
+      const rest = this._rest.get(key);
+      const stick = (i, j) => {
+        if (Math.abs(rest[i] || 0) > 0.5 || Math.abs(rest[j] || 0) > 0.5) return [0, 0];
+        const norm = (v, r) => { const d = v - r; return Math.max(-1, Math.min(1, d > 0 ? d / (1 - r) : d / (1 + r))); }; // each side of the axis spans its full travel
+        let x = norm(pad.axes[i] || 0, rest[i] || 0), y = norm(pad.axes[j] || 0, rest[j] || 0);
+        const m = Math.hypot(x, y), dz = 0.3; // radial deadzone, rescaled so motion starts smoothly at its edge
+        if (m < dz) return [0, 0];
+        const k = Math.min(1, (m - dz) / (1 - dz)) / m;
+        return [x * k, y * k];
+      };
       const btn = i => pad.buttons[i] && (pad.buttons[i].pressed || pad.buttons[i].value > 0.5);
       let any = false;
       for (const [act, idx] of Object.entries(std ? PADMAP : RAWMAP)) if (idx.some(btn)) { held.add(act); any = true; }
       let rx, ry;
-      if (std) { rx = pad.axes[2] || 0; ry = pad.axes[3] || 0; }
+      if (std) [rx, ry] = stick(2, 3);
       else { // raw XInput: triggers are axes 2 / 5 (-1 released .. 1 pulled), right stick 3 / 4, d-pad buttons or axes 6 / 7
         if ((pad.axes[2] ?? -1) > 0.2) { held.add('ball'); any = true; } // LT
         if ((pad.axes[5] ?? -1) > 0.2) { held.add('call'); any = true; } // RT
-        rx = pad.axes[3] || 0; ry = pad.axes[4] || 0;
-        const hx = pad.axes[6] || 0, hy = pad.axes[7] || 0;
+        [rx, ry] = stick(3, 4);
+        const hx = Math.abs(rest[6] || 0) > 0.3 ? 0 : pad.axes[6] || 0, hy = Math.abs(rest[7] || 0) > 0.3 ? 0 : pad.axes[7] || 0; // d-pad axes only if they rest at 0
         if (btn(11) || hy < -0.5) held.add('up'); if (btn(12) || hy > 0.5) held.add('down');
         if (btn(13) || hx < -0.5) held.add('left'); if (btn(14) || hx > 0.5) held.add('right');
       }
-      const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
-      if (Math.hypot(ax, ay) > best) { best = Math.hypot(ax, ay); mx = ax; my = ay; any = true; }
+      const [ax, ay] = stick(0, 1);
+      if (Math.hypot(ax, ay) > 0 && Math.hypot(ax, ay) > best) { best = Math.hypot(ax, ay); mx = ax; my = ay; any = true; }
       // the left stick also works as a d-pad in menus
-      if (ax < -0.55) held.add('left'); if (ax > 0.55) held.add('right'); if (ay < -0.55) held.add('up'); if (ay > 0.55) held.add('down');
+      if (ax < -0.45) held.add('left'); if (ax > 0.45) held.add('right'); if (ay < -0.45) held.add('up'); if (ay > 0.45) held.add('down');
       if (Math.hypot(rx, ry) > bestAim) { bestAim = Math.hypot(rx, ry); this.aim = { x: rx / bestAim, y: ry / bestAim }; this.aimSource = 'stick'; any = true; }
       if (DIRS.some(d => held.has(d)) && !any) any = DIRS.some(d => PADMAP[d].some(btn));
       if (any) { this.usingPad = true; this._padIdx = pad.index; }
