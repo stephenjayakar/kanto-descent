@@ -207,16 +207,18 @@ Rules that came out of two adversarial review rounds and the sim:
   * the client caches them by hash and serves them from memory (`web/src/game/assetpack.js`).
 * **Local dev:** `node tools/write_config.cjs`, then `node serve.cjs 8093`. Assets load from `web/assets`, and Google sign-in is
   optional (dev deployment neat-kudu-314, SITE_URL http://localhost:8093).
-* **Deploy:**
+* **Deploy:** `deploy/prod.sh` (master, committed). It runs:
   1. `npx convex deploy -y` (prod enchanted-newt-545);
   2. `node tools/upload_packs.mjs --prod` (only changed packs upload);
   3. `node tools/build_site.mjs` (code only; it refuses asset files);
-  4. `codex exec --dangerously-bypass-approvals-and-sandbox -C <repo> - < tests/out/sites_redeploy_prompt.txt`.
+  4. `codex exec --dangerously-bypass-approvals-and-sandbox -C <repo> - < deploy/prod_sites_prompt.txt` (codex's ChatGPT
+     Sites connector pushes the commit to the site's source repo, uploads dist/ and deploys).
+  * Needs `npx convex` logged in (`~/.convex/config.json`) and the codex CLI logged in to the ChatGPT account that owns the site.
   * The ChatGPT Site is https://kanto-descent.stephenjayakar.chatgpt.site (project appgprj_6abfb709d628819189468cd9ce5a15b1).
     Its access is public; access control lives in the Convex backend.
   * Convex Auth env per deployment: AUTH_GOOGLE_ID/SECRET, JWT_PRIVATE_KEY and JWKS (`tools/gen_auth_keys.mjs`), and SITE_URL.
 
-## Co-op beta (staging, branch `coop`)
+## Co-op (in prod since v0.0.3; staging was branch `coop`, now merged)
 * **Design:** host-streamed remote play. The host's browser runs the game with a second player (`web/src/game/coop.js`):
   * P2 is its own starter that evolves with the shared level, sharing blessings, held item and money.
   * When P2 faints it is revived after 8s, or when the room is cleared. It never uses the run's revives or ends the run.
@@ -226,11 +228,9 @@ Rules that came out of two adversarial review rounds and the sim:
 * **Test:** `node tests/coop_e2e.mjs` runs two headless Chromes with a mocked Convex and real WebRTC.
 * **Staging:** https://kanto-descent-staging.stephenjayakar.chatgpt.site (project appgprj_6ac14ba642f4819197cbfbb4c58ad4cf) uses the
   **dev** Convex deployment (neat-kudu-314). That deployment has its own allowlist and packs, and its SITE_URL lists the staging origin.
-* **Deploy staging:**
-  1. `npx convex dev --once`
-  2. `node tools/upload_packs.mjs`
-  3. `OUT=dist-staging CONVEX_URL_PROD=https://neat-kudu-314.convex.cloud node tools/build_site.mjs`
-  4. `codex exec ... < tests/out/sites_staging_redeploy_prompt.txt`; the prompt must package dist-staging as "dist".
+* **Deploy staging:** `deploy/staging.sh` (current branch, committed). It runs `npx convex dev --once`,
+  `node tools/upload_packs.mjs`, `OUT=dist-staging CONVEX_URL_PROD=https://neat-kudu-314.convex.cloud node tools/build_site.mjs`,
+  then codex with `deploy/staging_sites_prompt.txt` (which packages dist-staging as "dist").
 
 ## TODO (owner's suggestions)
 * ~~Co-op: each player gets their own boon list and their own reward choices.~~ Done: per-player runs, parallel boon picks.
