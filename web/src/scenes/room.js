@@ -413,6 +413,7 @@ export class RoomScene {
     ctx.restore();
     // a move's battle background flashes over the screen (FireRed's Psychic etc.)
     if (w.bgFlash) { const f = w.bgFlash, k = f.t / f.life; if (k >= 1) w.bgFlash = null; else { const im = img(`gfx/battle_anims/backgrounds/${f.bg}.png`); if (ready(im)) { ctx.save(); ctx.globalAlpha = 0.22 * Math.sin(k * Math.PI); const ox = (this.t * 40) % im.naturalWidth; for (let x = -ox; x < W; x += im.naturalWidth * 2) for (let y = 0; y < H; y += im.naturalHeight * 2) ctx.drawImage(im, x, y, im.naturalWidth * 2, im.naturalHeight * 2); ctx.restore(); } } }
+    if (w.screenFlash) { const f = w.screenFlash; ctx.fillStyle = `rgba(${f.color},${f.a * (1 - f.t / f.life)})`; ctx.fillRect(0, 0, W, H); } // THUNDER's flash
     drawWorldTexts(ctx, w, { x: cx, y: cy });
     const B = areaOf(this.run);
     if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette);

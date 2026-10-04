@@ -35,7 +35,7 @@ function beamStyle(v) {
   if (fx === 'ice' || ty === 'ICE') return { tag: 'ice_crystals', anim: true, scale: 1, step: 6, speed: 120, wobble: 2, alpha: 1, hit: 'ice_crystals__16x16' };
   if (fx === 'psychic' || ty === 'PSYCHIC') return { tag: 'gold_ring', scale: 0.5, step: 8, speed: 160, wobble: 0, alpha: 0.9, rotate: true, rotOff: Math.PI / 2, hit: 'gold_ring' };
   if (fx === 'fire' || ty === 'FIRE') return { tag: 'small_ember', anim: true, scale: 0.5, step: 6, speed: 150, wobble: 2, alpha: 1, hit: 'fire_plume' };
-  if (fx === 'spark' || ty === 'ELECTRIC') return { tag: 'spark__8x16', anim: true, scale: 0.5, step: 6, speed: 180, wobble: 2.5, alpha: 1, rotate: true, rotOff: Math.PI / 2, hit: 'shock_3' };
+  if (fx === 'spark' || ty === 'ELECTRIC') return { tag: 'spark__8x16', anim: true, scale: 0.5, step: 6, speed: 180, wobble: 2.5, alpha: 1, rotate: true, rotOff: Math.PI / 2, hit: 'spark_2' };
   if (ty === 'GRASS') return { tag: 'orbs__16x16', anim: true, scale: 0.5, step: 7, speed: 150, wobble: 1, alpha: 1, hit: 'impact' };
   if (ty === 'DRAGON') return { tag: 'fire_plume', anim: true, scale: 0.5, step: 7, speed: 150, wobble: 2, alpha: 1, hit: 'fire_plume' };
   return { tag: 'orbs', anim: true, scale: 1, step: 6, speed: 160, wobble: 1, alpha: 1, hit: 'impact' }; // Hyper Beam and other normal beams
@@ -51,7 +51,7 @@ const CLOUD = {
 };
 const SWIPE_FX = {
   claw: 'scratch', cut: 'cut', impact: 'impact', fist: 'punch_impact', bite: 'sharp_teeth', vine: 'whip_hit', ghost: 'lick',
-  wind: 'gust', bone: 'bone', fire: 'fire', spark: 'shock_3', psychic: 'gold_ring', ice: 'ice_crystals__16x16', water: 'water_impact',
+  wind: 'gust', bone: 'bone', fire: 'fire', spark: 'spark_2', psychic: 'gold_ring', ice: 'ice_crystals__16x16', water: 'water_impact',
   dragon: 'fire_plume', rock: 'rocks', quake: 'dirt_mound', sludge: 'poison_bubble', petal: 'pink_petal', sound: 'metal_sound_waves',
 };
 
@@ -416,7 +416,14 @@ function drawVfx(ctx, v, w) {
     }
     case 'bolt': {
       const a = 1 - k;
-      if (v.big) { // Thunder: a column of lightning frames down onto the target
+      if (v.big && v.heavy) { // THUNDER: a tall column of FireRed lightning that flickers, then an electric burst at the target
+        const fl = k < 0.55 ? (Math.floor(v.t * 30) % 3 ? 1 : 0.5) : (1 - k) / 0.45;
+        for (let i = 0; i < 6; i++) drawBA(ctx, 'lightning', v.x1 + (i % 2 ? 2 : -2), v.y1 - 16 - i * 30, v.t + i * 0.03, { anim: true, alpha: fl, flipX: i % 2 === 1 });
+        for (let i = 0; i < 5; i++) { const an = i * 1.26 + v.t * 8; drawBA(ctx, 'spark_2', v.x1 + Math.cos(an) * 6, v.y1 - 8 + Math.sin(an) * 5, 0, { frame: (i + Math.floor(v.t * 20)) % 3, scale: 1, alpha: fl }); } // crackling sparks at the strike
+        const rr = (v.r || 24) * (0.4 + 0.9 * Math.min(1, k * 1.6));
+        for (let i = 0; i < 8; i++) { const an = i / 8 * Math.PI * 2 + v.t * 2; drawBA(ctx, 'spark_2', v.x1 + Math.cos(an) * rr, v.y1 + Math.sin(an) * rr * 0.75 - 4, 0, { frame: i % 3, scale: 0.5, alpha: 1 - k }); }
+        if (k < 0.5) { const im = img('gfx/misc/field_effects/ground_impact_dust.png'); if (ready(im)) for (const dx of [-10, 10]) ctx.drawImage(im, 0, Math.min(2, Math.floor(k * 6)) * 8, 16, 8, Math.round(v.x1 + dx - 8), Math.round(v.y1 - 4), 16, 8); }
+      } else if (v.big) { // a lightning blessing proc: a short column
         for (let i = 0; i < 3; i++) drawBA(ctx, 'lightning', v.x1, v.y1 - 16 - i * 30, v.t + i * 0.04, { anim: true, alpha: a });
       } else { // Thunderbolt-style chain: spark tiles laid end to end along the arc
         const dx = v.x1 - v.x0, dy = v.y1 - v.y0, len = Math.hypot(dx, dy) || 1, ang = Math.atan2(dy, dx);

@@ -237,6 +237,7 @@ export class World {
     this.updateZones(dt);
     this.updateStrikes(dt);
     if (this.bgFlash) this.bgFlash.t += dt;
+    if (this.screenFlash && (this.screenFlash.t += dt) > this.screenFlash.life) this.screenFlash = null;
     this.updatePickups(dt);
     this.updateVfx(dt);
     // remove fully dead
@@ -867,7 +868,12 @@ export class World {
         s.done = true;
         if (s.visualOnly) { s.dead = true; continue; }
         this.vfx.push({ kind: 'explode', x: s.x, y: s.y, r: s.r, t: 0, life: 0.3, type: s.p.type, fx: s.p.fx, strike: true });
-        if (s.p.fx === 'lightning') { this.vfx.push({ kind: 'bolt', x0: s.x + (this.rand() - 0.5) * 20, y0: s.y - 200, x1: s.x, y1: s.y, t: 0, life: 0.2, big: true }); this.shake = Math.max(this.shake, 4); }
+        if (s.p.fx === 'lightning') { // THUNDER (heavy) vs the frequent lightning blessing procs (light)
+          const heavy = !s.p.boonProc;
+          this.vfx.push({ kind: 'bolt', x0: s.x + (this.rand() - 0.5) * 20, y0: s.y - 200, x1: s.x, y1: s.y, t: 0, life: heavy ? 0.45 : 0.2, big: true, heavy, r: s.r });
+          this.shake = Math.max(this.shake, heavy ? 7 : 4);
+          if (heavy) this.screenFlash = { t: 0, life: 0.14, color: '255,255,215', a: 0.3 };
+        }
         if (s.p.fx === 'rock' || s.p.fx === 'quake') this.shake = Math.max(this.shake, 3);
         if (s.p.blizzard) { this.vfx.push({ kind: 'iceburst', x: s.x, y: s.y, r: s.r, t: 0, life: 0.55 }); this.shake = Math.max(this.shake, 3); }
         const fake = { ...s.act, p: s.p, slot: s.slot, hits: new Set(), enemy: s.team === 'enemy' };
