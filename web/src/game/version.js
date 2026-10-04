@@ -8,7 +8,7 @@ export const PATCH_NOTES = [
     sections: [
       ['', [
         'HQ AUDIO (on by default): music and sounds are mixed at full precision with 12 voices instead of 5, smoothed between samples, with soft-limited peaks and the harsh top end filtered out. No more crunch or crackle in busy battle themes. Switch back to the authentic GBA sound in SETTINGS.',
-        'NURSE JOY and the shop clerks can be talked to from anywhere along the front of their counter.',
+        'Talking to people and using things (A / E) works from much further away: NURSE JOY and the clerks from anywhere along their counter, everyone else from a couple of steps off.',
       ]],
     ],
   },

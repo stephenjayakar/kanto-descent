@@ -25,6 +25,9 @@ import { Coop, coopFrame, coopStatusText, asP2Sync } from '../game/coop.js';
 
 const VIEW_W = W / 2, VIEW_H = H / 2;
 
+// How close you must be to talk to / use something: generous, since the nearest one always wins anyway.
+const talkReach = n => Math.max(44, (n.range || 30) * 1.4);
+
 export class RoomScene {
   // spec: { kind: 'combat'|'trainer'|'boss'|'shop'|'center'|'chaos'|'hub', layout, crop, reward:{kind,legend}, first }
   constructor(spec) {
@@ -314,7 +317,7 @@ export class RoomScene {
   interactions() {
     const p = this.world.player;
     let near = null, nd = 1e9;
-    for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - p.x, n.y - 8 - p.y); if (d < (n.range || 30) && d < nd) { nd = d; near = n; } }
+    for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - p.x, n.y - 8 - p.y); if (d < talkReach(n) && d < nd) { nd = d; near = n; } }
     this.nearNpc = near;
     if (near && Input.justPressed('interact') && !topOverlay()) { Input.consume('interact'); Sound.playSE('se_select'); near.onTalk(near); }
     // co-op: player 2 talks to NPCs with its own interact button
@@ -322,7 +325,7 @@ export class RoomScene {
     this.nearNpc2 = null;
     if (!a || a.dead || !Coop.active || topOverlay()) return;
     let nd2 = 1e9;
-    for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - a.x, n.y - 8 - a.y); if (d < (n.range || 30) && d < nd2) { nd2 = d; this.nearNpc2 = n; } }
+    for (const n of this.npcs) { if (!n.onTalk) continue; const d = Math.hypot(n.x - a.x, n.y - 8 - a.y); if (d < talkReach(n) && d < nd2) { nd2 = d; this.nearNpc2 = n; } }
     if (this.nearNpc2 && Coop.remote.pressed('interact')) { Coop.remote.consume('interact'); Sound.playSE('se_select'); R.coopTalk(this, this.nearNpc2); }
   }
 
