@@ -148,8 +148,10 @@ export function drawWorld(ctx, w, cam, opts = {}) {
   opts.overlay?.(ctx);
   // effects (clipped to the arena so storms and long beams don't paint over the darkened surroundings)
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, R.w * TILE, R.h * TILE); ctx.clip();
-  for (const v of w.vfx) if (v.kind !== 'tele' && v.kind !== 'afterimage') drawVfx(ctx, v, w);
+  for (const v of w.vfx) if (v.kind !== 'tele' && v.kind !== 'afterimage' && !v.door && !v.noClip) drawVfx(ctx, v, w);
   ctx.restore();
+  // door reward icons sit on the arena's edge (and float above it): never clipped
+  for (const v of w.vfx) if (v.door || v.noClip) drawVfx(ctx, v, w);
   // health bars + status icons above enemies
   for (const a of w.actors) if (!a.dead && a.spawnT <= 0 && a.team !== 'player' && !a.boss && !a.captured) drawActorBar(ctx, a);
   // floating text: in world space only if the caller doesn't draw it on screen (drawWorldTexts)

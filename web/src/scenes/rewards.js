@@ -131,7 +131,9 @@ export function drawRewardIcon(ctx, r, x, y) {
 }
 export function drawDoorIcon(ctx, scene, d) {
   if (d.used && scene.state === 'exiting') return;
-  drawRewardIcon(ctx, d.reward, d.x, d.y - 22 + Math.round(Math.sin((d.t || 0) * 3) * 1.5));
+  // above the door, except on the top edge where 'above' is off screen / under the HUD: then just inside the room
+  const top = d.y < 40;
+  drawRewardIcon(ctx, d.reward, d.x, d.y + (top ? 30 : -22) + Math.round(Math.sin((d.t || 0) * 3) * 1.5));
 }
 // doors get their floating icon as a long-lived vfx (above sprites and the map's over layer)
 export function addDoorIcons(scene) {
