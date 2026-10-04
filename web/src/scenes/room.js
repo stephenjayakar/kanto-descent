@@ -78,12 +78,12 @@ export class RoomScene {
       this.setupBoss();
     } else if (spec.kind === 'shop') {
       Sound.playBGM('mus_poke_center');
-      this.addNpc({ sprite: 'clerk', ...this.at(2, 3), dir: 'right', name: 'CLERK', label: 'SHOP', range: 40, onTalk: () => R.openShop(this) });
+      this.addNpc({ sprite: 'clerk', ...this.at(2, 3), dir: 'right', name: 'CLERK', label: 'SHOP', range: 56, onTalk: () => R.openShop(this) });
       this.clearRoom(true);
     } else if (spec.kind === 'center') {
       Sound.playBGM('mus_poke_center');
-      this.addNpc({ sprite: 'nurse', ...this.at(7, 2), dir: 'down', name: 'NURSE JOY', label: 'HEAL', range: 40, onTalk: () => R.nurse(this) });
-      if (spec.preBoss) this.addNpc({ sprite: 'clerk', ...this.at(12, 5), dir: 'left', name: 'CLERK', label: 'SHOP', range: 30, onTalk: () => R.openShop(this) });
+      this.addNpc({ sprite: 'nurse', ...this.at(7, 2), dir: 'down', name: 'NURSE JOY', label: 'HEAL', range: 64, /* behind the counter: reachable from anywhere along its front */ onTalk: () => R.nurse(this) });
+      if (spec.preBoss) this.addNpc({ sprite: 'clerk', ...this.at(12, 5), dir: 'left', name: 'CLERK', label: 'SHOP', range: 52, onTalk: () => R.openShop(this) });
       this.clearRoom(true);
     } else if (spec.kind === 'chaos') {
       Sound.playBGM('mus_encounter_deoxys');

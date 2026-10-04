@@ -195,7 +195,7 @@ export class SettingsModal extends Modal {
     this.dim(ctx);
     this.nav.begin();
     const s = G.meta.settings;
-    const w = 300, h = 186, x = (W - w) / 2, y = (H - h) / 2;
+    const w = 300, h = 212, x = (W - w) / 2, y = (H - h) / 2;
     panel(ctx, x, y, w, h);
     text(ctx, 'SETTINGS', W / 2, y + 8, { align: 'center', color: 'white' });
     const row = (key, label, val, cy, set) => {
@@ -208,6 +208,9 @@ export class SettingsModal extends Modal {
     row('sfx', 'SOUND FX', s.sfx, y + 58, v => { s.sfx = v; Sound.setSfxVolume(v); saveMeta(); Sound.playSE('se_select'); });
     text(ctx, 'SCREEN SHAKE', x + 16, y + 87, { color: 'white' });
     this.btn(ctx, 'shake', s.shake ? 'ON' : 'OFF', x + 176, y + 84, 62, 20, { color: s.shake ? THEME.green : '#806060' }, () => { s.shake = s.shake ? 0 : 1; saveMeta(); });
+    text(ctx, 'HQ AUDIO', x + 16, y + 139, { color: 'white' });
+    const hq = s.hqAudio !== false;
+    this.btn(ctx, 'hq', hq ? 'ON' : 'GBA', x + 176, y + 136, 62, 20, { color: hq ? THEME.green : '#806060' }, () => { s.hqAudio = !hq; Sound.setHQ(s.hqAudio); saveMeta(); });
     text(ctx, 'RUMBLE (PAD)', x + 16, y + 113, { color: 'white' });
     const rumble = s.rumble !== false;
     this.btn(ctx, 'rumble', rumble ? 'ON' : 'OFF', x + 176, y + 110, 62, 20, { color: rumble ? THEME.green : '#806060' }, () => { s.rumble = !rumble; Input.rumbleOn = s.rumble; saveMeta(); Input.rumble(200, 0.5, 0.5); });

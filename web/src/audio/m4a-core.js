@@ -15,6 +15,9 @@
 //   step) driving a register-level GB APU model (square + sweep, square, wave, noise with
 //   hardware envelopes, length counters, NR51 panning), rendered band-limited by box
 //   filtering directly at the output rate.
+// * HQ mode (opts.hq, Kanto Descent's default): the same driver, but mixed at full precision (no 8-bit wrap),
+//   12 DirectSound voices instead of 5, linear upsampling, soft-limited peaks and a 6.5 kHz low-pass that
+//   removes the zero-order-hold images the GBA speaker used to hide. hq=false is the authentic sound.
 // * Output: DirectSound ring played one frame late (like the DMA), upsampled from 13379 Hz
 //   with zero-order hold (the GBA DAC behaviour; 'linear' optional), mixed with PSG at
 //   GBA levels (DMA 100%: sample*4, PSG 100% at NR50=7: level*16, 10-bit clip), DC blocked.
@@ -439,6 +442,7 @@ export class M4AEngine {
     this.stereo = opts.stereo !== false;
     this.interpolation = opts.interpolation || 'hold';
     this.masterGain = opts.masterGain ?? 1;
+    this.hq = !!opts.hq;
 
     // SoundInfo
     this.reverb = 0; this.maxChans = 5; this.masterVolume = 12; this.c15 = 0;
@@ -470,9 +474,9 @@ export class M4AEngine {
     this.psg.write(NR14, 0x80); this.psg.write(NR24, 0x80); this.psg.write(NR44, 0x80);
     this.psg.write(NR30, 0); this.psg.write(NR50, 0x77);
 
-    // PCM DMA ring: 7 blocks of 224 samples; A = right (FIFO A), B = left (FIFO B)
-    this.pcmA = new Int8Array(PCM_DMA_PERIOD * PCM_SAMPLES_PER_FRAME);
-    this.pcmB = new Int8Array(PCM_DMA_PERIOD * PCM_SAMPLES_PER_FRAME);
+    // PCM DMA ring: 7 blocks of 224 samples; A = right (FIFO A), B = left (FIFO B).
+    // Authentic: signed 8-bit, so loud mixes wrap like the real FIFO. HQ: float, no wrap.
+    this.allocRing();
     this.block = 0;            // block mixed by the most recent frame
     this.playBlock = 0;        // block being output (mixed one frame earlier)
     this.pcmPos = PCM_SAMPLES_PER_FRAME; // forces a frame on the first sample
@@ -483,6 +487,26 @@ export class M4AEngine {
     this.decodeCache = new Map();
     this.events = [];          // host notifications: {type:'end', player, tag}
     this.peakClip = 0;
+    this.lpL = { x1: 0, x2: 0, y1: 0, y2: 0 }; this.lpR = { x1: 0, x2: 0, y1: 0, y2: 0 };
+    this.setHQ(this.hq);
+  }
+
+  allocRing() {
+    const n = PCM_DMA_PERIOD * PCM_SAMPLES_PER_FRAME;
+    this.pcmA = this.hq ? new Float32Array(n) : new Int8Array(n);
+    this.pcmB = this.hq ? new Float32Array(n) : new Int8Array(n);
+  }
+  /** Switch between the authentic GBA mixer and HQ (see the header). */
+  setHQ(on) {
+    on = !!on;
+    const changed = on !== (this.pcmA instanceof Float32Array);
+    this.hq = on;
+    if (changed) this.allocRing();
+    this.maxChans = on ? 12 : 5;
+    if (on) this.interpolation = 'linear';
+    // 2-pole Butterworth low-pass at 6.5 kHz (RBJ biquad) for HQ output
+    const f0 = Math.min(6500, this.sampleRate * 0.45), w0 = 2 * Math.PI * f0 / this.sampleRate, al = Math.sin(w0) / (2 * Math.SQRT1_2), cs = Math.cos(w0), a0 = 1 + al;
+    this.lp = { b0: (1 - cs) / 2 / a0, b1: (1 - cs) / a0, b2: (1 - cs) / 2 / a0, a1: -2 * cs / a0, a2: (1 - al) / a0 };
   }
 
   // ---------------------------------------------------------------- host API
@@ -1518,13 +1542,24 @@ export class M4AEngine {
       let l, r;
       if (this.stereo) { r = a * 4 + P.outR; l = b * 4 + P.outL; }
       else { const m = (a + b) * 2; l = m + P.outL; r = m + P.outR; }
-      if (l > 511) { l = 511; this.peakClip++; } else if (l < -512) { l = -512; this.peakClip++; }
-      if (r > 511) { r = 511; this.peakClip++; } else if (r < -512) { r = -512; this.peakClip++; }
+      if (this.hq) { // soft-limit peaks (linear up to 75% of full scale, then a smooth knee) instead of a hard clip
+        l = softLimit(l / 512) * 512; r = softLimit(r / 512) * 512;
+      } else {
+        if (l > 511) { l = 511; this.peakClip++; } else if (l < -512) { l = -512; this.peakClip++; }
+        if (r > 511) { r = 511; this.peakClip++; } else if (r < -512) { r = -512; this.peakClip++; }
+      }
       // AC coupling (DC blocker)
       const yl = l - dcL.x + k * dcL.y; dcL.x = l; dcL.y = yl;
       const yr = r - dcR.x + k * dcR.y; dcR.x = r; dcR.y = yr;
-      outL[offset + i] = yl * g;
-      outR[offset + i] = yr * g;
+      if (this.hq) { // low-pass: removes the harsh images above ~6.7 kHz that the GBA's speaker used to hide
+        const c = this.lp, L1 = this.lpL, R1 = this.lpR;
+        const fl = c.b0 * yl + c.b1 * L1.x1 + c.b2 * L1.x2 - c.a1 * L1.y1 - c.a2 * L1.y2; L1.x2 = L1.x1; L1.x1 = yl; L1.y2 = L1.y1; L1.y1 = fl;
+        const fr2 = c.b0 * yr + c.b1 * R1.x1 + c.b2 * R1.x2 - c.a1 * R1.y1 - c.a2 * R1.y2; R1.x2 = R1.x1; R1.x1 = yr; R1.y2 = R1.y1; R1.y1 = fr2;
+        outL[offset + i] = fl * g; outR[offset + i] = fr2 * g;
+      } else {
+        outL[offset + i] = yl * g;
+        outR[offset + i] = yr * g;
+      }
       this.pcmPos += this.pcmStep;
     }
   }
@@ -1532,6 +1567,7 @@ export class M4AEngine {
 }
 
 const s16 = (v) => (v << 16) >> 16;
+function softLimit(x) { const a = Math.abs(x); if (a <= 0.75) return x; return Math.sign(x) * (0.75 + 0.25 * Math.tanh((a - 0.75) / 0.25)); }
 
 /** Convenience: build an engine from a bank (ArrayBuffer/Uint8Array) and its bank.json. */
 export function createEngine(bankBytes, bankJson, opts = {}) {
@@ -1555,7 +1591,7 @@ export class EngineHost {
   _onMessage(m) {
     if (m.type === 'init') {
       this.engine = createEngine(new Uint8Array(m.bank), m.meta, {
-        sampleRate: this.sampleRate, stereo: m.stereo !== false, interpolation: m.interpolation || 'hold',
+        sampleRate: this.sampleRate, stereo: m.stereo !== false, interpolation: m.interpolation || 'hold', hq: !!m.hq,
       });
       this.post({ type: 'ready', sampleRate: this.sampleRate });
       return;
@@ -1585,6 +1621,7 @@ export class EngineHost {
       case 'option':
         if ('stereo' in m) e.stereo = !!m.stereo;
         if ('interpolation' in m) e.interpolation = m.interpolation;
+        if ('hq' in m) { e.setHQ(m.hq); if (!m.hq) e.interpolation = 'hold'; }
         break;
       default: break;
     }

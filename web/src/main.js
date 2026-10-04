@@ -60,7 +60,7 @@ async function boot() {
   loadMeta();
   Input.rumbleOn = G.meta.settings?.rumble !== false;
   registerRoomScene(RoomScene);
-  const soundP = Sound.init('assets/sound/').then(() => {
+  const soundP = Sound.init('assets/sound/', { hq: G.meta.settings?.hqAudio !== false }).then(() => {
     const s = G.meta.settings;
     Sound.setMusicVolume(s.music); Sound.setSfxVolume(s.sfx);
   }).catch(e => console.warn('audio init failed', e));

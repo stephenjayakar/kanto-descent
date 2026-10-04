@@ -149,7 +149,7 @@ export const Sound = {
       state.port.postMessage({
         type: 'init', bank,
         meta: { segments: meta.segments, cryTable: meta.cryTable, cryTableReverse: meta.cryTableReverse },
-        stereo: opts.stereo !== false, interpolation: opts.interpolation || 'hold',
+        stereo: opts.stereo !== false, interpolation: opts.interpolation || 'hold', hq: opts.hq !== false,
       }, [bank]);
       await ready;
       post({ type: 'playerVolume', players: [PLAYER_BGM], volume: state.volumes.music });
@@ -270,10 +270,12 @@ export const Sound = {
   setStereo(on) { post({ type: 'option', stereo: !!on }); },
   /** 'hold' = GBA DAC zero-order hold (authentic), 'linear' = smoother 13379 Hz -> output upsampling. */
   setInterpolation(mode) { post({ type: 'option', interpolation: mode === 'linear' ? 'linear' : 'hold' }); },
+  /** HQ audio (default) vs the authentic GBA mixer (13 kHz, 8-bit wrap, 5 voices, no smoothing). */
+  setHQ(on) { post({ type: 'option', hq: !!on }); },
 };
 
 for (const k of ['playBGM', 'fadeOutBGM', 'stopBGM', 'pauseBGM', 'resumeBGM', 'playSE', 'stopSE', 'playFanfare',
-  'playCry', 'stopAll', 'setStereo', 'setInterpolation']) Sound[k] = deferred(Sound[k]);
+  'playCry', 'stopAll', 'setStereo', 'setInterpolation', 'setHQ']) Sound[k] = deferred(Sound[k]);
 
 // Game code calls these mid-simulation: an unknown song/cry name must never throw into combat.
 for (const k of ['playSE', 'playCry', 'playBGM', 'playFanfare', 'stopSE']) {

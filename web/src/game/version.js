@@ -1,8 +1,17 @@
 // Game version and patch notes (shown from the title screen). Only cut a new version when asked.
-export const VERSION = 'v0.0.4';
+export const VERSION = 'v0.0.5';
 
 // Newest first. Each entry: { v, sections: [[TITLE, [lines]]] } (an empty title means no heading).
 export const PATCH_NOTES = [
+  {
+    v: 'v0.0.5',
+    sections: [
+      ['', [
+        'HQ AUDIO (on by default): music and sounds are mixed at full precision with 12 voices instead of 5, smoothed between samples, with soft-limited peaks and the harsh top end filtered out. No more crunch or crackle in busy battle themes. Switch back to the authentic GBA sound in SETTINGS.',
+        'NURSE JOY and the shop clerks can be talked to from anywhere along the front of their counter.',
+      ]],
+    ],
+  },
   {
     v: 'v0.0.4',
     sections: [
