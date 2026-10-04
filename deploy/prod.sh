@@ -4,6 +4,7 @@
 # Sites connector). Needs: `npx convex` logged in (~/.convex/config.json), codex logged in to the ChatGPT account
 # that owns the site. The site is pushed from git, so commit first.
 set -e
+[ -d "$HOME/.local/node/bin" ] && PATH="$HOME/.local/node/bin:$PATH" # this Mac keeps Node 22 there
 cd "$(dirname "$0")/.."
 [ "$(git rev-parse --abbrev-ref HEAD)" = master ] || { echo "check out master first"; exit 1; }
 [ -z "$(git status --porcelain)" ] || { echo "commit your changes first (the site is pushed from git)"; exit 1; }
