@@ -27,9 +27,8 @@ export class FocusNav {
       try { hit = button(ctx, label, x, y, w, h, opts); } finally { Object.assign(m, saved); }
     } else {
       if ((m.x !== this.mx || m.y !== this.my) && inRect(x, y, w, h)) this.focus = key;
-      hit = button(ctx, label, x, y, w, h, opts);
+      hit = button(ctx, label, x, y, w, h, { ...opts, focused: key === this.focus }); // focus: pale fill + the red arrow
     }
-    if (key === this.focus && !this.blocked) focusRing(ctx, x, y, w, h);
     if (hit) fn?.();
     return hit;
   }
@@ -102,12 +101,12 @@ export class ChoiceModal extends Modal {
     this.nav.begin();
     const w = this.w || 320, n = this.options.length, bh = 26;
     const bodyLines = this.body ? this.body.split('\n').flatMap(p => (p ? wrap(p, w - 24, 'small') : [''])) : [];
-    const h = 46 + n * (bh + 4) + bodyLines.length * 11 + (bodyLines.length ? 9 : 0);
+    const h = 50 + n * (bh + 4) + bodyLines.length * 11 + (bodyLines.length ? 9 : 0);
     const x = (W - w) / 2, y = (H - h) / 2;
     panel(ctx, x, y, w, h);
-    text(ctx, this.title || '', W / 2, y + 8, { align: 'center', color: 'white' });
-    let cy = y + 28;
-    for (const l of bodyLines) { text(ctx, l, x + 12, cy, { color: 'whiteSoft', font: 'small' }); cy += 11; }
+    text(ctx, this.title || '', W / 2, y + 9, { align: 'center', color: 'blue' });
+    let cy = y + 29;
+    for (const l of bodyLines) { text(ctx, l, x + 14, cy, { color: 'dark', font: 'small' }); cy += 11; }
     if (bodyLines.length) cy += 9;
     this.options.forEach((o, i) => {
       this.btn(ctx, 'o' + i, o.label, x + 20, cy, w - 40, bh, { color: o.color || '#506080' }, () => this.close(o.value));
@@ -142,17 +141,17 @@ export function scrollArea(ctx, m, x, top, w, bottom, drawContent) {
   m.contentH = end - (top - m.scroll);
   if (maxScroll > 0) {
     const barH = Math.max(16, viewH * viewH / m.contentH), barY = top + (viewH - barH) * (m.scroll / maxScroll);
-    rect(ctx, x + w - 4, top, 3, viewH, '#ffffff22');
-    rect(ctx, x + w - 4, barY, 3, barH, '#f8d038');
-    if (m.scroll < maxScroll) text(ctx, 'scroll for more (up/down)', x + w / 2, bottom + 9, { align: 'center', color: 'gray', font: 'small' });
+    rect(ctx, x + w - 4, top, 3, viewH, '#d6d6de');
+    rect(ctx, x + w - 4, barY, 3, barH, '#736b84');
+    if (m.scroll < maxScroll) text(ctx, 'scroll for more (up/down)', x + w / 2, bottom + 9, { align: 'center', color: 'dark', font: 'small' });
   }
 }
 
 // Sections of notes: [[TITLE, [lines]]], drawn as bullets. Returns the end y.
 export function drawSections(ctx, sections, x, y, w, opts = {}) {
   for (const [title, lines] of sections) {
-    if (title) { text(ctx, title, x, y, { color: opts.titleColor || 'gold', font: 'small' }); y += 13; }
-    for (const l of lines) y += textBlock(ctx, (title ? '· ' : '') + l, x + (title ? 6 : 0), y, w - 6, { color: 'whiteSoft', font: 'small', lineHeight: 11 }) + 3;
+    if (title) { text(ctx, title, x, y, { color: opts.titleColor || 'blue', font: 'small' }); y += 13; }
+    for (const l of lines) y += textBlock(ctx, (title ? '· ' : '') + l, x + (title ? 6 : 0), y, w - 6, { color: 'dark', font: 'small', lineHeight: 11 }) + 3;
     y += 5;
   }
   return y;

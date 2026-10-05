@@ -2,7 +2,7 @@
 // Inputs (keyboard, mouse, gamepad) go to the host every frame; the video is the host's canvas.
 import { Engine, W, H } from '../engine/core.js';
 import { text, wrap } from '../engine/font.js';
-import { swirlBackground, pixBox } from '../engine/ui.js';
+import { frBackdrop, frBox } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { D, TYPE_COLORS } from '../game/data.js';
@@ -56,8 +56,8 @@ export class GuestScene {
       if (v.paused) this.banner(ctx, 'Click to start the stream (and its sound).');
       return;
     }
-    swirlBackground(ctx, ['#102040', '#204080', '#183060'], 0.4);
-    text(ctx, 'CO-OP', W / 2, 120, { align: 'center', color: 'gold', scale: 2 });
+    frBackdrop(ctx); // the title screen's black, teal band and red bar
+    text(ctx, 'CO-OP', W / 2, 120, { align: 'center', color: ['#ffffff', '#d64229'], scale: 2 });
     const lines = this.stage === 'error' ? [this.msg || 'Could not join.']
       : Coop.status === 'lost' ? [Coop.error || 'Connection lost.', 'Reload the page to try again.']
       : this.stage === 'pick' ? ['']
@@ -66,7 +66,7 @@ export class GuestScene {
   }
 
   banner(ctx, s) {
-    pixBox(ctx, W / 2 - 200, H / 2 - 14, 400, 28, 'rgba(16,20,32,0.9)', '#80d0ff', 2);
-    text(ctx, s, W / 2, H / 2 - 7, { align: 'center', color: 'white', font: 'small' });
+    frBox(ctx, W / 2 - 200, H / 2 - 14, 400, 28, 'type1', '#ffffff');
+    text(ctx, s, W / 2, H / 2 - 6, { align: 'center', color: 'dark', font: 'small' });
   }
 }

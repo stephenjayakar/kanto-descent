@@ -40,7 +40,7 @@ export const THEME = {
   chips: '#2f8cff', mult: '#ff3d3d', money: '#f8c838', play: '#2f8cff', discard: '#ff3d3d', green: '#38b048', orange: '#f09030',
 };
 
-export function panel(ctx, x, y, w, h, style = 'dark') {
+export function panel(ctx, x, y, w, h, style = 'window') {
   if (style === 'window' || style === 'paper') return windowFrame(ctx, x, y, w, h, style === 'paper' ? 'std' : 'type1');
   if (style === 'inset') { pixBox(ctx, x, y, w, h, THEME.panelDark, THEME.border, 3); return; }
   pixBox(ctx, x, y, w, h, THEME.border, null, 4);
@@ -48,37 +48,83 @@ export function panel(ctx, x, y, w, h, style = 'dark') {
   pixBox(ctx, x + 1, y + 2, w - 2, h - 3, THEME.panel, null, 3);
 }
 
-// FireRed text window frame (9-slice 24x24 with 8px borders).
-export function windowFrame(ctx, x, y, w, h, kind = 'type1') {
+// FireRed's window-frame colours (gfx/ui/text_window/typeN.png): outline, light edge (top/left), middle ring,
+// dark edge (bottom/right). Used for buttons and thin frames that are too small for the 9-slice windows.
+export const FR_FRAMES = {
+  type1: { o: '#293131', hi: '#8c8cce', mid: '#736b84', lo: '#4a4a6b' }, // the default purple-grey
+  red: { o: '#293131', hi: '#e7a529', mid: '#d64229', lo: '#942108' },   // type3
+  green: { o: '#293131', hi: '#8cde84', mid: '#4abd42', lo: '#089442' }, // type4
+  blue: { o: '#293131', hi: '#84b5e7', mid: '#216bd6', lo: '#104a8c' },  // type5
+  gold: { o: '#523100', hi: '#ffde52', mid: '#deb552', lo: '#946b10' },  // type6/9
+  gray: { o: '#293131', hi: '#ffffff', mid: '#d6d6de', lo: '#b5b5c6' },  // type7
+};
+// the old Kanto Spire button colours -> a FireRed frame
+const FRAME_OF = { '#38b048': 'green', '#2f8cff': 'blue', '#3060c0': 'blue', '#ff3d3d': 'red', '#c09020': 'gold', '#3a9a58': 'green', '#3a7a58': 'green' };
+export function frameOf(color) { return FR_FRAMES[color] ? color : FRAME_OF[(color || '').toLowerCase()] || 'type1'; }
+
+// A thin FireRed frame (3px: outline, light/dark bevel, middle ring) around a fill.
+export function frBox(ctx, x, y, w, h, kind = 'type1', fill = '#ffffff') {
+  const f = FR_FRAMES[kind] || FR_FRAMES.type1;
+  x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+  ctx.fillStyle = f.o; ctx.fillRect(x + 1, y, w - 2, h); ctx.fillRect(x, y + 1, w, h - 2);
+  ctx.fillStyle = f.lo; ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.fillStyle = f.hi; ctx.fillRect(x + 1, y + 1, w - 3, h - 3);
+  ctx.fillStyle = f.mid; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = fill; ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+}
+
+// FireRed's red selection arrow (16x16 sheet, the arrow is 6x10 at its left), bobbing like the games' menus
+export function frCursor(ctx, x, y, bob = true) {
+  const im = img('gfx/ui/cursors/red_arrow.png');
+  const dx = bob ? (Math.floor(Engine.time * 4) % 2) : 0;
+  if (ready(im)) ctx.drawImage(im, Math.round(x) + dx, Math.round(y));
+  else { ctx.fillStyle = '#e83018'; ctx.fillRect(Math.round(x) + dx, Math.round(y) + 3, 5, 7); }
+}
+
+// FireRed's title-screen backdrop (tools/extract_title_fixed.py): black, a teal band, the orange top stripe and the
+// dark red bottom bar, stretched across the 768px screen at 2x. dim darkens it (records / co-op screens).
+export function frBackdrop(ctx, opts = {}) {
+  const band = opts.band ?? [60, 224];
+  ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = opts.bandColor || '#41b4a4'; ctx.fillRect(0, band[0], W, band[1] - band[0]);
+  if (opts.stripe !== false) { ctx.fillStyle = '#ff5a00'; ctx.fillRect(0, 0, W, 8); }
+  if (opts.bar !== false) { ctx.fillStyle = '#8b0000'; ctx.fillRect(0, H - 20, W, 20); }
+  if (opts.dim) { ctx.fillStyle = `rgba(0,0,0,${opts.dim})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// FireRed text window frame (9-slice 24x24 with 8px borders); s = 2 draws it at the world's 2x scale.
+export function windowFrame(ctx, x, y, w, h, kind = 'type1', s = 1) {
   const im = img(`gfx/ui/text_window/${kind}.png`);
   x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
   if (!ready(im)) { pixBox(ctx, x, y, w, h, '#f8f8f8', '#506878', 3); return; }
-  const c = 8;
-  ctx.drawImage(im, c, c, 8, 8, x + c, y + c, w - 2 * c, h - 2 * c); // center
-  ctx.drawImage(im, 0, 0, c, c, x, y, c, c);
-  ctx.drawImage(im, 16, 0, c, c, x + w - c, y, c, c);
-  ctx.drawImage(im, 0, 16, c, c, x, y + h - c, c, c);
-  ctx.drawImage(im, 16, 16, c, c, x + w - c, y + h - c, c, c);
-  ctx.drawImage(im, c, 0, 8, c, x + c, y, w - 2 * c, c);
-  ctx.drawImage(im, c, 16, 8, c, x + c, y + h - c, w - 2 * c, c);
-  ctx.drawImage(im, 0, c, c, 8, x, y + c, c, h - 2 * c);
-  ctx.drawImage(im, 16, c, c, 8, x + w - c, y + c, c, h - 2 * c);
+  const c = 8, d = 8 * s;
+  ctx.drawImage(im, c, c, 8, 8, x + d, y + d, w - 2 * d, h - 2 * d); // center
+  ctx.drawImage(im, 0, 0, c, c, x, y, d, d);
+  ctx.drawImage(im, 16, 0, c, c, x + w - d, y, d, d);
+  ctx.drawImage(im, 0, 16, c, c, x, y + h - d, d, d);
+  ctx.drawImage(im, 16, 16, c, c, x + w - d, y + h - d, d, d);
+  ctx.drawImage(im, c, 0, 8, c, x + d, y, w - 2 * d, d);
+  ctx.drawImage(im, c, 16, 8, c, x + d, y + h - d, w - 2 * d, d);
+  ctx.drawImage(im, 0, c, c, 8, x, y + d, d, h - 2 * d);
+  ctx.drawImage(im, 16, c, c, 8, x + w - d, y + d, d, h - 2 * d);
 }
 
-// Balatro-ish chunky button. Returns true when clicked (and plays the select sound).
+// A FireRed menu button: a thin window frame (its colour from opts.color / opts.frame), dark text, a pale fill under
+// the mouse and the red arrow when focused (opts.focused, from FocusNav). Returns true when clicked (plays select).
 export function button(ctx, label, x, y, w, h, opts = {}) {
-  const color = opts.color || THEME.play;
   const disabled = !!opts.disabled;
   const hot = !disabled && hover(x, y, w, h);
   const down = hot && Engine.mouse.down;
-  const press = down ? 2 : 0;
-  const base = disabled ? '#4a5060' : color;
-  pixBox(ctx, x, y + 3, w, h - 3, shade(base, -0.45), null, 3);
-  pixBox(ctx, x, y + press, w, h - 3, hot ? shade(base, 0.15) : base, null, 3);
-  if (opts.icon) draw(ctx, opts.icon, x + 4, y + press + (h - 3 - 16) / 2);
-  const font = opts.font || (measure(label, 'normal') > w - 8 ? 'small' : 'normal');
-  text(ctx, label, x + w / 2 + (opts.icon ? 8 : 0), y + press + (h - 3) / 2 - (font === 'small' ? 6 : 7), { align: 'center', color: disabled ? 'gray' : 'white', font });
-  if (opts.sub) text(ctx, opts.sub, x + w / 2, y + press + h - 14, { align: 'center', color: 'white', font: 'small' });
+  const kind = disabled ? 'gray' : opts.frame || frameOf(opts.color);
+  frBox(ctx, x, y, w, h, kind, disabled ? '#e8e8e8' : down ? '#f0e8a8' : hot || opts.focused ? '#fff8d0' : opts.selected ? '#d6e7f7' : '#ffffff');
+  const font = opts.font || (measure(label, 'normal') > w - 12 ? 'small' : 'normal');
+  const lw = measure(label, font) + (opts.icon ? 18 : 0);
+  const room = (w - lw) / 2;
+  if (opts.focused && !disabled && room >= 22) frCursor(ctx, x + 5, y + Math.round((h - 16) / 2) + 1); // FireRed menus: the arrow at the left edge
+  if (opts.icon) draw(ctx, opts.icon, x + w / 2 - lw / 2, y + (h - 16) / 2);
+  const ty = y + Math.round((h - (font === 'small' ? 12 : 14)) / 2) - 1 + (down ? 1 : 0);
+  text(ctx, label, x + w / 2 + (opts.icon ? 9 : 0), ty, { align: 'center', color: disabled ? 'gray' : opts.textColor || (opts.selected ? 'blue' : 'dark'), font });
+  if (opts.sub) text(ctx, opts.sub, x + w / 2, y + h - 14, { align: 'center', color: 'dark', font: 'small' });
   const hit = !disabled && (clicked(x, y, w, h) || (opts.hotkey && Engine.pressed.has(opts.hotkey)));
   if (hit && !opts.silent) Sound.playSE('se_select');
   return hit;
@@ -108,8 +154,8 @@ export function drawTips(ctx) {
   let x = (t.x ?? Engine.mouse.x + 10), y = (t.y ?? Engine.mouse.y + 10);
   if (x + w > W - 2) x = W - 2 - w;
   if (y + h > H - 2) y = Math.max(2, (t.y ?? Engine.mouse.y) - h - 6);
-  pixBox(ctx, x, y, w, h, '#f8f8f0', '#283040', 3);
-  if (t.accent) rect(ctx, x + 2, y + 2, w - 4, 2, t.accent);
+  frBox(ctx, x, y, w, h, 'gray', '#ffffff');
+  if (t.accent) rect(ctx, x + 3, y + 3, w - 6, 2, t.accent);
   let cy = y + 4;
   if (t.title) { text(ctx, t.title, x + 6, cy, { color: t.titleColor || 'dark' }); cy += 16; }
   for (const l of lines) { text(ctx, l, x + 6, cy, { font: 'small', color: 'dark' }); cy += 11; }
