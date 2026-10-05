@@ -807,7 +807,7 @@ function victory() {
 }
 
 class SummaryOverlay {
-  constructor(won) { this.won = won; this.t = 0; }
+  constructor(won) { this.won = won; this.t = 0; this.hidesHud = true; } // the textbox would cut through the healthbox
   enter() { Input.clear(); }
   update(dt) { Input.poll(); this.t += dt; if (this.t > 1.2 && (Input.justPressed('confirm') || Engine.mouse.clicked)) { popOverlay(this); toHub(); } }
   draw(ctx) {

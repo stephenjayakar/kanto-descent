@@ -498,7 +498,7 @@ export class RoomScene {
       if (sx > 12 && sx < W - 12 && sy > 12 && sy < H - 64) continue;
       const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       let dir, px, py; // at the screen edge nearest the door, clear of the HUD
-      if (sy <= 12) { dir = 'up'; px = clamp(sx, 64, W - 40); py = 44; }
+      if (sy <= 12) { dir = 'up'; px = clamp(sx, 64, W - 40); py = px < 220 ? 68 : 44; } // under the money / curse windows
       else if (sy >= H - 64) { dir = 'down'; px = clamp(sx, 64, W - 40); py = H - 84; }
       else if (sx <= 12) { dir = 'left'; px = 56; py = clamp(sy, 60, H - 110); }
       else { dir = 'right'; px = W - 24; py = clamp(sy, 60, H - 110); }

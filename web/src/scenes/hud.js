@@ -164,6 +164,14 @@ export function drawHud(ctx, world, run, opts = {}) {
   if (run.held) { const im = img(ICON.item(run.held)); frBox(ctx, mw + 6, 4, 24, 24, 'type1', '#ffffff'); if (ready(im)) ctx.drawImage(im, mw + 6, 4); }
   const top = Math.max(32, (opts.top || 0) + 4); // below the map name popup while it's showing (room.js)
   let by = top;
+  // Deoxys' curse: a window under the money window (the blessings below it)
+  const curse = run.chaos.find(c => !c.active);
+  if (curse) {
+    const s = `DEOXYS: ${curse.curse.name} (${curse.rooms})`, cw = measure(s, 'small') + 14;
+    frBox(ctx, 4, by, cw, 18, 'type1', '#ffffff');
+    text(ctx, s, 11, by + 3, { font: 'small', color: ['#c02878', '#f8c8e0'] });
+    by += 22;
+  }
   for (const b of run.boons) {
     const def = BOONS[b.key]; const L = LEGENDS[def.legend];
     const ic = img(ICON.portrait(L.dex));
@@ -173,9 +181,6 @@ export function drawHud(ctx, world, run, opts = {}) {
     by += 26;
     if (by > H - HB_H - 48) break;
   }
-  // Deoxys' curse, under the money window
-  const curse = run.chaos.find(c => !c.active);
-  if (curse) text(ctx, `DEOXYS: ${curse.curse.name} (${curse.rooms})`, 36, top, { font: 'small', color: 'pink' });
 
   // ---- bosses: opponent healthboxes at the top (side by side when there are two)
   const bosses = world.actors.filter(a => a.boss && !a.dead && a.spawnT <= 0);
