@@ -2,7 +2,7 @@
 import { Engine, W, H, pushOverlay, popOverlay, hover, inRect } from '../engine/core.js';
 import { img, ready, draw } from '../engine/assets.js';
 import { text, measure, wrap } from '../engine/font.js';
-import { windowFrame, pixBox, rect } from '../engine/ui.js';
+import { windowFrame, pixBox, rect, frBox, frCursor } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { TYPE_COLORS } from '../game/data.js';
@@ -19,8 +19,25 @@ export const ICON = {
 export function drawPortrait(ctx, dex, x, y, emotion = 'Normal', scale = 1) {
   let im = img(ICON.portrait(dex, emotion));
   if (im._failed) im = img(ICON.portrait(dex, 'Normal'));
-  pixBox(ctx, x - 2, y - 2, 40 * scale + 4, 40 * scale + 4, '#f8f8f8', '#283040', 2);
+  frBox(ctx, x - 3, y - 3, 40 * scale + 6, 40 * scale + 6, 'type1', '#ffffff');
   if (ready(im)) ctx.drawImage(im, x, y, 40 * scale, 40 * scale);
+}
+
+// Wrap text into at most maxLines lines; a cut-off last line ends in '…' (descriptions never spill out of a card).
+export function fitLines(str, maxW, maxLines, font = 'small') {
+  const lines = wrap(str || '', maxW, font);
+  if (lines.length <= maxLines) return lines;
+  const out = lines.slice(0, maxLines);
+  let last = out[maxLines - 1] + '…';
+  while (last.length > 1 && measure(last, font) > maxW) last = last.slice(0, -2).trimEnd() + '…';
+  out[maxLines - 1] = last;
+  return out;
+}
+
+// FireRed's bobbing "more text" arrow (4 frames of 10x12)
+function advanceArrow(ctx, x, y) {
+  const im = img('gfx/ui/cursors/text_advance_arrow.png');
+  if (ready(im)) ctx.drawImage(im, (Math.floor(Engine.time * 6) % 4) * 10, 0, 10, 12, x, y, 10, 12);
 }
 
 // overworld NPC sprite (16x32 frames: down, up, left x3)
@@ -67,25 +84,26 @@ export class Dialog {
     const bw = 520, bh = 64, bx = (W - bw) / 2, by = H - bh - 14;
     const dex = L.portrait ?? this.opts.portrait;
     const pic = L.pic ?? this.opts.pic;
-    if (dex) drawPortrait(ctx, dex, bx + 6, by - 52, L.emotion || 'Normal');
-    else if (pic) { const im = img(pic); pixBox(ctx, bx + 4, by - 70, 68, 68, '#f8f8f8', '#283040', 2); if (ready(im)) ctx.drawImage(im, bx + 6, by - 68, 64, 64); }
+    if (dex) drawPortrait(ctx, dex, bx + 7, by - 49, L.emotion || 'Normal');
+    else if (pic) { const im = img(pic); frBox(ctx, bx + 3, by - 71, 70, 70, 'type1', '#ffffff'); if (ready(im)) ctx.drawImage(im, bx + 6, by - 68, 64, 64); }
     windowFrame(ctx, bx, by, bw, bh, 'std');
     const name = L.name ?? this.opts.name;
-    const nx = dex ? 56 : pic ? 76 : 8;
-    if (name) { pixBox(ctx, bx + nx, by - 16, measure(name) + 14, 18, '#f8f8f8', '#283040', 2); text(ctx, name, bx + nx + 7, by - 14, { color: 'blue' }); }
-    const shown = L.text.slice(0, Math.floor(this.chars));
-    wrap(shown, bw - 30).slice(0, 3).forEach((ln, i) => text(ctx, ln, bx + 14, by + 10 + i * 16, { color: 'dark' }));
-    if (this.chars >= L.text.length && Math.floor(Engine.time * 3) % 2 === 0) {
-      const im = img('gfx/ui/cursors/text_advance_arrow.png');
-      if (ready(im)) ctx.drawImage(im, 0, 0, 10, 12, bx + bw - 22, by + bh - 20, 10, 12);
-    }
+    const nx = dex ? 54 : pic ? 78 : 4;
+    if (name) { frBox(ctx, bx + nx, by - 19, measure(name) + 18, 21, 'type1', '#ffffff'); text(ctx, name, bx + nx + 9, by - 16, { color: 'blue' }); }
+    // the whole text is wrapped first so words don't jump lines as they type out
+    const all = wrap(L.text, bw - 32);
+    let left = Math.floor(this.chars);
+    all.slice(0, 3).forEach((ln, i) => { const part = ln.slice(0, Math.max(0, left)); left -= ln.length + 1; if (part) text(ctx, part, bx + 14, by + 10 + i * 15, { color: 'dark' }); });
+    if (this.chars >= L.text.length) advanceArrow(ctx, bx + bw - 24, by + bh - 20);
   }
 }
 export function say(lines, opts = {}) { return new Promise(res => pushOverlay(new Dialog(lines, { ...opts, onDone: res }))); }
 
 // ---- Hades-style choice cards. cards: [{title, sub, desc, icon, color, accent, badge, portrait}]
 export class Choice {
-  constructor(title, cards, opts = {}) { this.title = title; this.cards = cards; this.opts = opts; this.sel = 0; this.t = 0; this.scroll = 0; }
+  // opts.custom = { view(c), layout(c), draw(ctx, c) } replaces the card list with another look (the POKé MART) but keeps
+  // the same input, scrolling and interface (the sim and autoplay bots drive Choice overlays).
+  constructor(title, cards, opts = {}) { this.title = title; this.cards = cards; this.opts = opts; this.sel = opts.start || 0; this.t = 0; this.scroll = 0; if (opts.hidesHud) this.hidesHud = true; }
   enter() { Input.clear(); this.p2 = Coop.menuP2; Sound.playSE('se_win_open'); }
   update(dt) {
     const I = this.p2 ? Coop.remote : Input;
@@ -120,6 +138,7 @@ export class Choice {
   }
   // the scrolling window the cards live in (scroll only when they don't fit)
   view() {
+    if (this.opts.custom) return this.opts.custom.view(this);
     const n = this.cards.length, ch = this.opts.cardH || 62, gap = 8;
     const total = n * ch + (n - 1) * gap;
     const y0 = Math.max(this.opts.top ?? 70, (H - total) / 2 + 14);
@@ -127,12 +146,14 @@ export class Choice {
     return { y0, h, ch, gap, total, max: Math.max(0, total - h) };
   }
   layout() {
+    if (this.opts.custom) return this.opts.custom.layout(this);
     const V = this.view(), cw = 460;
     const x = this.opts.side ? W - cw - 16 : (W - cw) / 2;
     return this.cards.map((c, i) => ({ x, y: V.y0 + i * (V.ch + V.gap) - this.scroll, w: cw, h: V.ch }));
   }
-  skipRect() { const label = this.opts.skipLabel || 'SKIP (X)', w = measure(label, 'small') + 16; return { x: W - w - 12, y: H - 30, w, h: 18, label }; }
+  skipRect() { const label = this.opts.skipLabel || 'SKIP (X)', w = measure(label, 'small') + 18; return { x: W - w - 10, y: H - 30, w, h: 22, label }; }
   draw(ctx) {
+    if (this.opts.custom) return this.opts.custom.draw(ctx, this);
     const k = Math.min(1, this.t * 5);
     ctx.fillStyle = `rgba(8,10,20,${0.62 * k})`; ctx.fillRect(0, 0, W, H);
     const V = this.view(), L = this.layout();
@@ -140,24 +161,14 @@ export class Choice {
     this.opts.side?.(ctx, this);
     const cx = L[0].x + L[0].w / 2;
     if (this.opts.header) this.opts.header(ctx, V.y0 - 8, cx);
-    else text(ctx, this.title, cx, V.y0 - 34, { align: 'center', color: 'white', scale: 2 });
+    else { const tw = Math.min(W - 40, measure(this.title) + 36); windowFrame(ctx, Math.round(cx - tw / 2), V.y0 - 42, Math.round(tw), 30, 'type1'); text(ctx, this.title, cx, V.y0 - 34, { align: 'center', color: 'dark' }); }
     ctx.save();
     if (V.max > 0) { ctx.beginPath(); ctx.rect(0, V.y0 - 2, W, V.h + 4); ctx.clip(); }
     this.cards.forEach((c, i) => {
       const r = L[i], sel = i === this.sel;
       if (r.y + r.h < V.y0 - 2 || r.y > V.y0 + V.h + 2) return;
       const dx = (1 - k) * (i % 2 ? 40 : -40);
-      const x = r.x + dx + (sel ? 0 : 6);
-      pixBox(ctx, x, r.y, r.w, r.h, sel ? '#fffef0' : '#e8e8e0', c.accent || '#283040', 3);
-      if (sel) { rect(ctx, x + 2, r.y + 2, 4, r.h - 4, c.accent || '#f8d030'); }
-      let tx = x + 12;
-      if (c.portrait) { drawPortrait(ctx, c.portrait, x + 12, r.y + (r.h - 40) / 2, c.emotion || 'Normal'); tx = x + 62; }
-      else if (c.icon) { const im = img(c.icon); if (ready(im)) ctx.drawImage(im, x + 12, r.y + (r.h - im.naturalHeight) / 2); tx = x + 44; }
-      text(ctx, c.title, tx, r.y + 6, { color: c.titleColor || 'dark' });
-      if (c.badge) { const bw = measure(c.badge, 'small') + 8; pixBox(ctx, x + r.w - bw - 8, r.y + 6, bw, 13, c.badgeColor || '#3060c0', null, 2); text(ctx, c.badge, x + r.w - bw - 4, r.y + 6, { font: 'small', color: 'white' }); }
-      if (c.sub) text(ctx, c.sub, tx + measure(c.title) + 8, r.y + 7, { font: 'small', color: c.subColor || 'blue' });
-      wrap(c.desc || '', r.w - (tx - x) - 12, 'small').slice(0, 3).forEach((ln, j) => text(ctx, ln, tx, r.y + 23 + j * 12, { font: 'small', color: c.disabled ? 'gray' : 'dark' }));
-      if (c.icon2) { const im = img(c.icon2); if (ready(im)) ctx.drawImage(im, x + r.w - 28, r.y + r.h - 28); }
+      drawCard(ctx, c, r.x + dx + (sel ? 0 : 6), r.y, r.w, r.h, sel);
     });
     ctx.restore();
     if (V.max > 0) { // scrollbar
@@ -171,23 +182,39 @@ export class Choice {
     }
     if (this.opts.canSkip) {
       const b = this.skipRect(), on = inRect(b.x, b.y, b.w, b.h);
-      pixBox(ctx, b.x, b.y, b.w, b.h, on ? '#506080' : '#303848', '#101420', 2);
-      text(ctx, b.label, b.x + b.w / 2, b.y + 3, { align: 'center', font: 'small', color: 'white' });
+      frBox(ctx, b.x, b.y, b.w, b.h, 'type1', on ? '#fff8d0' : '#ffffff');
+      text(ctx, b.label, b.x + b.w / 2, b.y + 4, { align: 'center', font: 'small', color: 'dark' });
     }
   }
 }
-// One choice card (used by DualChoice; same look as Choice's cards).
-function drawCard(ctx, c, x, y, w, h, sel) {
-  pixBox(ctx, x, y, w, h, sel ? '#fffef0' : '#e8e8e0', c.accent || '#283040', 3);
-  if (sel) rect(ctx, x + 2, y + 2, 4, h - 4, c.accent || '#f8d030');
-  let tx = x + 12;
-  if (c.portrait) { drawPortrait(ctx, c.portrait, x + 10, y + (h - 40) / 2, c.emotion || 'Normal'); tx = x + 56; }
-  else if (c.icon) { const im = img(c.icon); if (ready(im)) ctx.drawImage(im, x + 12, y + (h - im.naturalHeight) / 2); tx = x + 44; }
-  text(ctx, c.title, tx, y + 6, { color: c.titleColor || 'dark' });
+// One choice card, FireRed style: a thin window frame with the card's accent as a stripe down its left side, the
+// picture (portrait / item / type), title + sub + badge on the first row and the description below, wrapped to the
+// lines that fit (cut with '…', never spilling out). Selected: a pale fill and FireRed's red arrow on its left.
+export function drawCard(ctx, c, x, y, w, h, sel, opts = {}) {
+  x = Math.round(x); y = Math.round(y);
+  frBox(ctx, x, y, w, h, 'type1', c.disabled ? '#ececec' : sel ? '#fff8d8' : '#ffffff');
+  rect(ctx, x + 3, y + 3, 3, h - 6, c.accent || '#736b84');
+  if (sel && opts.arrow !== false) frCursor(ctx, x - 17, y + Math.round(h / 2) - 6);
+  let tx = x + 14;
+  if (c.portrait) {
+    const py = y + Math.round((h - 40) / 2);
+    if (h >= 52) { drawPortrait(ctx, c.portrait, x + 14, py, c.emotion || 'Normal'); tx = x + 64; }
+    else { const im = img(ICON.portrait(c.portrait, c.emotion || 'Normal')); if (ready(im)) ctx.drawImage(im, x + 10, py, 40, 40); tx = x + 56; }
+  } else if (c.icon) { const im = img(c.icon); if (ready(im)) ctx.drawImage(im, x + 12, y + Math.round((h - im.naturalHeight) / 2)); tx = x + (ready(im) && im.naturalWidth > 24 ? 50 : 42); }
+  const right = x + w - 8;
   let bw = 0;
-  if (c.badge) { bw = measure(c.badge, 'small') + 8; pixBox(ctx, x + w - bw - 8, y + 6, bw, 13, c.badgeColor || '#3060c0', null, 2); text(ctx, c.badge, x + w - bw - 4, y + 6, { font: 'small', color: 'white' }); }
-  if (c.sub && tx + measure(c.title) + 8 + measure(c.sub, 'small') < x + w - bw - 12) text(ctx, c.sub, tx + measure(c.title) + 8, y + 7, { font: 'small', color: c.subColor || 'blue' });
-  wrap(c.desc || '', w - (tx - x) - 10, 'small').slice(0, 3).forEach((ln, j) => text(ctx, ln, tx, y + 23 + j * 12, { font: 'small', color: c.disabled ? 'gray' : 'dark' }));
+  if (c.badge) { bw = measure(c.badge, 'small') + 8; pixBox(ctx, right - bw, y + 5, bw, 13, c.badgeColor || '#3060c0', null, 2); text(ctx, c.badge, right - bw + 4, y + 5, { font: 'small', color: 'white' }); bw += 6; }
+  const tw = measure(c.title);
+  text(ctx, c.title, tx, y + 4, { color: c.titleColor || 'dark' });
+  if (c.sub) {
+    const sx = tx + tw + 8, avail = right - bw - sx;
+    let s = c.sub;
+    while (s.length > 1 && measure(s, 'small') > avail) s = s.slice(0, -2).trimEnd() + '…';
+    if (avail > 24) text(ctx, s, sx, y + 5, { font: 'small', color: c.subColor || 'blue' });
+  }
+  const maxLines = Math.max(1, Math.floor((h - 3 - 19 - 12) / 11) + 1);
+  fitLines(c.desc, right - tx - 2 - (c.icon2 ? 28 : 0), maxLines).forEach((ln, j) => text(ctx, ln, tx, y + 19 + j * 11, { font: 'small', color: c.disabled ? 'gray' : 'dark' }));
+  if (c.icon2) { const im = img(c.icon2); if (ready(im)) ctx.drawImage(im, x + w - 30, y + h - 30); }
 }
 
 // Co-op: both players pick from their own cards at the same time (left: player 1 with this keyboard/mouse,
@@ -195,7 +222,7 @@ function drawCard(ctx, c, x, y, w, h, sel) {
 export class DualChoice {
   constructor(sides, opts = {}) { this.sides = sides.map(s => ({ ...s, sel: 0, pick: s.cards.length ? null : -1 })); this.opts = opts; this.t = 0; }
   enter() { Input.clear(); Coop.remote.clear(); Sound.playSE('se_win_open'); }
-  rects(i) { const cw = 368, ch = 66, x = i === 0 ? 10 : W - 10 - cw; return this.sides[i].cards.map((c, j) => ({ x, y: 96 + j * (ch + 6), w: cw, h: ch })); }
+  rects(i) { const cw = 356, ch = 66, x = i === 0 ? 24 : W - 8 - cw; return this.sides[i].cards.map((c, j) => ({ x, y: 96 + j * (ch + 6), w: cw, h: ch })); }
   update(dt) {
     this.t += dt; Input.poll(); Coop.remote.poll();
     this.sides.forEach((s, i) => {
@@ -218,17 +245,18 @@ export class DualChoice {
     this.opts.header?.(ctx);
     const allDone = this.sides.every(o => o.pick !== null);
     this.sides.forEach((s, i) => {
-      const R = this.rects(i), x = i === 0 ? 10 : W - 378;
+      const R = this.rects(i), cw = 356, x = i === 0 ? 24 : W - 8 - cw, half = cw / 2;
       text(ctx, s.title, x + 4, 80, { font: 'small', color: [i === 0 ? '#f8d030' : '#80d0ff', '#202020'] });
-      if (!s.cards.length) text(ctx, s.empty || 'Nothing more to offer.', x + 184, 150, { align: 'center', font: 'small', color: 'gray' });
-      s.cards.forEach((c, j) => drawCard(ctx, c, R[j].x, R[j].y, R[j].w, R[j].h, s.pick === null ? j === s.sel : j === s.pick));
-      if (s.pick !== null && s.cards.length && !allDone) {
-        ctx.fillStyle = 'rgba(8,10,20,0.45)'; ctx.fillRect(x, 92, 368, R.length * 72);
-        const lbl = (s.pick >= 0 ? 'CHOSEN' : 'SKIPPED') + ' - waiting for the other player', tw = measure(lbl, 'small') + 14, ly = 92 + R.length * 36 - 8;
-        pixBox(ctx, x + 184 - tw / 2, ly, tw, 16, 'rgba(16,20,32,0.95)', '#f8f8f8', 2);
-        text(ctx, lbl, x + 184, ly + 1, { align: 'center', font: 'small', color: 'white' });
+      if (!s.cards.length) text(ctx, s.empty || 'Nothing more to offer.', x + half, 150, { align: 'center', font: 'small', color: 'gray' });
+      const done = s.pick !== null && s.cards.length && !allDone;
+      s.cards.forEach((c, j) => drawCard(ctx, c, R[j].x, R[j].y, R[j].w, R[j].h, s.pick === null ? j === s.sel : j === s.pick, { arrow: !done || j === s.pick }));
+      if (done) {
+        ctx.fillStyle = 'rgba(8,10,20,0.45)'; ctx.fillRect(x, 92, cw, R.length * 72);
+        const lbl = (s.pick >= 0 ? 'CHOSEN' : 'SKIPPED') + ' - waiting for the other player', tw = measure(lbl, 'small') + 18, ly = 92 + R.length * 36 - 10;
+        frBox(ctx, x + half - tw / 2, ly, tw, 20, 'type1', '#ffffff');
+        text(ctx, lbl, x + half, ly + 3, { align: 'center', font: 'small', color: 'dark' });
       }
-      s.owned?.(ctx, x, 96 + Math.max(1, R.length) * 72 + 4, 368, s.pick === null ? s.sel : s.pick);
+      s.owned?.(ctx, x, 96 + Math.max(1, R.length) * 72 + 4, cw, s.pick === null ? s.sel : s.pick);
     });
     text(ctx, this.opts.footer || 'Both pick at once.  P1: arrows + Enter (X skips).  P2: their own controls.', W / 2, H - 14, { align: 'center', font: 'small', color: 'whiteSoft' });
   }

@@ -1,10 +1,10 @@
-// Title screen (in the style of Kanto Spire's): FireRed's Charizard, flames and logo over a swirl, then
+// Title screen: FireRed's own title (black, teal band, logo, Charizard and its flames) at 2x, then
 // Continue / New run / Records / Settings / How to play / patch notes, and cloud sign-in (Convex).
 // Keyboard and gamepad: arrows / d-pad move the focus, Enter / Z / E (A) confirm.
 import { Engine, W, H, setScene, pushOverlay } from '../engine/core.js';
 import { draw } from '../engine/assets.js';
 import { text, measure } from '../engine/font.js';
-import { swirlBackground, BG_THEMES, button, panel, rect, drawTips, THEME } from '../engine/ui.js';
+import { frBackdrop, button, panel, rect, drawTips, THEME } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { G, loadRunSave, saveMeta } from '../game/run.js';
@@ -43,27 +43,23 @@ export class TitleScene {
   }
 
   draw(ctx) {
-    swirlBackground(ctx, BG_THEMES.title, 0.6);
-    // GBA title art, 2x: Charizard on the right with flames rising in front, the logo top-left
-    ctx.save(); ctx.globalAlpha = 0.95;
-    draw(ctx, 'gfx/ui/title/charizard.png', 488, 74 + Math.sin(Engine.time * 1.5) * 2, { scale: 2 });
-    ctx.restore();
-    for (let i = 0; i < 10; i++) {
-      const fx = 462 + i * 26 + Math.sin(Engine.time * 2 + i) * 4;
-      const life = ((Engine.time * 40 + i * 37) % 130) / 130;
-      const fy = 318 - life * 130;
-      const frame = Math.min(6, Math.floor(life * 7));
-      draw(ctx, 'gfx/ui/title/flames.png', fx, fy, { sx: 0, sy: frame * 16, sw: 16, sh: 16, scale: 2, alpha: 0.85 });
+    // FireRed's own title screen at 2x (tools/extract_title_fixed.py has the real colours): black with the teal band,
+    // the logo top-left, Charizard on the right with the title flames rising in front of it.
+    frBackdrop(ctx);
+    draw(ctx, 'gfx/ui/title/charizard.png', 506, 84 + Math.round(Math.sin(Engine.time * 1.5)) * 2, { scale: 2 });
+    for (let i = 0; i < 9; i++) { // flames: 7 frames of 16x16 rising out of the bottom of the band
+      const life = ((Engine.time * 40 + i * 37) % 150) / 150;
+      const fx = 470 + i * 30 + Math.round(Math.sin(Engine.time * 2 + i) * 2) * 2;
+      const fy = 300 - Math.round(life * 75) * 2;
+      draw(ctx, 'gfx/ui/title/flames.png', fx, fy, { sx: 0, sy: Math.min(6, Math.floor(life * 7)) * 16, sw: 16, sh: 16, scale: 2 });
     }
-    draw(ctx, 'gfx/ui/title/logo.png', 56, 14, { scale: 2 });
-    // name banner
-    const cx = 222, by = 204;
-    rect(ctx, 0, by, 444, 36, '#00000088');
-    text(ctx, 'KANTO DESCENT', cx, by + 4, { align: 'center', color: 'gold', scale: 2 });
-    text(ctx, 'a FireRed x Hades roguelike', cx, by + 40, { align: 'center', color: 'whiteSoft', font: 'small' });
+    draw(ctx, 'gfx/ui/title/logo.png', 40, 12, { scale: 2 });
+    const cx = 206;
+    text(ctx, 'KANTO DESCENT', cx, 232, { align: 'center', color: ['#ffffff', '#d64229'], scale: 2 });
+    text(ctx, 'a FireRed x Hades roguelike', cx, 262, { align: 'center', color: 'whiteSoft', font: 'small' });
 
     if (!this.started) {
-      if (Math.floor(Engine.time * 2) % 2 === 0) text(ctx, 'CLICK OR PRESS ENTER TO START', cx, 300, { align: 'center', color: 'white' });
+      if (Math.floor(Engine.time * 1.5) % 3 !== 2) text(ctx, 'CLICK OR PRESS ENTER TO START', cx, 318, { align: 'center', color: 'white' }); // FireRed's PRESS START blink
       this.footer(ctx);
       return;
     }
@@ -71,21 +67,21 @@ export class TitleScene {
     const nav = this.nav;
     nav.begin(Engine.overlays.length > 0 || !!this.input);
     const bx = cx - 110, bw = 220;
-    let y = 262;
+    let y = 282;
     const save = loadRunSave();
     if (save) {
-      nav.button(ctx, 'continue', 'CONTINUE', bx, y, bw, 26, { color: THEME.green }, () => this.continue());
-      text(ctx, save.label || 'run in progress', cx, y + 27, { align: 'center', color: 'lime', font: 'small' });
-      y += 41;
-    }
-    nav.button(ctx, 'new', save ? 'NEW RUN' : 'START', bx, y, bw, 26, { color: THEME.play }, () => this.newRun(!!save));
-    y += 30;
+      nav.button(ctx, 'continue', 'CONTINUE', bx, y, bw, 24, { color: THEME.green }, () => this.continue());
+      text(ctx, save.label || 'run in progress', cx, y + 25, { align: 'center', color: 'lime', font: 'small' });
+      y += 40;
+    } else y += 14;
+    nav.button(ctx, 'new', save ? 'NEW RUN' : 'START', bx, y, bw, 24, { color: THEME.play }, () => this.newRun(!!save));
+    y += 28;
     nav.button(ctx, 'records', 'RECORDS', bx, y, 108, 22, { color: '#c09020', font: 'small' }, () => setScene(new RecordsScene()));
-    nav.button(ctx, 'settings', 'SETTINGS', bx + 112, y, 108, 22, { color: '#506080', font: 'small' }, () => pushOverlay(new SettingsModal()));
-    // corners: how to play, version + patch notes
-    nav.button(ctx, 'about', 'HOW TO PLAY', 8, 6, 96, 20, { color: '#3a7a58', font: 'small' }, () => pushOverlay(new AboutModal()));
-    const vl = `${VERSION} · PATCH NOTES`, vw = measure(vl, 'small');
-    nav.button(ctx, 'notes', vl, W - vw - 20, 6, vw + 12, 20, { color: '#405070', font: 'small' }, () => pushOverlay(new PatchNotesModal()));
+    nav.button(ctx, 'settings', 'SETTINGS', bx + 112, y, 108, 22, { font: 'small' }, () => pushOverlay(new SettingsModal()));
+    // top right, over the black above the band: how to play, version + patch notes
+    const vl = `${VERSION} · PATCH NOTES`, vw = measure(vl, 'small') + 16;
+    nav.button(ctx, 'notes', vl, W - vw - 10, 20, vw, 20, { font: 'small' }, () => pushOverlay(new PatchNotesModal()));
+    nav.button(ctx, 'about', 'HOW TO PLAY', W - vw - 120, 20, 104, 20, { color: THEME.green, font: 'small' }, () => pushOverlay(new AboutModal()));
     this.account(ctx, nav);
     nav.end();
 
@@ -94,7 +90,7 @@ export class TitleScene {
 
     const status = Cloud.error && !Cloud.email ? Cloud.error : !Cloud.url ? 'Saves are kept in this browser.' : !Cloud.email ? 'Saves are kept in this browser. Sign in to sync them to the cloud.' : Cloud.status === 'offline' ? 'Cloud offline - saving locally, will sync later.' : Cloud.status === 'syncing' ? 'Syncing...' : 'Synced to the cloud.';
     const m = this.msg || status;
-    text(ctx, m.replace(/@/g, ' at '), W / 2, H - 30, { align: 'center', font: 'small', color: this.msg ? 'lime' : 'gray' });
+    text(ctx, m.replace(/@/g, ' at '), W / 2, H - 38, { align: 'center', font: 'small', color: this.msg ? 'lime' : 'gray' });
     this.footer(ctx);
     drawTips(ctx);
   }
@@ -102,26 +98,27 @@ export class TitleScene {
   // Sign in / signed-in account / invite link, under Charizard.
   account(ctx, nav) {
     if (!Cloud.url) return;
-    const ax = 492, aw = 236, acx = ax + aw / 2, y = 336;
+    const ax = 500, aw = 236, acx = ax + aw / 2, y = 298;
     if (Cloud.email) {
+      const coopLabel = Coop.role === 'host' && Coop.status === 'connected' ? 'CO-OP: PLAYER 2 CONNECTED' : Coop.role === 'host' && Coop.code ? `CO-OP CODE ${Coop.code} (SHOW LINK)` : 'HOST CO-OP (BETA)';
+      nav.button(ctx, 'coop', coopLabel, ax, y, aw, 20, { color: THEME.play, font: 'small' }, () => this.hostCoop());
       const who = Cloud.me?.name ? `TRAINER ${Cloud.me.name}` : 'SIGNED IN';
-      text(ctx, who, acx, y - 2, { align: 'center', color: 'gold', font: 'small' });
-      text(ctx, Cloud.email.replace('@', ' at '), acx, y + 10, { align: 'center', color: 'whiteSoft', font: 'small' });
+      text(ctx, who, acx, y + 25, { align: 'center', color: 'gold', font: 'small' });
+      text(ctx, Cloud.email.replace('@', ' at '), acx, y + 37, { align: 'center', color: 'whiteSoft', font: 'small' });
       const inv = !!Cloud.me?.canInvite;
       const w = inv ? 112 : aw;
-      nav.button(ctx, 'signout', 'SIGN OUT', ax, y + 26, w, 20, { color: '#605070', font: 'small' }, () => signOut());
-      if (inv) nav.button(ctx, 'invite', 'MAKE INVITE LINK', ax + aw - 120, y + 26, 120, 20, { color: '#3a9a58', font: 'small' }, () => this.makeInvite());
-      const coopLabel = Coop.role === 'host' && Coop.status === 'connected' ? 'CO-OP: PLAYER 2 CONNECTED' : Coop.role === 'host' && Coop.code ? `CO-OP CODE ${Coop.code} (SHOW LINK)` : 'HOST CO-OP (BETA)';
-      nav.button(ctx, 'coop', coopLabel, ax, y - 50, aw, 20, { color: '#2a7a9a', font: 'small' }, () => this.hostCoop());
+      nav.button(ctx, 'signout', 'SIGN OUT', ax, y + 54, w, 20, { font: 'small' }, () => signOut());
+      if (inv) nav.button(ctx, 'invite', 'MAKE INVITE LINK', ax + aw - 120, y + 54, 120, 20, { color: THEME.green, font: 'small' }, () => this.makeInvite());
     } else {
-      text(ctx, 'Not signed in', acx, y + 8, { align: 'center', color: 'gray', font: 'small' });
-      nav.button(ctx, 'signin', 'SIGN IN WITH GOOGLE', ax, y + 26, aw, 20, { color: '#3060c0', font: 'small' }, () => signIn().catch(e => { this.msg = e.message; }));
+      text(ctx, 'Not signed in', acx, y + 36, { align: 'center', color: 'gray', font: 'small' });
+      nav.button(ctx, 'signin', 'SIGN IN WITH GOOGLE', ax, y + 54, aw, 20, { color: THEME.play, font: 'small' }, () => signIn().catch(e => { this.msg = e.message; }));
     }
   }
 
+  // on the dark red bar, where FireRed prints its copyright line
   footer(ctx) {
-    text(ctx, 'Fan project. Pokémon (c) Nintendo/Game Freak/Creatures. Sprites: PMDCollab (CC BY-NC).', 10, H - 16, { font: 'small', color: 'gray' });
-    if (this.started) text(ctx, `Runs ${G.meta.runs}  ·  Escapes ${G.meta.wins}`, W - 10, H - 16, { align: 'right', font: 'small', color: 'gray' });
+    text(ctx, 'Fan project. Pokémon (c) Nintendo/Game Freak/Creatures. Sprites: PMDCollab (CC BY-NC).', 10, H - 17, { font: 'small', color: ['#ffffff', '#5a0000'] });
+    if (this.started) text(ctx, `Runs ${G.meta.runs}  ·  Escapes ${G.meta.wins}`, W - 10, H - 17, { align: 'right', font: 'small', color: ['#ffffff', '#5a0000'] });
   }
 
   // Co-op (beta): open a room and share the link; then start or continue a run as usual.
@@ -197,26 +194,27 @@ export class SettingsModal extends Modal {
     const s = G.meta.settings;
     const w = 300, h = 212, x = (W - w) / 2, y = (H - h) / 2;
     panel(ctx, x, y, w, h);
-    text(ctx, 'SETTINGS', W / 2, y + 8, { align: 'center', color: 'white' });
+    text(ctx, 'SETTINGS', W / 2, y + 9, { align: 'center', color: 'blue' });
     const row = (key, label, val, cy, set) => {
-      text(ctx, label, x + 16, cy + 3, { color: 'white' });
-      text(ctx, `${Math.round(val * 10)}/10`, x + 206, cy + 3, { align: 'center', color: 'gold' });
-      this.btn(ctx, key + '-', '-', x + 160, cy, 24, 20, { color: '#506080' }, () => set(Math.max(0, Math.round(val * 10 - 1) / 10)));
-      this.btn(ctx, key + '+', '+', x + 230, cy, 24, 20, { color: '#506080' }, () => set(Math.min(1, Math.round(val * 10 + 1) / 10)));
+      text(ctx, label, x + 18, cy + 3, { color: 'dark' });
+      text(ctx, `${Math.round(val * 10)}/10`, x + 207, cy + 3, { align: 'center', color: 'blue' });
+      this.btn(ctx, key + '-', '-', x + 160, cy, 24, 20, {}, () => set(Math.max(0, Math.round(val * 10 - 1) / 10)));
+      this.btn(ctx, key + '+', '+', x + 230, cy, 24, 20, {}, () => set(Math.min(1, Math.round(val * 10 + 1) / 10)));
+    };
+    const toggle = (key, label, on, cy, onLabel, offLabel, fn) => {
+      text(ctx, label, x + 18, cy + 3, { color: 'dark' });
+      this.btn(ctx, key, on ? onLabel : offLabel, x + 176, cy, 62, 20, { color: on ? THEME.green : THEME.discard }, fn);
     };
     row('music', 'MUSIC', s.music, y + 32, v => { s.music = v; Sound.setMusicVolume(v); saveMeta(); });
     row('sfx', 'SOUND FX', s.sfx, y + 58, v => { s.sfx = v; Sound.setSfxVolume(v); saveMeta(); Sound.playSE('se_select'); });
-    text(ctx, 'SCREEN SHAKE', x + 16, y + 87, { color: 'white' });
-    this.btn(ctx, 'shake', s.shake ? 'ON' : 'OFF', x + 176, y + 84, 62, 20, { color: s.shake ? THEME.green : '#806060' }, () => { s.shake = s.shake ? 0 : 1; saveMeta(); });
-    text(ctx, 'HQ AUDIO', x + 16, y + 139, { color: 'white' });
-    const hq = s.hqAudio !== false;
-    this.btn(ctx, 'hq', hq ? 'ON' : 'GBA', x + 176, y + 136, 62, 20, { color: hq ? THEME.green : '#806060' }, () => { s.hqAudio = !hq; Sound.setHQ(s.hqAudio); saveMeta(); });
-    text(ctx, 'RUMBLE (PAD)', x + 16, y + 113, { color: 'white' });
+    toggle('shake', 'SCREEN SHAKE', !!s.shake, y + 84, 'ON', 'OFF', () => { s.shake = s.shake ? 0 : 1; saveMeta(); });
     const rumble = s.rumble !== false;
-    this.btn(ctx, 'rumble', rumble ? 'ON' : 'OFF', x + 176, y + 110, 62, 20, { color: rumble ? THEME.green : '#806060' }, () => { s.rumble = !rumble; Input.rumbleOn = s.rumble; saveMeta(); Input.rumble(200, 0.5, 0.5); });
-    this.btn(ctx, 'close', 'CLOSE', W / 2 - 45, y + h - 32, 90, 22, { color: '#506080' }, () => this.close());
+    toggle('rumble', 'RUMBLE (PAD)', rumble, y + 110, 'ON', 'OFF', () => { s.rumble = !rumble; Input.rumbleOn = s.rumble; saveMeta(); Input.rumble(200, 0.5, 0.5); });
+    const hq = s.hqAudio !== false;
+    toggle('hq', 'HQ AUDIO', hq, y + 136, 'ON', 'GBA', () => { s.hqAudio = !hq; Sound.setHQ(s.hqAudio); saveMeta(); });
+    this.btn(ctx, 'close', 'CLOSE', W / 2 - 45, y + h - 36, 90, 22, {}, () => this.close());
     this.nav.end();
-    text(ctx, 'ESC / X: close', x + w - 10, y + h - 14, { align: 'right', color: 'gray', font: 'small' });
+    text(ctx, 'ESC / X: close', x + w - 14, y + h - 30, { align: 'right', color: 'dark', font: 'small' });
   }
 }
 
@@ -233,16 +231,16 @@ export class PatchNotesModal extends Modal {
     const x = 40, y = 8, w = W - 80, h = H - 16;
     panel(ctx, x, y, w, h);
     const p = this.page || 0, notes = PATCH_NOTES[p];
-    text(ctx, `PATCH NOTES  ${notes.v}`, W / 2, y + 8, { align: 'center', color: 'gold', scale: 1 });
-    if (notes.v === VERSION) text(ctx, 'current version', x + w - 12, y + 10, { align: 'right', color: 'lime', font: 'small' });
-    scrollArea(ctx, this, x + 8, y + 28, w - 16, y + h - 34, cy => drawSections(ctx, notes.sections, x + 16, cy, w - 40));
+    text(ctx, `PATCH NOTES  ${notes.v}`, W / 2, y + 9, { align: 'center', color: 'blue' });
+    if (notes.v === VERSION) text(ctx, 'current version', x + w - 16, y + 11, { align: 'right', color: 'green', font: 'small' });
+    scrollArea(ctx, this, x + 10, y + 28, w - 20, y + h - 40, cy => drawSections(ctx, notes.sections, x + 18, cy, w - 44));
     // mouse only (the keyboard uses left/right and confirm, so up/down can scroll)
     this.nav.begin(); this.nav.end();
-    const by = y + h - 26;
-    if (p + 1 < PATCH_NOTES.length && buttonAt(ctx, 'OLDER', x + 12, by, 74)) { this.page = p + 1; this.scroll = 0; }
-    if (p > 0 && buttonAt(ctx, 'NEWER', x + 92, by, 74)) { this.page = p - 1; this.scroll = 0; }
-    text(ctx, 'LEFT/RIGHT: versions', x + w - 104, by + 5, { align: 'right', color: 'gray', font: 'small' });
-    if (buttonAt(ctx, 'CLOSE', x + w - 94, by, 82)) this.close();
+    const by = y + h - 30;
+    if (p + 1 < PATCH_NOTES.length && buttonAt(ctx, 'OLDER', x + 14, by, 74)) { this.page = p + 1; this.scroll = 0; }
+    if (p > 0 && buttonAt(ctx, 'NEWER', x + 94, by, 74)) { this.page = p - 1; this.scroll = 0; }
+    text(ctx, 'LEFT/RIGHT: versions', x + w - 108, by + 4, { align: 'right', color: 'dark', font: 'small' });
+    if (buttonAt(ctx, 'CLOSE', x + w - 98, by, 82)) this.close();
     drawTips(ctx);
   }
 }
@@ -281,14 +279,14 @@ export class AboutModal extends Modal {
     this.dim(ctx);
     const x = 40, y = 8, w = W - 80, h = H - 16;
     panel(ctx, x, y, w, h);
-    text(ctx, 'HOW TO PLAY', W / 2, y + 8, { align: 'center', color: 'gold' });
-    scrollArea(ctx, this, x + 8, y + 28, w - 16, y + h - 34, cy => drawSections(ctx, ABOUT, x + 16, cy, w - 40));
+    text(ctx, 'HOW TO PLAY', W / 2, y + 9, { align: 'center', color: 'blue' });
+    scrollArea(ctx, this, x + 10, y + 28, w - 20, y + h - 40, cy => drawSections(ctx, ABOUT, x + 18, cy, w - 44));
     this.nav.begin(); this.nav.end();
-    text(ctx, 'ENTER / ESC: close', x + w - 104, y + h - 21, { align: 'right', color: 'gray', font: 'small' });
-    if (buttonAt(ctx, 'CLOSE', x + w - 94, y + h - 26, 82)) this.close();
+    text(ctx, 'ENTER / ESC: close', x + w - 108, y + h - 26, { align: 'right', color: 'dark', font: 'small' });
+    if (buttonAt(ctx, 'CLOSE', x + w - 98, y + h - 30, 82)) this.close();
     drawTips(ctx);
   }
 }
 
 // a small modal footer button (mouse)
-function buttonAt(ctx, label, x, y, w) { return button(ctx, label, x, y, w, 20, { color: '#506080', font: 'small' }); }
+function buttonAt(ctx, label, x, y, w) { return button(ctx, label, x, y, w, 20, { font: 'small' }); }

@@ -1,9 +1,9 @@
 // Room flow helpers: rewards, prompts (level-up moves, evolution), shop, center, Deoxys, hub,
 // pause, death, victory and moving between rooms.
-import { Engine, W, H, setScene, pushOverlay, popOverlay } from '../engine/core.js';
+import { Engine, W, H, setScene, pushOverlay, popOverlay, inRect } from '../engine/core.js';
 import { img, ready, preload, tinted } from '../engine/assets.js';
 import { text, measure, wrap } from '../engine/font.js';
-import { pixBox, rect, windowFrame } from '../engine/ui.js';
+import { pixBox, rect, windowFrame, frBox, frCursor } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { D, TYPE_COLORS } from '../game/data.js';
@@ -17,7 +17,7 @@ import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT, HEAT
 import { BOSSES } from '../game/bosses.js';
 import { candidates } from '../game/rooms.js';
 import { preloadPmd, drawPmd } from '../game/pmd.js';
-import { say, choose, chooseBoth, Banner, drawPortrait, ICON, drawOW, Choice } from './ui.js';
+import { say, choose, chooseBoth, Banner, drawPortrait, ICON, drawOW, Choice, fitLines } from './ui.js';
 import { Coop, asP2, coopHeal, coopRefreshP2, coopWrapHooks, coopTeam, coopSendRun, coopResetP2 } from '../game/coop.js';
 recordRun.after = entry => coopSendRun(entry, Cloud.me?.name || 'P1');
 import { drawBA } from '../game/render.js';
@@ -274,19 +274,21 @@ function drawOwnedCompact(ctx, run, slot, x, y, w) {
 function drawOwnedBoons(ctx, run, slot) {
   const x = 12, y = 40, w = 264;
   const list = [...run.boons].sort((a, b) => Object.keys(SLOT_NAMES).indexOf(BOONS[a.key].slot) - Object.keys(SLOT_NAMES).indexOf(BOONS[b.key].slot));
-  const rowH = list.length > 7 ? 24 : 40, h = Math.max(60, 26 + list.length * rowH + 4);
-  pixBox(ctx, x, y, w, Math.min(h, H - 80), '#141824', '#404860', 3);
-  text(ctx, 'YOUR BLESSINGS', x + 10, y + 7, { color: 'gold', font: 'small' });
-  if (!list.length) text(ctx, 'None yet.', x + 10, y + 26, { color: 'gray', font: 'small' });
+  const rowH = list.length > 7 ? 24 : 38, maxH = H - 80, h = Math.min(maxH, Math.max(52, 32 + list.length * rowH + 4));
+  windowFrame(ctx, x, y, w, h, 'type1');
+  text(ctx, 'YOUR BLESSINGS', x + 12, y + 9, { color: 'blue', font: 'small' });
+  if (!list.length) text(ctx, 'None yet.', x + 12, y + 26, { color: 'dark', font: 'small' });
   list.forEach((b, i) => {
-    const def = BOONS[b.key], rar = RARITY[b.rarity], ry = y + 24 + i * rowH;
-    if (ry + rowH > H - 80) return;
+    const def = BOONS[b.key], rar = RARITY[b.rarity], ry = y + 26 + i * rowH;
+    if (ry + rowH > y + h - 6) return;
     const repl = slot && slot !== 'passive' && def.slot === slot;
-    if (repl) pixBox(ctx, x + 4, ry - 2, w - 8, rowH - 2, '#401818', '#e04040', 2);
-    text(ctx, def.name, x + 10, ry, { font: 'small', color: [rar.color, '#202020'] });
+    if (repl) frBox(ctx, x + 6, ry - 3, w - 12, rowH - 2, 'red', '#fff0e8');
+    const ball = img(`gfx/ui/balls/${rar.key}.png`); // the rarity's ball
+    if (ready(ball)) ctx.drawImage(ball, 0, 0, 16, 16, x + 10, ry - 2, 16, 16);
+    text(ctx, def.name, x + 28, ry, { font: 'small', color: 'black' });
     const tag = repl ? 'REPLACED' : `${SLOT_NAMES[def.slot]}${b.level > 1 ? ' Lv' + b.level : ''}`;
-    text(ctx, tag, x + w - 10, ry, { align: 'right', font: 'small', color: repl ? 'red' : 'gray' });
-    if (rowH > 30) text(ctx, wrap(def.desc(boonInstance(run, b)), w - 20, 'small')[0] || '', x + 10, ry + 12, { font: 'small', color: 'whiteSoft' });
+    text(ctx, tag, x + w - 12, ry, { align: 'right', font: 'small', color: repl ? 'red' : 'blue' });
+    if (rowH > 30) text(ctx, fitLines(def.desc(boonInstance(run, b)), w - 40, 1)[0] || '', x + 28, ry + 12, { font: 'small', color: 'dark' });
   });
 }
 
@@ -354,14 +356,15 @@ async function assignMove(scene, move, title) {
   const nc = moveCard(move);
   const i = await choose(title, cards, { cardH: 46, top: 150, header: () => {}, footer: 'Learning a move means forgetting the one in that slot.', drawTop: ctx => {
     // the new move, shown big above the choices
-    const bx = (W - 460) / 2, by = 34;
-    text(ctx, title, W / 2, by - 24, { align: 'center', color: 'white' });
-    pixBox(ctx, bx, by, 460, 96, '#fffef0', nc.accent, 3);
-    text(ctx, 'NEW MOVE', bx + 10, by + 6, { font: 'small', color: 'green' });
-    const im = img(nc.icon); if (ready(im)) ctx.drawImage(im, bx + 10, by + 24);
-    text(ctx, newName, bx + 50, by + 21, { color: 'dark', scale: 2 });
-    text(ctx, nc.sub, bx + 10, by + 50, { font: 'small', color: nc.subColor });
-    wrap(nc.desc || '', 440, 'small').slice(0, 2).forEach((ln, j) => text(ctx, ln, bx + 10, by + 64 + j * 12, { font: 'small', color: 'dark' }));
+    const bx = (W - 460) / 2, by = 36;
+    text(ctx, title, W / 2, by - 26, { align: 'center', color: 'white' });
+    windowFrame(ctx, bx, by, 460, 100, 'type1');
+    rect(ctx, bx + 6, by + 6, 3, 88, nc.accent);
+    text(ctx, 'NEW MOVE', bx + 16, by + 9, { font: 'small', color: 'green' });
+    const im = img(nc.icon); if (ready(im)) ctx.drawImage(im, bx + 16, by + 30);
+    text(ctx, newName, bx + 56, by + 24, { color: 'dark', scale: 2 });
+    text(ctx, nc.sub, bx + 16, by + 54, { font: 'small', color: nc.subColor });
+    fitLines(nc.desc, 428, 2).forEach((ln, j) => text(ctx, ln, bx + 16, by + 67 + j * 11, { font: 'small', color: 'dark' }));
   } });
   if (i >= 0 && i < 3) { learnMove(run, move, order[i]); Sound.playFanfare('mus_level_up'); refreshPlayer(scene); }
   else if (!run.known.includes(move)) run.known.push(move);
@@ -546,14 +549,66 @@ export async function openShop(scene) {
   const run = G.run;
   scene.stock ??= shopStock(run, scene.spec?.kind === 'center');
   await say([{ text: 'Hi there! May I help you?', name: 'CLERK' }]);
+  let start = 0;
   while (true) {
-    const cards = scene.stock.map(s => ({ title: s.name, sub: s.sold ? 'SOLD' : `¥${s.price}`, subColor: run.money >= s.price ? 'green' : 'red', desc: s.desc, icon: ICON.item(s.key), accent: '#3070c0', disabled: s.sold || run.money < s.price }));
-    const i = await choose(`POKé MART   ¥${run.money}`, cards, { cardH: 36, canSkip: true, skipLabel: 'LEAVE (X)' });
-    if (i < 0) break;
+    const cards = [...scene.stock.map(s => ({ title: s.name, item: s, disabled: s.sold || run.money < s.price })), { title: 'CANCEL', cancel: true }];
+    const i = await choose('POKé MART', cards, { custom: SHOP_UI, hidesHud: true, canSkip: true, skipLabel: 'LEAVE (X)', start });
+    if (i < 0 || cards[i].cancel) break;
+    start = i;
     const s = scene.stock[i];
     run.money -= s.price; s.sold = true; Sound.playSE('se_shop');
     await s.buy(scene);
   }
+}
+
+// FireRed's POKé MART buy screen at 2x (gfx/ui/shop/shop_frame.png), drawn for a Choice overlay (same input, scrolling
+// and bot interface as the other menus): the MONEY window top left, the lined item list (6 rows of 32px, scrolling,
+// CANCEL last) top right, and the blue description bar with the item's icon along the bottom.
+const SHOP_FRAME = 'gfx/ui/shop/shop_frame.png', SHOP_ROWS = 6, SHOP_LIST = { x: W - 318 - 14, y: 14 };
+const SHOP_UI = {
+  view(c) { const total = c.cards.length * 32, h = SHOP_ROWS * 32; return { y0: SHOP_LIST.y + 14, h, ch: 32, gap: 0, total, max: Math.max(0, total - h) }; },
+  layout(c) { const sc = Math.round(c.scroll / 32) * 32; return c.cards.map((_, i) => ({ x: SHOP_LIST.x + 14, y: SHOP_LIST.y + 14 + i * 32 - sc, w: 290, h: 32 })); },
+  draw(ctx, c) {
+    const run = G.run, fr = img(SHOP_FRAME), ok = ready(fr), L = SHOP_LIST, V = SHOP_UI.view(c), R = SHOP_UI.layout(c);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, W, H);
+    // MONEY window
+    windowFrame(ctx, 14, 14, 196, 76, 'std', 2);
+    text(ctx, 'MONEY', 34, 28, { color: 'dark', scale: 2 });
+    text(ctx, `¥${run.money}`, 190, 56, { color: 'dark', scale: 2, align: 'right' });
+    // the item list: name and price per row, the red arrow (2x) on the selected one
+    if (ok) ctx.drawImage(fr, 80, 1, 159, 110, L.x, L.y, 318, 220); else windowFrame(ctx, L.x, L.y, 318, 220, 'type1', 2);
+    c.cards.forEach((it, i) => {
+      const r = R[i];
+      if (r.y < V.y0 || r.y + r.h > V.y0 + V.h) return;
+      const s = it.item, poor = s && run.money < s.price;
+      if (i === c.sel) frCursor2x(ctx, r.x + 1, r.y + 4);
+      text(ctx, it.title, r.x + 36, r.y + 2, { color: s?.sold ? 'gray' : 'dark', scale: 2 });
+      if (s) text(ctx, s.sold ? 'SOLD' : `¥${s.price}`, r.x + r.w - 6, r.y + 2, { color: s.sold ? 'gray' : poor ? 'red' : 'dark', scale: 2, align: 'right' });
+    });
+    // FireRed's scroll arrows, bobbing, when there is more above / below
+    const bob = Math.floor(c.t * 4) % 2 * 2, ax = L.x + 159 - 8;
+    if (R[0].y < V.y0) { const im = img('gfx/ui/cursors/scroll_up.png'); if (ready(im)) ctx.drawImage(im, ax, L.y - 6 - bob, 16, 16); }
+    if (R[R.length - 1].y + 32 > V.y0 + V.h) { const im = img('gfx/ui/cursors/scroll_down.png'); if (ready(im)) ctx.drawImage(im, ax, L.y + 220 - 12 + bob, 16, 16); }
+    // the description bar: its left end (the icon box) and its body stretched to the screen's width
+    const by = H - 96, it = c.cards[c.sel];
+    if (ok) { ctx.drawImage(fr, 0, 112, 40, 48, 0, by, 80, 96); ctx.drawImage(fr, 60, 112, 1, 48, 80, by, W - 80, 96); }
+    else { rect(ctx, 0, by, W, 96, '#007bc6'); rect(ctx, 12, by + 20, 56, 56, '#ffffff'); }
+    if (!it?.item) text(ctx, 'Quit shopping.', 88, by + 14, { color: 'white', scale: 2 });
+    else {
+      const ic = img(ICON.item(it.item.key)); if (ready(ic)) ctx.drawImage(ic, 16, by + 24, 48, 48);
+      wrap(it.item.desc, (W - 104) / 2).slice(0, 2).forEach((ln, j) => text(ctx, ln, 88, by + 14 + j * 30, { color: 'white', scale: 2 }));
+    }
+    // LEAVE (the Choice's skip button: X / B / click)
+    const b = c.skipRect(), on = inRect(b.x, b.y, b.w, b.h);
+    frBox(ctx, b.x, b.y, b.w, b.h, 'blue', on ? '#fff8d0' : '#ffffff');
+    text(ctx, b.label, b.x + b.w / 2, b.y + 4, { align: 'center', font: 'small', color: 'dark' });
+    text(ctx, `${Input.label('confirm')}: buy`, b.x - 10, b.y + 5, { color: ['#d6e7f7', '#00527b'], font: 'small', align: 'right' });
+  },
+};
+// the red arrow at 2x (the world's scale) for the 2x FireRed screens
+function frCursor2x(ctx, x, y) {
+  const im = img('gfx/ui/cursors/red_arrow.png'), dx = Math.floor(Engine.time * 4) % 2 * 2;
+  if (ready(im)) ctx.drawImage(im, 0, 0, 16, 12, Math.round(x) + dx, Math.round(y), 32, 24);
 }
 
 // Co-op: player 2 talks to an NPC. The shop and Nurse Joy work for P2 (shared money; purchases are P2's),
@@ -647,10 +702,13 @@ class PauseOverlay {
   update() {
     Input.poll();
     const items = this.items();
-    if (Input.justPressed('up')) this.sel = (this.sel + items.length - 1) % items.length;
-    if (Input.justPressed('down')) this.sel = (this.sel + 1) % items.length;
-    if (Input.justPressed('pause') || Input.justPressed('back')) { popOverlay(this); return; }
-    if (Input.justPressed('confirm')) items[this.sel].fn();
+    if (Input.justPressed('up')) { this.sel = (this.sel + items.length - 1) % items.length; Sound.playSE('se_select'); }
+    if (Input.justPressed('down')) { this.sel = (this.sel + 1) % items.length; Sound.playSE('se_select'); }
+    if (Input.justPressed('pause') || Input.justPressed('back') || Engine.mouse.rclicked) { popOverlay(this); return; }
+    // the mouse: hover picks a row, a click uses it
+    items.forEach((it, i) => { if (inRect(20, 44 + i * 18, 220, 18)) { if (Engine.mouse.x !== this.mx || Engine.mouse.y !== this.my) this.sel = i; if (Engine.mouse.clicked) { Sound.playSE('se_select'); it.fn(); } } });
+    this.mx = Engine.mouse.x; this.my = Engine.mouse.y;
+    if (Input.justPressed('confirm')) { Sound.playSE('se_select'); items[this.sel].fn(); }
   }
   items() {
     return [
@@ -669,7 +727,7 @@ class PauseOverlay {
     const mx = 12, my = 12, mw = 236, mh = 36 + items.length * 18 + 8;
     windowFrame(ctx, mx, my, mw, mh, 'type1');
     text(ctx, 'PAUSED', mx + 14, my + 10, { color: 'blue' });
-    items.forEach((it, i) => { const iy = my + 32 + i * 18; if (i === this.sel) { const im = img('gfx/ui/cursors/red_arrow.png'); if (ready(im)) ctx.drawImage(im, mx + 12, iy + 2); } text(ctx, it.label, mx + 30, iy, { color: 'dark' }); });
+    items.forEach((it, i) => { const iy = my + 32 + i * 18; if (i === this.sel) frCursor(ctx, mx + 12, iy + 1); text(ctx, it.label, mx + 32, iy, { color: 'dark' }); });
     // controls
     const ctl = Input.usingPad // Xbox pad: Hades' layout
       ? ['Left stick: move   Right stick: aim', 'X: ATTACK   Y: SPECIAL   B: CAST', 'A: DASH', 'RB: talk / interact', 'RT: call your partner', 'LT: throw POKé BALL (weak wild foes)', 'VIEW: blessings   START: pause']
@@ -738,16 +796,31 @@ class SummaryOverlay {
   enter() { Input.clear(); }
   update(dt) { Input.poll(); this.t += dt; if (this.t > 1.2 && (Input.justPressed('confirm') || Engine.mouse.clicked)) { popOverlay(this); toHub(); } }
   draw(ctx) {
+    // FireRed's blackout: the screen goes dark, then the result in a window and the line in the battle textbox
     const run = G.run, k = Math.min(1, this.t * 2);
     ctx.fillStyle = `rgba(0,0,0,${0.85 * k})`; ctx.fillRect(0, 0, W, H);
-    text(ctx, `${D.species[run.species].name} fainted!`, W / 2, 80, { align: 'center', color: 'white', scale: 2 });
-    text(ctx, 'You blacked out... and woke up in PROF. OAK\'s lab.', W / 2, 120, { align: 'center', color: 'whiteSoft' });
-    const lines = [
-      `Reached: ${areaOf(run).name} (${ACTS[actOf(run.biome)].name}), room ${run.roomInBiome + 1}`, `Level ${run.level}   KOs ${run.kills}   Time ${fmtTime(run.time)}`,
-      `STARDUST earned: ${run.stardustGained}  (total ${G.meta.stardust})`, `Blessings: ${run.boons.map(b => BOONS[b.key].name).join(', ') || 'none'}`,
+    if (this.t < 0.3) return;
+    const ww = 480, wx = (W - ww) / 2, wy = 46;
+    windowFrame(ctx, wx, wy, ww, 200, 'type1');
+    drawPortrait(ctx, D.species[run.species].dex, wx + 18, wy + 18, 'Pain');
+    text(ctx, `${D.species[run.species].name} fainted!`, wx + 72, wy + 16, { color: 'dark', scale: 2 });
+    text(ctx, `Lv${run.level}   ${run.kills} KOs   ${fmtTime(run.time)}${run.heat ? `   HEAT ${run.heat}` : ''}`, wx + 72, wy + 46, { color: 'blue', font: 'small' });
+    const rows = [
+      ['REACHED', `${areaOf(run).name} (${ACTS[actOf(run.biome)].name}), room ${run.roomInBiome + 1}`],
+      ['STARDUST', `+${run.stardustGained}   (total ${G.meta.stardust})`],
+      ['PARTNER', run.partner ? `${D.species[run.partner.species].name} Lv${run.partner.level}` : 'none caught'],
     ];
-    lines.forEach((l, i) => text(ctx, l, W / 2, 170 + i * 20, { align: 'center', color: 'white', font: i === 3 ? 'small' : 'normal' }));
-    if (this.t > 1.2) text(ctx, 'Press ENTER', W / 2, H - 50, { align: 'center', color: 'gold', alpha: 0.5 + 0.5 * Math.sin(this.t * 4) });
+    rows.forEach(([a, b], i) => { text(ctx, a, wx + 18, wy + 74 + i * 18, { color: 'blue', font: 'small' }); text(ctx, b, wx + 96, wy + 72 + i * 18, { color: 'dark' }); });
+    text(ctx, 'BLESSINGS', wx + 18, wy + 128, { color: 'blue', font: 'small' });
+    fitLines(run.boons.map(b => BOONS[b.key].name).join(', ') || 'none', ww - 116, 3).forEach((l, i) => text(ctx, l, wx + 96, wy + 128 + i * 12, { color: 'dark', font: 'small' }));
+    const cr = Cloud.lastResult; // the run's score and whether it reached the cloud
+    if (cr) text(ctx, cr.status === 'saved' ? `Saved online · score ${(cr.score || 0).toLocaleString()}` : cr.status === 'error' ? `Score ${(cr.score || 0).toLocaleString()} · not uploaded` : cr.status === 'local' ? `Score ${(cr.score || 0).toLocaleString()}` : 'Uploading run...', wx + ww - 16, wy + 178, { color: 'green', font: 'small', align: 'right' });
+    // the battle textbox, as when the player blacks out
+    const tb = img('gfx/ui/battle/textbox.png'), ty = H - 112;
+    if (ready(tb)) ctx.drawImage(tb, wx, ty, ww, 96); else windowFrame(ctx, wx, ty, ww, 96, 'std');
+    text(ctx, 'You blacked out...', wx + 22, ty + 18, { color: 'white', scale: 2 });
+    text(ctx, "and woke up in PROF. OAK's lab.", wx + 22, ty + 50, { color: 'white', scale: 2 });
+    if (this.t > 1.2) { const im = img('gfx/ui/cursors/text_advance_arrow.png'); if (ready(im)) ctx.drawImage(im, (Math.floor(this.t * 6) % 4) * 10, 0, 10, 12, wx + ww - 40, ty + 64, 20, 24); }
   }
 }
 export const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -762,15 +835,23 @@ class VictoryScene {
     ctx.fillStyle = '#101828'; ctx.fillRect(0, 0, W, H);
     if (ready(im)) ctx.drawImage(im, (W - 480) / 2, 20, 480, 320);
     const team = run.coopTeam;
-    ctx.save(); ctx.scale(3, 3); drawPmd(ctx, D.species[run.species].dex, team ? W / 6 - 34 : W / 6, 50, { anim: 'Idle', t: this.t });
-    if (team) drawPmd(ctx, D.species[team.species].dex, W / 6 + 34, 50, { anim: 'Idle', t: this.t, dir: 0 });
+    // the POKéMON at 2x like the world (x1/x2 scaling only): yours in the middle, the partner beside it
+    ctx.save(); ctx.scale(2, 2);
+    drawPmd(ctx, D.species[run.species].dex, team ? W / 4 - 40 : W / 4, 92, { anim: 'Idle', t: this.t });
+    if (team) drawPmd(ctx, D.species[team.species].dex, W / 4 + 40, 92, { anim: 'Idle', t: this.t, dir: 0 });
+    if (run.partner) drawPmd(ctx, D.species[run.partner.species].dex, team ? W / 4 - 110 : W / 4 + 70, 104, { anim: 'Idle', t: this.t });
+    if (team?.partner) drawPmd(ctx, D.species[team.partner].dex, W / 4 + 110, 104, { anim: 'Idle', t: this.t });
     ctx.restore();
-    if (run.partner) { ctx.save(); ctx.scale(2, 2); drawPmd(ctx, D.species[run.partner.species].dex, team ? W / 4 - 100 : W / 4 + 60, 85, { anim: 'Idle', t: this.t }); ctx.restore(); }
-    if (team?.partner) { ctx.save(); ctx.scale(2, 2); drawPmd(ctx, D.species[team.partner].dex, W / 4 + 100, 85, { anim: 'Idle', t: this.t }); ctx.restore(); }
-    text(ctx, 'HALL OF FAME', W / 2, 24, { align: 'center', color: 'gold', scale: 2 });
-    text(ctx, team ? `${D.species[run.species].name} and ${team.name}'s ${D.species[team.species].name} calmed MEWTWO and escaped!` : `${D.species[run.species].name} calmed MEWTWO and escaped CERULEAN CAVE!`, W / 2, H - 110, { align: 'center', color: 'white' });
-    text(ctx, `Level ${run.level}   Time ${fmtTime(run.time)}   KOs ${run.kills}   Wins ${G.meta.wins}`, W / 2, H - 88, { align: 'center', color: 'whiteSoft' });
-    if (this.t > 3) text(ctx, 'Press ENTER to return to the lab', W / 2, H - 50, { align: 'center', color: 'gold', alpha: 0.5 + 0.5 * Math.sin(this.t * 4) });
+    const title = 'HALL OF FAME', tw = measure(title) * 2 + 40;
+    windowFrame(ctx, (W - tw) / 2, 14, tw, 44, 'type1');
+    text(ctx, title, W / 2, 22, { align: 'center', color: 'dark', scale: 2 });
+    // the battle textbox along the bottom, FireRed's white text
+    const bx = (W - 480) / 2, by = H - 100, tb = img('gfx/ui/battle/textbox.png');
+    if (ready(tb)) ctx.drawImage(tb, bx, by, 480, 96); else windowFrame(ctx, bx, by, 480, 96, 'std');
+    const msg = team ? `${D.species[run.species].name} and ${team.name}'s ${D.species[team.species].name} calmed MEWTWO and escaped!` : `${D.species[run.species].name} calmed MEWTWO and escaped CERULEAN CAVE!`;
+    fitLines(msg, 436, 2, 'normal').forEach((l, i) => text(ctx, l, bx + 22, by + 16 + i * 18, { color: 'white' }));
+    text(ctx, `Level ${run.level}   Time ${fmtTime(run.time)}   KOs ${run.kills}   Wins ${G.meta.wins}`, bx + 22, by + 58, { color: ['#d6e7f7', '#424242'], font: 'small' });
+    if (this.t > 3) { const im = img('gfx/ui/cursors/text_advance_arrow.png'); if (ready(im)) ctx.drawImage(im, (Math.floor(this.t * 6) % 4) * 10, 0, 10, 12, bx + 440, by + 62, 20, 24); }
   }
 }
 
@@ -807,7 +888,7 @@ async function rivalTalk(scene) {
   const max = Math.min(HEAT.length - 1, (G.meta.maxHeatWon ?? -1) + 1);
   const cards = [];
   for (let h = 0; h <= max; h++) cards.push({ title: `HEAT ${h}`, sub: h ? `+${h * 10}% STARDUST` : '', desc: h ? HEAT.slice(1, h + 1).join(' · ') : 'The normal rules.', accent: h ? '#e04020' : '#808080', badge: h <= (G.meta.maxHeatWon ?? -1) ? 'CLEARED' : '', badgeColor: '#30a050' });
-  const i = await choose('Choose your HEAT', cards, { cardH: 44, canSkip: true, skipLabel: 'CANCEL (X)', footer: 'Each level adds the rules of the ones before it.' });
+  const i = await choose('Choose your HEAT', cards, { cardH: 46, canSkip: true, skipLabel: 'CANCEL (X)', footer: 'Each level adds the rules of the ones before it.' });
   if (i < 0) return;
   G.meta.heat = i; saveMeta();
   newRun(G.meta.lastStarter); refreshPlayer(scene); scene.world.player.brain = hubBrain(scene.world.player.brain);
@@ -821,8 +902,11 @@ function rivalLine() {
 }
 
 export function drawHubHints(ctx, scene) {
-  text(ctx, `STARDUST: ${G.meta.stardust}`, W - 12, 10, { align: 'right', color: [ '#c0e0ff', '#203040' ] });
-  text(ctx, 'Walk out the door to begin. ESC: pause/controls', W - 12, 26, { align: 'right', font: 'small', color: 'whiteSoft' });
+  if (Engine.overlays.length) return; // menus and dialogues cover the corner
+  const s = `STARDUST  ${G.meta.stardust}`, w = measure(s) + 22;
+  frBox(ctx, W - w - 4, 4, w, 24, 'type1', '#ffffff'); // like the HUD's money window
+  text(ctx, s, W - 15, 9, { align: 'right', color: 'blue' });
+  text(ctx, `Walk out the door to begin. ${Input.label('pause')}: pause/controls`, W - 8, 32, { align: 'right', font: 'small', color: 'whiteSoft' });
 }
 
 async function chooseStarter(scene) {
@@ -845,9 +929,9 @@ async function oakResearch(scene) {
   while (true) {
     const cards = RESEARCH.map(r => {
       const rk = rank(r.key), maxed = rk >= r.max, cost = r.cost[rk];
-      return { title: `${r.name}  ${'★'.repeat(rk)}${'·'.repeat(r.max - rk)}`, sub: maxed ? 'DONE' : `${cost} dust`, subColor: maxed ? 'gray' : G.meta.stardust >= cost ? 'green' : 'red', desc: `Now: ${rk ? r.desc(rk) : 'nothing'}${maxed ? '' : `   Next: ${r.desc(rk + 1)}`}`, icon: ICON.item(r.icon), accent: '#40a060', disabled: maxed || G.meta.stardust < cost };
+      return { title: r.name, badge: `RANK ${rk}/${r.max}`, badgeColor: maxed ? '#30a050' : rk ? '#3060c0' : '#606878', sub: maxed ? 'DONE' : `${cost} dust`, subColor: maxed ? 'gray' : G.meta.stardust >= cost ? 'green' : 'red', desc: `Now: ${rk ? r.desc(rk) : 'nothing'}${maxed ? '' : `   Next: ${r.desc(rk + 1)}`}`, icon: ICON.item(r.icon), accent: '#40a060', disabled: maxed || G.meta.stardust < cost };
     });
-    const i = await choose(`OAK's RESEARCH   STARDUST: ${G.meta.stardust}`, cards, { cardH: 40, canSkip: true, skipLabel: 'DONE (X)' });
+    const i = await choose(`OAK's RESEARCH   STARDUST: ${G.meta.stardust}`, cards, { cardH: 46, canSkip: true, skipLabel: 'DONE (X)' });
     if (i < 0) break;
     const r = RESEARCH[i];
     G.meta.stardust -= r.cost[rank(r.key)];
