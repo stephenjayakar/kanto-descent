@@ -259,7 +259,7 @@ const ABOUT = [
   ]],
   ['A RUN', [
     'Clear each room of foes, take the reward, then pick the next door. The icon above a door shows what’s behind it: legendary blessings, RARE CANDY, TMs, items, money, a Mart or a POKéMON CENTER.',
-    'Five areas, each ending in a boss: BROCK, MISTY, the GHOST of POKéMON TOWER, GIOVANNI and finally MEWTWO.',
+    'Three acts, five areas, each ending in a boss. Acts 1 and 2 each pick two of three areas (a different route every run); act 3 is CERULEAN CAVE and MEWTWO.',
     'Red markings on the ground show where a foe’s attack will land. Dash out of them!',
     'Level up, learn moves (pick a slot or skip) and evolve at the real levels.',
     'Blessings from ZAPDOS, ARTICUNO, MOLTRES, MEW, LUGIA and HO-OH upgrade your moves and dash. Two legends together can grant a duo blessing.',

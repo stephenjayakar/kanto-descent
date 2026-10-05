@@ -1,8 +1,22 @@
 // Game version and patch notes (shown from the title screen). Only cut a new version when asked.
-export const VERSION = 'v0.0.5';
+export const VERSION = 'v0.0.6';
 
 // Newest first. Each entry: { v, sections: [[TITLE, [lines]]] } (an empty title means no heading).
 export const PATCH_NOTES = [
+  {
+    v: 'v0.0.6',
+    sections: [
+      ['GRAPHICS POLISH', [
+        'The HUD is FireRed’s own: your healthbox with HP and EXP bars and status, move windows with type badges, and the CALL gauge. Bosses get the opponent healthbox, side by side when there are two. Player 2’s box in co-op matches.',
+        'Entering an area slides down FireRed’s map name sign. Rooms change with FireRed’s fades and battle wipes; bosses open with the Elite Four VS intro.',
+        'Attack warnings fill up as the hit approaches and flash just before it lands, with Lock-On brackets for strikes and growing shadows for falling attacks.',
+        'POKé BALLS really open: the ball pops, particles burst out and your partner grows from a white silhouette. Catches suck the target in and end with the capture stars. Fainted POKéMON sink into the ground.',
+        'Hits splash in the attack’s type colour, with a burst for critical hits and a ring for super effective ones.',
+        'The POKé MART is the real buy screen. The title, records, menus, blessing cards, pause, blackout and Hall of Fame use FireRed’s windows, and long card text no longer spills over.',
+        'Softer arena edges, NPCs that turn to face you, name tags that stay out of each other’s way, and a steadier camera that keeps bosses out from under their bars.',
+      ]],
+    ],
+  },
   {
     v: 'v0.0.5',
     sections: [
