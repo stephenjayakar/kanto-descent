@@ -525,11 +525,14 @@ function drawVfx(ctx, v, w) {
 
 // screen-space darkness vignette for caves/towers
 // (an ellipse matching the screen, so the sides aren't crushed while the top and bottom stay bright)
-export function drawVignette(ctx, W, H, strength = 0.5) {
-  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(W / H, 1);
+// (cx, cy: its centre, e.g. the player, kept near the middle of the screen)
+export function drawVignette(ctx, W, H, strength = 0.5, cx = W / 2, cy = H / 2) {
+  cx = Math.max(W * 0.3, Math.min(W * 0.7, cx)); cy = Math.max(H * 0.3, Math.min(H * 0.7, cy));
+  const sx = W / H;
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(sx, 1);
   const g = ctx.createRadialGradient(0, 0, H * 0.24, 0, 0, H * 0.72);
   g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.55, `rgba(0,0,0,${(strength * 0.4).toFixed(3)})`); g.addColorStop(1, `rgba(0,0,0,${strength})`);
-  ctx.fillStyle = g; ctx.fillRect(-H / 2, -H / 2, H, H);
+  ctx.fillStyle = g; ctx.fillRect(-cx / sx, -cy, W / sx, H);
   ctx.restore();
 }
 

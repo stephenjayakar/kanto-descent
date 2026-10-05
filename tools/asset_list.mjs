@@ -51,5 +51,7 @@ export async function listAssets() {
   const evoLine = new Set([...STARTERS.map(s => s.species), ...EEVEE_CHOICES, ...Object.values(SPECIAL_EVOS).map(([, into]) => into)]);
   for (let more = true; more;) { more = false; for (const k of [...evoLine]) for (const e of species[k]?.evolutions || []) if (!evoLine.has(e.into)) { evoLine.add(e.into); more = true; } }
   const keepFront = new Set([...evoLine].map(k => species[k]?.sprites?.front).filter(Boolean).map(f => 'gfx/pokemon/' + f));
+  // the boss mugshot (scenes/transitions.js) shows FireRed's GHOST and MEWTWO battle sprites
+  keepFront.add('gfx/pokemon/ghost/front.png'); if (species.MEWTWO?.sprites?.front) keepFront.add('gfx/pokemon/' + species.MEWTWO.sprites.front);
   return { files: files.filter(f => keepFront.has(f) || !/^gfx\/pokemon\/[^/]+\/(front|back)/.test(f)), dexes, layouts };
 }

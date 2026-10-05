@@ -171,7 +171,7 @@ export class Mugshot {
   }
   drawOpponent(ctx, x, y0, B) {
     const o = this.o;
-    if (o.pic) { const im = img(o.pic); if (ready(im)) ctx.drawImage(im, x, y0, B, B); return; }
+    if (o.pic) { const im = img(o.pic); if (ready(im)) { ctx.drawImage(im, x, y0, B, B); return; } if (!im._failed) return; }
     if (o.portrait) { // wild bosses: their portrait in a FireRed frame, or a silhouette while unidentified
       const path = `pmd/${o.portrait}/portrait_${o.emotion || 'Normal'}.png`;
       const im = o.silhouette ? tinted(path, '#281838') : img(path);

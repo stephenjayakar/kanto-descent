@@ -146,6 +146,7 @@ export class RoomScene {
       npc.emote = 1.0;
       await say([`${t.className} ${t.name} would like to battle!`], { pic: `gfx/trainers/${t.pic}.png` });
       Sound.playBGM('mus_vs_trainer');
+      this.blink = 0.36; // FireRed's battle intro: the screen blinks before the fight
       this.waveT = 0.2;
     };
   }
@@ -169,7 +170,8 @@ export class RoomScene {
       Sound.playBGM(def.music);
       // FireRed's Elite Four mugshot transition ("VS") instead of a banner; the world waits under it
       const me = D.species[this.run.species];
-      await mugshot({ pal: MUGSHOT_PAL[key], name, title: def.title, pic: tr ? `gfx/trainers/${tr.pic}.png` : null, portrait: def.sprite ? null : D.species[def.mons[0].species].dex, silhouette: name === 'GHOST', playerDex: me?.dex, playerName: me?.name });
+      const wildPic = name === 'GHOST' ? 'gfx/pokemon/ghost/front.png' : !tr && D.species[def.mons[0].species]?.sprites?.front ? `gfx/pokemon/${D.species[def.mons[0].species].sprites.front}` : null; // FireRed's battle sprites
+      await mugshot({ pal: MUGSHOT_PAL[key], name, title: def.title, pic: tr ? `gfx/trainers/${tr.pic}.png` : wildPic, portrait: D.species[def.mons[0].species].dex, playerDex: me?.dex, playerName: me?.name });
       const list = spawnBoss(this.world, key, this.bossSpawnAt);
       for (const b of list) { b.spawnT = 0.8; b.spawnMax = 0.8; Sound.playCry(b.species); }
       if (def.sprite) Sound.playSE('se_ball_open');
@@ -280,7 +282,8 @@ export class RoomScene {
     if (steps >= 4) this.acc = 0;
     this.updateCamera(dt);
     this.banners = this.banners.filter(b => b.update(dt));
-    if (this.popup && !this.popup.update(dt)) this.popup = null;
+    if (this.blink > 0) this.blink -= dt;
+    if (this.popup && this.state !== 'intro' && !this.popup.update(dt)) this.popup = null; // like FireRed: after the fade-in
   }
 
   step(dt) {
@@ -449,7 +452,7 @@ export class RoomScene {
     if (w.screenFlash) { const f = w.screenFlash; ctx.fillStyle = `rgba(${f.color},${f.a * (1 - f.t / f.life)})`; ctx.fillRect(0, 0, W, H); } // THUNDER's flash
     drawWorldTexts(ctx, w, { x: cx, y: cy });
     const B = areaOf(this.run);
-    if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette);
+    if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette, (w.player.x - cx) * 2, (w.player.y - 8 - cy) * 2); // centred on the player, like FLASH
     if (this.world.player.hp < this.world.player.maxHp * 0.25 && !this.world.player.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
     // NPC labels (screen space): small FireRed sign tags that fade with distance; the nearest one becomes the prompt
     if (!topOverlay()) for (const n of this.npcs) if (n.label && this.nearNpc !== n && this.nearNpc2 !== n) {
@@ -467,6 +470,7 @@ export class RoomScene {
     this.drawCoop(ctx);
     for (const b of this.banners) b.draw(ctx);
     if (this.popup) this.popup.draw(ctx);
+    if (this.blink > 0) { const b = Math.sin((1 - this.blink / 0.36) * Math.PI * 2); ctx.fillStyle = `rgba(0,0,0,${(0.75 * b * b).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
     if (this.spec.kind === 'hub') R.drawHubHints(ctx, this);
     if (this.fade > 0) { if (this.state === 'exiting' && this.wipe) drawWipe(ctx, this.wipe.kind, this.fade, this.wipe); else drawWipe(ctx, 'fade', this.fade); }
   }

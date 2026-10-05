@@ -5,7 +5,6 @@ Writes NEW files only (never overwrites existing assets):
   web/assets/gfx/ui/map_popup/popup.png        the map name sign (std window tiles, text-window palette 3),
                                                 14x2 tile interior + 1 tile border = 128x32, as MapNamePopupCreateWindow
   web/assets/gfx/ui/map_popup/popup_floor.png  the 19-tile-wide variant used for maps with a floor number (168x32)
-  web/assets/gfx/ui/map_popup/frame.png        the same frame as a 24x24 9-slice (8px corners) for any width
   web/assets/gfx/ui/mugshot/banner_<pal>.png   the 256x160 mugshot transition BG (one full BG width: it wraps when scrolled) (vsbar_tilemap.bin over
                                                 mugshot_banner.4bpp tiles) with each Elite Four / rival palette,
                                                 the player's (red_bg) palette in slots 10-15 as Mugshot_SetGfx does
@@ -60,11 +59,6 @@ def popup():
         return t
 
     tiles = [tile(n) for n in range(9)]
-    frame = Image.new('RGBA', (24, 24))
-    for n in range(9):
-        frame.paste(tiles[n], ((n % 3) * 8, (n // 3) * 8))
-    save_new(frame, 'map_popup/frame.png')
-
     def sign(width, height=2):
         s = Image.new('RGBA', ((width + 2) * 8, (height + 2) * 8))
         for ty in range(height + 2):
