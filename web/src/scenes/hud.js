@@ -155,11 +155,13 @@ export function drawHud(ctx, world, run, opts = {}) {
   if (full && run.partner) text(ctx, 'CALL!', cx + 54, cy + 17, { font: 'small', color: 'red', align: 'right' });
 
   // ---- top left: money and area (a FireRed window), held item, blessings
-  frBox(ctx, 4, 4, 156, 24, 'type1', '#ffffff');
-  text(ctx, `¥${run.money}`, 10, 9, { color: 'dark' });
-  const B = areaOf(run);
-  if (B && !opts.hub) text(ctx, `${B.name} ${Math.min(run.roomInBiome + 1, B.rooms + 1)}/${B.rooms + 1}`, 154, 10, { font: 'small', color: 'blue', align: 'right' });
-  if (run.held) { const im = img(ICON.item(run.held)); frBox(ctx, 162, 4, 24, 24, 'type1', '#ffffff'); if (ready(im)) ctx.drawImage(im, 162, 4); }
+  const B = areaOf(run), money = `¥${run.money}`;
+  const area = B && !opts.hub ? `${B.name} ${Math.min(run.roomInBiome + 1, B.rooms + 1)}/${B.rooms + 1}` : '';
+  const mw = area ? Math.max(156, measure(money) + measure(area, 'small') + 28) : measure(money) + 22;
+  frBox(ctx, 4, 4, mw, 24, 'type1', '#ffffff');
+  text(ctx, money, 10, 9, { color: 'dark' });
+  if (area) text(ctx, area, 4 + mw - 6, 10, { font: 'small', color: 'blue', align: 'right' });
+  if (run.held) { const im = img(ICON.item(run.held)); frBox(ctx, mw + 6, 4, 24, 24, 'type1', '#ffffff'); if (ready(im)) ctx.drawImage(im, mw + 6, 4); }
   let by = 32;
   for (const b of run.boons) {
     const def = BOONS[b.key]; const L = LEGENDS[def.legend];
@@ -178,8 +180,9 @@ export function drawHud(ctx, world, run, opts = {}) {
   const bosses = world.actors.filter(a => a.boss && !a.dead && a.spawnT <= 0);
   if (bosses.length) {
     const n = bosses.length, gap = 8;
-    const bw = n === 1 ? 320 : Math.min(240, Math.floor((W - 196 - 8 - gap * (n - 1)) / n / 2) * 2);
-    const total = n * bw + (n - 1) * gap, x0 = n === 1 ? (W - bw) / 2 : Math.max(196, (W - total) / 2);
+    const left = mw + (run.held ? 36 : 10); // clear of the money / held item windows
+    const bw = n === 1 ? 320 : Math.min(240, Math.floor((W - left - 8 - gap * (n - 1)) / n / 2) * 2);
+    const total = n * bw + (n - 1) * gap, x0 = n === 1 ? (W - bw) / 2 : Math.max(left, (W - total) / 2);
     bosses.forEach((b, i) => drawBossBox(ctx, b, Math.round(x0 + i * (bw + gap)), 2, bw));
   }
 }
