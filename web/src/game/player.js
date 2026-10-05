@@ -148,6 +148,7 @@ export function updateBalls(world, dt) {
       if (n > (b.lastShake ?? -1) && n >= 1 && n <= Math.min(3, b.shakes)) { b.lastShake = n; Sound.playSE('se_ball'); }
       if (b.shakes < 4 && b.t > 0.55 * (b.shakes + 1)) { // breaks free
         e.captured = false; e.untargetable = false; e.stun = 0.4; world.text(e, 'Oh no! It broke free!', '#ffffff');
+        world.vfx.push({ kind: 'sendout', x: b.x, y: b.y + 4, t: 0, life: 0.45, ball: b.ball }); // the ball bursts open (visual only)
         Sound.playSE('se_ball_open'); b.dead = true;
       } else if (b.shakes >= 4 && b.t > 2.0) {
         Sound.playSE('se_ball_click');
@@ -196,6 +197,6 @@ function callPartner(world, a) {
 export function updateAllies(world, dt) {
   for (const x of world.actors) if (x.team === 'ally' && !x.dead && x.spawnT <= 0) {
     x.lifeT -= dt;
-    if (x.lifeT <= 0) { x.dead = true; x.deathT = 9; world.vfx.push({ kind: 'sendout', x: x.x, y: x.y, t: 0, life: 0.4, recall: true }); Sound.playSE('se_ball_tray_exit'); }
+    if (x.lifeT <= 0) { x.dead = true; x.deathT = 9; world.vfx.push({ kind: 'sendout', x: x.x, y: x.y, t: 0, life: 0.4, recall: true, dex: x.dex, dir: x.dir, scale: x.scale }); Sound.playSE('se_ball_tray_exit'); }
   }
 }

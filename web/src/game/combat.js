@@ -948,7 +948,8 @@ export class World {
     this.hooks.beforeHit?.(this, info);
     if (info.cancel) return;
     if (info.dmg > 0) {
-      this.applyDamage(src, b, { dmg: info.dmg, crit: info.crit, eff: info.eff, slot: info.slot, ang: info.ang, knock: o.noKnock ? 0 : info.knock, type: p.type });
+      const dealt = this.applyDamage(src, b, { dmg: info.dmg, crit: info.crit, eff: info.eff, slot: info.slot, ang: info.ang, knock: o.noKnock ? 0 : info.knock, type: p.type });
+      if (dealt > 0 && !info.zone) this.vfx.push({ kind: 'hit', x: b.x, y: b.y, tgt: b, ang: info.ang, type: p.type, crit: info.crit, eff: info.eff, t: 0, life: info.crit || info.eff > 1 ? 0.36 : 0.16 }); // hit splat (visual only)
       if (p.drain && src && !src.dead) this.heal(src, Math.max(1, Math.round(info.dmg * p.drain * (src.team === 'player' ? 0.35 : 1))));
       if (p.money && src === this.player) this.emit({ type: 'money', amount: 1 + Math.floor(src.level / 8), x: b.x, y: b.y });
     }

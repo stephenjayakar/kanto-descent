@@ -34,12 +34,7 @@ World.prototype.boonDoom = function (target, o) {
   const pl = this.player;
   const p = this.boonProfile(o.type || 'FIRE', o.power, { fx: o.fx || 'fire', knock: 20 });
   const delay = o.delay ?? 1.1;
-  this.vfx.push({ kind: 'custom', x: target.x, y: target.y, t: 0, life: delay, draw: (ctx, v, k) => {
-    if (target.dead) return;
-    const r = target.r + 6 - k * 4;
-    ctx.strokeStyle = `rgba(255,${Math.round(160 - 100 * k)},40,${0.35 + 0.55 * k})`; ctx.lineWidth = 1 + k;
-    ctx.beginPath(); ctx.ellipse(target.x, target.y, r, r * 0.75, 0, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1;
-  } });
+  this.vfx.push({ kind: 'doom', tgt: target, x: target.x, y: target.y, t: 0, life: delay }); // Lock-On corners, drawn by render.js
   this.later(delay, () => {
     if (!pl || pl.dead || target.dead || target.untargetable || target.captured) return;
     this.vfx.push({ kind: 'explode', x: target.x, y: target.y, r: 18, t: 0, life: 0.3, type: p.type, fx: p.fx });

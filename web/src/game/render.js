@@ -11,7 +11,11 @@ let BA = null; // battle anim manifest
 export function setBattleAnimManifest(m) {
   BA = m;
   for (const [tag, e] of Object.entries(m)) for (const [size, sub] of Object.entries(e.subSheets || {})) BA[`${tag}__${size}`] ??= { ...sub, anim: null };
+  BA.ball_particles ??= BALL_PARTICLES;
 }
+// Poké Ball open particles (graphics/battle_anims/sprites/particles.png in the circle_impact palette, made by
+// tools/extract_ball_particles.py); registered here so the generated manifest.json never needs rewriting
+const BALL_PARTICLES = { file: 'ball_particles.png', frameW: 8, frameH: 8, frames: 8 };
 const baPath = tag => `gfx/battle_anims/${tag}.png`;
 
 // sprite key -> battle anim tag (+ draw params)
@@ -25,7 +29,9 @@ const SPR = {
   bone: { tag: 'bone', spin: true, scale: 0.8 }, seed: { tag: 'seed', frame: 0 }, orb_green: { tag: 'glowy_green_orb', anim: true, fps: 10 },
   orb_yellow: { tag: 'electric_orbs', anim: true, fps: 12 }, orb_psychic: { tag: 'pink_orb', anim: true, fps: 10 }, orb_ghost: { tag: 'wisp_orb', anim: true },
   ring: { tag: 'ring', anim: true, fps: 10 }, snow: { tag: 'snowball', frame: 0 }, string: { tag: 'string', rotate: true },
-  dragon: { tag: 'fire_plume', anim: true, scale: 0.5 }, // Dragon Rage / Breath use fire, not Grudge's navy flame tri: { tag: 'tri_attack_triangle', spin: true, scale: 0.6 }, coin: { tag: 'coin', anim: true, fps: 10 },
+  dragon: { tag: 'fire_plume', anim: true, scale: 0.5 }, // Dragon Rage / Breath use fire, not Grudge's navy flame
+  tri: { tag: 'tri_attack_triangle', spin: true, scale: 0.6 }, coin: { tag: 'coin', anim: true, fps: 10 },
+  fist: { tag: 'hands_and_feet', frame: 0, scale: 0.5 }, // derived FIGHTING shots (SPRITE_FOR_TYPE) had no sprite
   egg: { tag: 'fresh_egg', frame: 0 }, ink: { tag: 'black_ball', frame: 0, scale: 1.5 },
 };
 // beam moves as particle streams (from FireRed's move animations)
@@ -95,6 +101,56 @@ function shadow(ctx, x, y, w, a = 0.35) {
   ctx.globalAlpha = ga;
 }
 
+// A FireRed sprite recoloured to `color` with its shading kept (the 'color' blend takes hue and saturation from
+// the fill and luminosity from the sprite), built once per (path, colour) on an offscreen canvas. Never reads pixels back.
+const recolors = new Map();
+function recolored(path, color) {
+  const key = path + '|' + color;
+  const hit = recolors.get(key);
+  if (hit) return hit;
+  const im = img(path);
+  if (!ready(im) || typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const x = c.getContext('2d');
+  x.drawImage(im, 0, 0);
+  x.globalCompositeOperation = 'color'; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+  x.globalCompositeOperation = 'destination-in'; x.drawImage(im, 0, 0);
+  recolors.set(key, c);
+  return c;
+}
+
+// Lock-On's corner brackets (battle_anims lock_on, the 16x16 corner frame) around a box, drawn at x0.5 so a
+// source pixel is one screen pixel. color: null keeps FireRed's green (the player's own marks).
+function lockCorners(ctx, cx, cy, hw, hh, color, alpha = 1) {
+  const path = baPath('lock_on__16x16');
+  const im = color ? recolored(path, color) : img(path);
+  if (!im || (!color && !ready(im))) return;
+  const ga = ctx.globalAlpha; ctx.globalAlpha = ga * alpha;
+  const L = Math.round(cx - hw), R = Math.round(cx + hw), T = Math.round(cy - hh), B = Math.round(cy + hh);
+  for (const [x, y, rot] of [[L, T, 0], [R, T, Math.PI / 2], [R, B, Math.PI], [L, B, -Math.PI / 2]]) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.drawImage(im, 0, 0, 16, 16, 0, 0, 8, 8); ctx.restore();
+  }
+  ctx.globalAlpha = ga;
+}
+
+// Telegraph colours, shared by enemy windups and strike warnings: an area tint, a fill that grows towards the rim
+// as the hit approaches, a 1px rim that turns white-hot just before it lands, and Lock-On corners closing in.
+const WARN = { rgb: '248,56,32', rim: '#f85830', corner: '#f83820', hot: '#fff8b0' };
+const MATE = { rgb: '248,232,120', rim: '#f8e078', corner: null, hot: '#ffffff' }; // the player's own strikes
+function warnFill(k, c = WARN) { return [`rgba(${c.rgb},${0.13 + 0.07 * k})`, `rgba(${c.rgb},${0.16 + 0.16 * k})`]; }
+function ellipsePath(ctx, x, y, rx, ry) { ctx.beginPath(); ctx.ellipse(Math.round(x), Math.round(y), Math.max(0.5, rx), Math.max(0.5, ry), 0, 0, Math.PI * 2); }
+function warnDisc(ctx, x, y, r, k, left, c = WARN, soft = false) {
+  const [area, grow] = warnFill(k, c);
+  ctx.fillStyle = area; ellipsePath(ctx, x, y, r, r * 0.75); ctx.fill();
+  ctx.fillStyle = grow; ellipsePath(ctx, x, y, r * k, r * 0.75 * k); ctx.fill();
+  if (soft) return;
+  ctx.strokeStyle = left < 0.12 && Math.floor(left * 40) % 2 === 0 ? c.hot : c.rim; ctx.lineWidth = 1;
+  ctx.globalAlpha *= 0.65 + 0.35 * k; ellipsePath(ctx, x, y, r, r * 0.75); ctx.stroke(); ctx.globalAlpha /= 0.65 + 0.35 * k;
+  const m = 1.4 - 0.4 * Math.min(1, k * 1.25); // corners close in from outside the area to its edge
+  lockCorners(ctx, x, y, r * m + 1, r * 0.75 * m + 1, c.corner, 0.55 + 0.45 * k);
+}
+
 // ---------------------------------------------------------------------------------------------
 export function drawWorld(ctx, w, cam, opts = {}) {
   const R = w.room;
@@ -148,6 +204,7 @@ export function drawWorld(ctx, w, cam, opts = {}) {
   opts.overlay?.(ctx);
   // effects (clipped to the arena so storms and long beams don't paint over the darkened surroundings)
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, R.w * TILE, R.h * TILE); ctx.clip();
+  for (const s of w.strikes) drawStrikeFall(ctx, s);
   for (const v of w.vfx) if (v.kind !== 'tele' && v.kind !== 'afterimage' && !v.door && !v.noClip) drawVfx(ctx, v, w);
   ctx.restore();
   // door reward icons sit on the arena's edge (and float above it): never clipped
@@ -196,18 +253,19 @@ export function drawActor(ctx, a, w) {
   let alpha = a.alpha ?? 1;
   if (a.spawnT > 0) {
     const k = 1 - a.spawnT / (a.spawnMax || 0.6);
+    if (w.vfx.some(v => v.kind === 'sendout' && !v.recall && Math.abs(v.x - a.x) < 4 && Math.abs(v.y - a.y) < 4)) {
+      // out of a Poké Ball: it grows out of a white silhouette (the battle send-out), settling at its feet
+      const g = Math.min(1, k * 1.4), e = 1 - (1 - g) * (1 - g);
+      drawPmd(ctx, a.dex, a.x, a.y - 4 - (1 - e) * 6, { anim: 'Idle', dir: a.dir, t, scale: (a.scale || 1) * (0.2 + 0.8 * e), tint: '#ffffff', tintA: Math.max(0, 1 - k * 1.2) });
+      return;
+    }
     // spawn: white silhouette pop-in
     drawPmd(ctx, a.dex, a.x, a.y - 4, { anim: 'Idle', dir: a.dir, t, alpha: Math.min(1, k * 1.5), tint: '#ffffff', tintA: 1 - k * 0.5, scale: a.scale });
     return;
   }
   if (a.burrowed) { drawBA(ctx, 'dirt_mound', a.x, a.y, w.time, { frame: Math.floor(w.time * 8) % 2 }); return; }
   if (a.captured) return;
-  if (a.dead) {
-    if (a.deathT > 0.6) return;
-    alpha *= 1 - a.deathT / 0.6;
-    drawPmd(ctx, a.dex, a.x, a.y - 4 + a.deathT * 10, { anim: 'Hurt', dir: a.dir, t: 0, loop: false, alpha, tint: '#ffffff', tintA: 0.5, scale: a.scale });
-    return;
-  }
+  if (a.dead) { drawFaint(ctx, a, alpha); return; }
   if (a.ghost && w.blocked(a.x, a.y, 'walk')) alpha *= 0.45;
   if (a.ghostly) alpha *= 0.55 + Math.sin(w.time * 4) * 0.15;
   if (a.team === 'player' && a.iframes > 0 && !a.dashing && Math.floor(w.time * 20) % 2 === 0) alpha *= 0.5;
@@ -233,6 +291,24 @@ export function drawActor(ctx, a, w) {
   if (a.protect > 0) drawBA(ctx, 'protect', a.x, a.y - 10, 0, { scale: Math.max(0.4, a.r / 22), alpha: 0.6 });
   if (a.shieldHits > 0 && a.team === 'player') drawBA(ctx, 'protect', a.x, a.y - 10, 0, { scale: 0.5, alpha: 0.35 + 0.15 * Math.sin(w.time * 4) }); // Rebirth Shield: a faint Protect bubble
   if (a.seeded) drawBA(ctx, 'seed', a.x - 6, a.y - 4 - a.r, 0, { frame: 0, scale: 0.5 });
+}
+
+// FireRed's faint: the cry, a beat, then the sprite slides down out of its window. Top-down, it sinks below its own
+// ground line (the sprite is clipped at its feet) while dust puffs up and its shadow shrinks.
+const FAINT_HOLD = 0.12, FAINT_SINK = 0.4;
+function drawFaint(ctx, a, alpha) {
+  const T = a.deathT;
+  if (T > FAINT_HOLD + FAINT_SINK) return;
+  const q = Math.max(0, (T - FAINT_HOLD) / FAINT_SINK), drop = q * q * (spriteTop(a) + 10);
+  if (!a.flying) shadow(ctx, a.x, a.y + 1, a.r * 0.9 * (a.scale || 1) * (1 - q), 0.3 * (1 - q));
+  ctx.save();
+  if (!a.flying) { ctx.beginPath(); ctx.rect(a.x - 96, a.y - 192, 192, 192 + 3); ctx.clip(); }
+  drawPmd(ctx, a.dex, a.x, a.y - 4 + drop, { anim: 'Hurt', dir: a.dir, t: 0, loop: false, alpha: alpha * (a.flying ? 1 - q : 1), tint: '#ffffff', tintA: T < FAINT_HOLD ? 0.6 : 0, scale: a.scale });
+  ctx.restore();
+  if (q > 0 && q < 1 && !a.flying) { // field_effects/ground_impact_dust either side of it
+    const im = img('gfx/misc/field_effects/ground_impact_dust.png');
+    if (ready(im)) { const f = Math.min(2, Math.floor(q * 3)), dx = Math.max(5, a.r * 0.7); for (const sx of [-1, 1]) ctx.drawImage(im, 0, f * 8, 16, 8, Math.round(a.x + sx * dx - 8), Math.round(a.y - 5), 16, 8); }
+  }
 }
 
 // height of the sprite above its ground point, from the PMD Idle frame (cached per actor)
@@ -300,6 +376,17 @@ function drawBall(ctx, b) {
   if (b.state === 'shake' && dx) ctx.rotate(dx * 0.15);
   ctx.drawImage(im, 0, frame * 16, 16, 16, -8, -8, 16, 16);
   ctx.restore();
+  const e = b.target;
+  // the catch: the POKéMON turns white and is sucked into the open ball
+  if (b.state === 'shake' && e && b.t < 0.3) {
+    const q = b.t / 0.3;
+    drawPmd(ctx, e.dex, e.x + (b.x - e.x) * q, e.y - 4 + (b.y - e.y + 4) * q, { anim: 'Hurt', dir: e.dir, t: 0, loop: false, scale: Math.max(0.1, (e.scale || 1) * (1 - q * 0.9)), tint: q < 0.5 ? '#ffffff' : '#f8a0b8', tintA: Math.min(1, 0.4 + q * 1.5), alpha: 1 - q * 0.4 });
+  }
+  // caught: three stars arc out of the ball (SpriteCB_BallCaptureSuccessStar: the Master Ball particle, flickering)
+  if (b.state === 'shake' && b.shakes >= 4 && b.t > 1.65) {
+    const q = Math.min(1, (b.t - 1.65) / 0.3), F = Math.floor((b.t - 1.65) * 60);
+    if (F % 2 === 0) for (const [dx, dy, amp] of [[10, 2, -3], [15, 0, -4], [-10, 2, -4]]) drawBA(ctx, 'ball_particles', b.x + dx * q, b.y - 4 + dy * q + Math.sin(q * Math.PI) * amp * 3, 0, { frame: 3 });
+  }
 }
 
 function drawPickup(ctx, k, t) {
@@ -338,7 +425,16 @@ function drawZone(ctx, z, w) {
   else if (z.sprite === 'smoke' || z.blind) { // Smokescreen: FireRed's black smoke puffs (this used to skip the sprite)
     for (let i = 0; i < 7; i++) { const a = i * 0.9 + w.time * 0.4; drawBA(ctx, 'black_smoke', z.x + Math.cos(a) * z.r * 0.5, z.y + Math.sin(a) * z.r * 0.35 - 4, 0, { scale: 1, alpha: 0.85 }); }
   } else {
-    if (!tag) { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(z.x, z.y, z.r, z.r * 0.7, 0, 0, Math.PI * 2); ctx.fill(); } // sprite clouds need no disc under them
+    if (!tag) { // a field with no cloud sprite (Electric Terrain, derived trapping moves): a tinted floor with the move's own particles on it
+      ctx.fillStyle = col; ellipsePath(ctx, z.x, z.y, z.r, z.r * 0.7); ctx.fill();
+      const sp = z.p?.fx === 'spark' || z.p?.type === 'ELECTRIC' ? { tag: 'spark_2', frame: -1 } : SPR[z.sprite];
+      const n = Math.max(3, Math.round(z.r / 8));
+      if (sp) for (let i = 0; i < n; i++) {
+        const a = i * 2.4 + z.t * 0.6, rr = z.r * (0.25 + 0.6 * ((i * 37) % 10) / 10);
+        if (sp.frame === -1) { if ((Math.floor(z.t * 12) + i) % 3) continue; drawBA(ctx, sp.tag, z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr * 0.7 - 2, 0, { frame: (i + Math.floor(z.t * 12)) % 3, scale: 1 }); } // crackling sparks
+        else drawBA(ctx, sp.tag, z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr * 0.7 - 2, z.t + i * 0.13, { anim: sp.anim, fps: sp.fps, frame: sp.frame, scale: 0.5, alpha: 0.85 });
+      }
+    }
     if (tag) {
       const n = Math.max(2, Math.round(z.r / 6));
       for (let i = 0; i < n; i++) {
@@ -351,41 +447,60 @@ function drawZone(ctx, z, w) {
 }
 
 function drawTele(ctx, v) {
-  const k = Math.min(1, v.t / Math.max(0.01, v.life));
+  const k = Math.min(1, v.t / Math.max(0.01, v.life)), left = v.life - v.t;
+  const [area, grow] = warnFill(k);
+  const rim = left < 0.12 && Math.floor(left * 40) % 2 === 0 ? WARN.hot : WARN.rim;
   ctx.save();
-  const fill = `rgba(255,40,40,${0.12 + 0.18 * k})`, edge = `rgba(255,80,60,${0.5 + 0.4 * k})`;
-  ctx.fillStyle = fill; ctx.strokeStyle = edge; ctx.lineWidth = 1;
+  ctx.lineWidth = 1;
   if (v.shape === 'arc') {
-    ctx.beginPath(); ctx.moveTo(v.x, v.y); ctx.arc(v.x, v.y, v.r, v.ang - v.arc / 2, v.ang + v.arc / 2); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.arc(v.x, v.y, v.r * k, v.ang - v.arc / 2, v.ang + v.arc / 2); ctx.stroke();
+    const a0 = v.ang - v.arc / 2, a1 = v.ang + v.arc / 2, x = Math.round(v.x), y = Math.round(v.y);
+    ctx.fillStyle = area; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, v.r, a0, a1); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = grow; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, Math.max(1, v.r * k), a0, a1); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = rim; ctx.globalAlpha *= 0.6 + 0.4 * k;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, v.r, a0, a1); ctx.closePath(); ctx.stroke();
   } else if (v.shape === 'line') {
-    ctx.translate(v.x, v.y); ctx.rotate(v.ang);
+    ctx.translate(Math.round(v.x), Math.round(v.y)); ctx.rotate(v.ang);
     const draws = v.spread ? [-v.spread, 0, v.spread] : [0];
     for (const off of draws) {
       ctx.save(); ctx.rotate(off);
-      if (v.thin) { ctx.fillStyle = `rgba(255,60,60,${0.35 + 0.3 * k})`; ctx.fillRect(0, -1, v.len * (0.4 + 0.6 * k), 2); }
-      else { ctx.fillRect(0, -v.width / 2, v.len, v.width); ctx.fillStyle = edge; ctx.fillRect(0, -v.width / 2, v.len * k, v.width); }
+      if (v.thin) { // a shot's aim: a dashed line marching outwards, with an arrow tip
+        const len = v.len * (0.4 + 0.6 * k);
+        ctx.strokeStyle = WARN.rim; ctx.globalAlpha *= 0.5 + 0.4 * k;
+        ctx.setLineDash([4, 3]); ctx.lineDashOffset = -v.t * 24;
+        ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(len, 0); ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = rim; ctx.beginPath(); ctx.moveTo(len - 4, -3); ctx.lineTo(len, 0); ctx.lineTo(len - 4, 3); ctx.stroke();
+      } else {
+        const hw = Math.max(1, Math.round(v.width / 2));
+        ctx.fillStyle = area; ctx.fillRect(0, -hw, v.len, hw * 2);
+        ctx.fillStyle = grow; ctx.fillRect(0, -hw, v.len * k, hw * 2);
+        ctx.fillStyle = rim; ctx.globalAlpha *= 0.6 + 0.4 * k;
+        ctx.fillRect(0, -hw, v.len, 1); ctx.fillRect(0, hw - 1, v.len, 1); ctx.fillRect(v.len - 1, -hw, 1, hw * 2);
+        ctx.fillRect(Math.max(0, v.len * k - 1), -hw, 1, hw * 2); // the leading edge of the fill
+      }
       ctx.restore();
     }
   } else if (v.shape === 'circle') {
-    ctx.beginPath(); ctx.ellipse(v.x, v.y, v.r, v.r * 0.75, 0, 0, Math.PI * 2); ctx.fill(); if (!v.soft) ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(v.x, v.y, v.r * k, v.r * 0.75 * k, 0, 0, Math.PI * 2); ctx.stroke();
+    warnDisc(ctx, v.x, v.y, v.r, k, left, WARN, v.soft);
   }
   ctx.restore();
 }
 
+// what falls out of the sky onto a strike's mark (drawn with the effects, above the actors)
+const FALLS = { rock: { tag: 'rocks', frame: 2, scale: 1 }, water: { tag: 'rain_drops', frame: 0, scale: 1 } };
 function drawStrikeWarn(ctx, s) {
   if (s.done || s.t < 0) return;
-  const k = Math.min(1, s.t / s.delay);
-  const enemy = s.team === 'enemy';
+  const k = Math.min(1, s.t / s.delay), left = s.delay - s.t;
+  const c = s.team === 'enemy' ? WARN : MATE;
   ctx.save();
-  ctx.fillStyle = enemy ? `rgba(255,40,40,${0.15 + 0.2 * k})` : `rgba(255,240,120,${0.1 + 0.15 * k})`;
-  ctx.strokeStyle = enemy ? 'rgba(255,90,70,0.85)' : 'rgba(255,240,140,0.7)';
-  ctx.beginPath(); ctx.ellipse(s.x, s.y, s.r, s.r * 0.75, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(s.x, s.y, s.r * k, s.r * 0.75 * k, 0, 0, Math.PI * 2); ctx.stroke();
-  // falling rock
-  if (s.p?.fx === 'rock') drawBA(ctx, 'rocks', s.x, s.y - (1 - k) * 120 - 8, 0, { frame: 2, scale: 0.9 });
+  if (FALLS[s.p?.fx] || s.p?.blizzard) shadow(ctx, s.x, s.y, 1 + 8 * k, 0.15 + 0.35 * k); // its shadow grows as it falls (shadow_small -> shadow_medium)
+  warnDisc(ctx, s.x, s.y, s.r, k, left, c);
   ctx.restore();
+}
+function drawStrikeFall(ctx, s) {
+  const F = FALLS[s.p?.fx];
+  if (!F || s.done || s.t < 0) return;
+  const k = Math.min(1, s.t / s.delay);
+  drawBA(ctx, F.tag, s.x, s.y - (1 - k * k) * 120 - 6, s.t, { frame: F.frame, anim: F.anim, scale: F.scale, alpha: Math.min(1, k * 4) });
 }
 
 function drawVfx(ctx, v, w) {
@@ -444,10 +559,9 @@ function drawVfx(ctx, v, w) {
         if (v.fx === 'quake' && k < 0.5) drawBA(ctx, 'flying_dirt', v.x, v.y - 6, 0, { scale: Math.min(1.5, r / 32), alpha: (0.5 - k) * 2 });
         break;
       }
-      const col = v.fx === 'wind' ? '220,240,255' : '255,255,255';
-      ctx.strokeStyle = `rgba(${col},${(1 - k) * 0.9})`; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(v.x, v.y, r, r * 0.75, 0, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1;
-      if (v.fx === 'quake' || v.fx === 'explosion') { ctx.fillStyle = `rgba(${col},${(1 - k) * 0.15})`; ctx.fill(); }
+      // anything else: FireRed's expanding ring (thin_ring, gThinRingExpandingSpriteTemplate), squashed for the top-down floor
+      const im = img(baPath('thin_ring'));
+      if (ready(im)) { const ga = ctx.globalAlpha; ctx.globalAlpha = ga * (1 - k) * 0.9; ctx.drawImage(im, Math.round(v.x - r), Math.round(v.y - 4 - r * 0.75), Math.round(r * 2), Math.round(r * 1.5)); ctx.globalAlpha = ga; }
       if (v.fx === 'explosion' && k < 0.6) for (let i = 0; i < 5; i++) drawBA(ctx, 'explosion', v.x + Math.cos(i * 1.3) * r * 0.6, v.y + Math.sin(i * 1.3) * r * 0.45, v.t + i * 0.04, { anim: true });
       break;
     }
@@ -461,10 +575,13 @@ function drawVfx(ctx, v, w) {
     case 'puff': drawBA(ctx, 'impact', v.x, v.y, v.t, { scale: 0.4, alpha: 1 - k }); break;
     case 'shatter': for (let i = 0; i < 6; i++) drawBA(ctx, 'ice_crystals__8x16', v.x + Math.cos(i) * 20 * k, v.y + Math.sin(i * 1.7) * 14 * k, 0, { frame: i % 3, alpha: 1 - k }); break;
     case 'dust': { const im = img('gfx/misc/field_effects/ground_impact_dust.png'); if (ready(im)) { const f = Math.min(2, Math.floor(k * 3)); ctx.drawImage(im, 0, f * 8, 16, 8, Math.round(v.x - 8), Math.round(v.y - 6), 16, 8); } break; } // field_effects/ground_impact_dust: 3 frames of 16x8
-    case 'sendout': {
-      const r = (v.recall ? 1 - k : k) * 20;
-      ctx.fillStyle = `rgba(255,255,255,${(1 - k) * 0.8})`; ctx.beginPath(); ctx.ellipse(v.x, v.y - 8, r, r, 0, 0, Math.PI * 2); ctx.fill();
-      for (let i = 0; i < 8; i++) drawBA(ctx, 'sparkle_2', v.x + Math.cos(i * 0.8) * r * 1.4, v.y - 8 + Math.sin(i * 0.8) * r, v.t, { anim: true, scale: 0.5, alpha: 1 - k });
+    case 'sendout': drawSendout(ctx, v, k, w); break;
+    case 'hit': drawHitSplat(ctx, v, k); break;
+    case 'doom': { // Doom Desire's mark: Lock-On corners in the move's colour tighten on the target until it bursts
+      const b = v.tgt;
+      if (!b || b.dead) break;
+      const r = b.r + 10 - k * 7, hot = v.life - v.t < 0.15 && Math.floor(v.t * 30) % 2 === 0;
+      lockCorners(ctx, b.x, b.y - 4, r, r * 0.75, hot ? '#fff8b0' : '#f89030', 0.6 + 0.4 * k);
       break;
     }
     case 'heal': for (let i = 0; i < 5; i++) drawBA(ctx, 'sparkle_2', v.x + Math.cos(i * 1.3 + k * 4) * 10, v.y - 10 - k * 20 + i * 2, v.t, { anim: true, scale: 0.5, alpha: 1 - k }); break;
@@ -499,7 +616,7 @@ function drawVfx(ctx, v, w) {
     case 'icefall': {
       if (v.t < 0) break;
       const f = Math.min(1, v.t / v.life), fall = (1 - f * f) * 130;
-      ctx.fillStyle = `rgba(150,210,255,${0.25 + 0.25 * f})`; ctx.beginPath(); ctx.ellipse(v.x, v.y, 4 + 8 * f, 3 + 5 * f, 0, 0, Math.PI * 2); ctx.fill(); // its shadow
+      shadow(ctx, v.x, v.y, 1 + 8 * f, 0.2 + 0.3 * f); // its shadow grows as it falls
       if (!drawBA(ctx, 'ice_chunk', v.x, v.y - 8 - fall, 0, { scale: 0.9 })) { ctx.fillStyle = '#c8ecff'; ctx.fillRect(v.x - 3, v.y - 14 - fall, 6, 10); }
       ctx.strokeStyle = `rgba(220,245,255,${0.5 * f})`; ctx.beginPath(); ctx.moveTo(v.x, v.y - 8 - fall - 4); ctx.lineTo(v.x - 3, v.y - 8 - fall - 22); ctx.stroke(); // falling streak
       break;
@@ -513,6 +630,64 @@ function drawVfx(ctx, v, w) {
       break;
     }
   }
+}
+
+// Poké Ball send-out / recall, after FireRed's battle intro: the ball pops open (gfx/ui/balls frame 2) and its
+// particles fly out in a ring (PokeBallOpenParticleAnimation: 16 particles, one a frame, at (i % 8) * 45 degrees,
+// each moving 2px a frame for 25 frames). The 40 GBA frames are squeezed into the vfx's life. The POKéMON itself
+// grows out of a white silhouette (drawActor's spawn branch); a recalled one shrinks back in, tinted red.
+const BALL_FRAMES = { master: [3], net: [4], dive: [4], nest: [5], luxury: [6, 7], premier: [6, 7], ultra: [7], repeat: [7], timer: [7] };
+const POKE_SEQ = [[0, false], [1, false], [2, false], [0, true], [2, false], [1, false]]; // sAnim_RegularBall
+function drawSendout(ctx, v, k, w) {
+  const ball = (v.ball || 'poke_ball').replace('_ball', '');
+  const F = k * 40, bx = Math.round(v.x), by = Math.round(v.y - 10);
+  // recalled POKéMON: a red silhouette shrinking into the ball
+  if (v.recall && v.dex && k < 0.6) {
+    const q = k / 0.6;
+    drawPmd(ctx, v.dex, v.x, v.y - 4 - q * 6, { anim: 'Idle', dir: v.dir || 0, t: 0, scale: Math.max(0.1, (v.scale || 1) * (1 - q)), tint: '#f86050', tintA: Math.min(1, 0.5 + q), alpha: 1 - q * 0.3 });
+  }
+  // the ball, open while the particles fly; a recall closes it at the end
+  const im = img(`gfx/ui/balls/${ball}.png`);
+  const showBall = v.recall ? k < 0.9 : k < 0.45;
+  if (showBall && ready(im)) {
+    const frame = v.recall && k > 0.6 ? 0 : 2, pop = v.recall ? 0 : Math.round(Math.sin(Math.min(1, k / 0.45) * Math.PI) * 4);
+    const ga = ctx.globalAlpha; ctx.globalAlpha = ga * (v.recall ? Math.min(1, (0.9 - k) * 6) : Math.min(1, (0.45 - k) * 8));
+    ctx.drawImage(im, 0, frame * 16, 16, 16, bx - 8, by - 8 - pop, 16, 16);
+    ctx.globalAlpha = ga;
+  }
+  // the particle burst
+  const seq = BALL_FRAMES[ball];
+  for (let i = 0; i < 16; i++) {
+    const age = F - i;
+    if (age < 0 || age >= 25) continue;
+    const ang = (i % 8) * Math.PI / 4, rad = age * 2 * 0.6;
+    const [fr, flip] = seq ? [seq.length > 1 ? seq[Math.floor(F / 4) % seq.length] : seq[0], false] : POKE_SEQ[(Math.floor(F) + i) % 6];
+    drawBA(ctx, 'ball_particles', bx + Math.sin(ang) * rad, by + Math.cos(ang) * rad * 0.75, 0, { frame: fr, flipX: flip, alpha: age > 18 ? (25 - age) / 7 : 1 });
+  }
+}
+
+// The hit splat every damaging hit gets in FireRed (gBasicHitSplatSpriteTemplate: battle_anims impact), on the
+// side the hit came from. Water uses its own splat (water_impact); other types recolour the splat to the type's
+// colour. Critical hits get a big splat plus the sliding-hit burst (battle_anims hit); super-effective hits a
+// Hyper Voice ring (thin_ring) bursting off the target.
+function drawHitSplat(ctx, v, k) {
+  const b = v.tgt, top = b ? spriteTop(b) : 16;
+  const x = (b ? b.x : v.x) - Math.cos(v.ang || 0) * (b ? b.r * 0.5 : 4), y = (b ? b.y : v.y) - top * 0.45 - Math.sin(v.ang || 0) * 3;
+  const big = v.crit || v.eff > 1;
+  if (v.crit) drawBA(ctx, 'hit', x, y, v.t, { anim: true, scale: 1, alpha: k > 0.7 ? (1 - k) / 0.3 : 1 }); // sSlidingHit: the burst ring
+  if (v.eff > 1 && k < 0.7) {
+    const im = img(baPath('thin_ring'));
+    if (ready(im)) { const r = 6 + 22 * (k / 0.7); const ga = ctx.globalAlpha; ctx.globalAlpha = ga * (1 - k / 0.7); ctx.drawImage(im, Math.round(x - r), Math.round(y - r * 0.75), Math.round(r * 2), Math.round(r * 1.5)); ctx.globalAlpha = ga; }
+  }
+  const age = v.t / 0.16; // the splat itself always lasts 0.16s; crits and super-effective hits linger for their burst
+  if (age > 0.9) return;
+  if (Math.floor(v.t * 30) % 3 === 2) return; // sFlickeringImpact: the splat flickers
+  const spec = v.type === 'WATER' ? 'water_impact' : 'impact';
+  const col = v.type && v.type !== 'NORMAL' && v.type !== 'FIGHTING' && spec === 'impact' ? TYPE_COLORS[v.type] : null;
+  const im = col ? recolored(baPath(spec), col) : img(baPath(spec));
+  if (!im || (!col && !ready(im))) return;
+  const d = big && age < 0.25 ? 32 : 16; // a heavier hit lands at x1 for its first frames, then x0.5
+  ctx.drawImage(im, 0, 0, 32, 32, Math.round(x - d / 2), Math.round(y - d / 2), d, d);
 }
 
 // screen-space darkness vignette for caves/towers
