@@ -26,6 +26,12 @@ export class MapPopup {
   update(dt) { this.t += dt; return this.t < this.life; }
   // 0..1: how far the sign has slid down
   get k() { const t = this.t, sl = POPUP.slide; return t < sl ? t / sl : t > sl + this.hold ? 1 - (t - sl - this.hold) / sl : 1; }
+  // the lowest screen row the sign (and its intro line) covers right now: the HUD's blessings sit below it
+  bottom() {
+    const pos = Math.round(clamp01(this.k) * 12) * 2;
+    if (pos <= 0) return 0;
+    return pos * POPUP.s + (this.sub ? 4 + Math.min(3, wrap(this.sub, 360, 'small').length) * 12 : 0);
+  }
   draw(ctx) {
     const s = POPUP.s, pos = Math.round(clamp01(this.k) * 12) * 2; // the GBA moves it in 2px steps
     const im = img(this.wide ? 'gfx/ui/map_popup/popup_floor.png' : 'gfx/ui/map_popup/popup.png');

@@ -3,7 +3,7 @@
 import { Engine, W, H, setScene, pushOverlay, topOverlay } from '../engine/core.js';
 import { img, ready } from '../engine/assets.js';
 import { text, measure } from '../engine/font.js';
-import { pixBox, rect, windowFrame } from '../engine/ui.js';
+import { pixBox, windowFrame, frBox } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { D, TYPE_COLORS } from '../game/data.js';
@@ -18,7 +18,7 @@ import { LEGENDS } from '../game/boons.js';
 import { rollWave, makeEnemy, rollTrainer, trainerParty, trainerSprite } from '../game/spawn.js';
 import { BOSSES, spawnBoss, bossDirector, bossesDefeated } from '../game/bosses.js';
 import { preloadPmd, drawPmd } from '../game/pmd.js';
-import { drawHud } from './hud.js';
+import { drawHud, drawCoopPanel, drawCoopTag, BOSS_BOX_H } from './hud.js';
 import { Banner, say, drawOW, ICON } from './ui.js';
 import * as R from './rewards.js';
 import { Coop, coopFrame, coopStatusText, asP2Sync } from '../game/coop.js';
@@ -407,7 +407,7 @@ export class RoomScene {
     let x = fx - VIEW_W / 2, y = fy - 8 - VIEW_H / 2;
     if (Input.mouseAiming() && Input.mouseWorld && this.state === 'play') { x += (Input.mouseWorld.x - p.x) * 0.12; y += (Input.mouseWorld.y - p.y) * 0.12; }
     if (rw <= VIEW_W) x = (rw - VIEW_W) / 2; else x = Math.max(-16, Math.min(rw - VIEW_W + 16, x));
-    const pad = bosses.length ? bosses.length * 13 + 16 : 0; // the boss bars cover the top of the screen
+    const pad = bosses.length ? BOSS_BOX_H / 2 + 8 : 0; // the bosses' healthboxes (side by side, hud.js) cover the top of the screen
     if (rh <= VIEW_H + 8) y = (rh - VIEW_H) / 2 + 14; else y = Math.max(-24 - pad, Math.min(rh - VIEW_H + 40, y));
     if (pad) { // keep the bosses (and the trainer behind them) below their bars, as long as the player stays in view
       const top = Math.min(...bosses.map(a => a.y)) - 36;
@@ -455,9 +455,10 @@ export class RoomScene {
     if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette, (w.player.x - cx) * 2, (w.player.y - 8 - cy) * 2); // centred on the player, like FLASH
     if (this.world.player.hp < this.world.player.maxHp * 0.25 && !this.world.player.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
     // NPC labels (screen space): small FireRed sign tags that fade with distance; the nearest one becomes the prompt
+    const placed = []; // tags of NPCs standing side by side (OAK and the rival) stack instead of overlapping
     if (!topOverlay()) for (const n of this.npcs) if (n.label && this.nearNpc !== n && this.nearNpc2 !== n) {
       const p = w.player, d = Math.hypot(n.x - p.x, n.y - 8 - p.y);
-      this.tag(ctx, n.label, n.x, n.y - (n.sprite ? 40 : 22), Math.max(0.7, Math.min(1, 1.6 - d / 160)));
+      this.tag(ctx, n.label, n.x, n.y - (n.sprite ? 40 : 22), Math.max(0.7, Math.min(1, 1.6 - d / 160)), placed);
     }
     // prompts
     if (this.nearNpc && !topOverlay()) this.prompt(ctx, `${Input.label('interact')}: ${this.nearNpc.verb || 'Talk'}`, this.nearNpc.x, this.nearNpc.y - 40);
@@ -466,7 +467,7 @@ export class RoomScene {
       this.prompt(ctx, info + (this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind) ? `   (${Input.label('interact')}: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
     }
     if (this.doorsOpen && this.spec.kind !== 'hub') this.drawDoorArrows(ctx);
-    if ((this.spec.kind !== 'hub' || this.run) && !topOverlay()?.hidesHud) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub' }); // dialogue boxes cover the HUD
+    if ((this.spec.kind !== 'hub' || this.run) && !topOverlay()?.hidesHud) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub', cam: this.cam, top: this.popup?.bottom?.() || 0 }); // dialogue boxes cover the HUD
     this.drawCoop(ctx);
     for (const b of this.banners) b.draw(ctx);
     if (this.popup) this.popup.draw(ctx);
@@ -475,36 +476,18 @@ export class RoomScene {
     if (this.fade > 0) { if (this.state === 'exiting' && this.wipe) drawWipe(ctx, this.wipe.kind, this.fade, this.wipe); else drawWipe(ctx, 'fade', this.fade); }
   }
 
-  // co-op: player 2's name and HP over its head, plus the connection status
+  // co-op: player 2's tag (name and HP) over its head and its box at the bottom (FireRed HUD, hud.js), plus the
+  // connection status
   drawCoop(ctx) {
     const a = this.world.p2;
     if (a) {
-      const sx = (a.x - this.cam.x) * 2, sy = (a.y - this.cam.y) * 2 - a.r * 2 - 46;
-      if (a.dead) text(ctx, `${a.label || 'P2'} fainted · back in ${Math.max(0, Math.ceil(15 - (Coop.p2?.downT || 0)))}s`, sx, sy, { align: 'center', font: 'small', color: ['#ff9080', '#202020'] });
-      else {
-        text(ctx, a.label || 'P2', sx, sy - 2, { align: 'center', font: 'small', color: ['#80d0ff', '#202020'] });
-        rect(ctx, sx - 20, sy + 11, 40, 4, '#202020'); rect(ctx, sx - 19, sy + 12, 38 * Math.max(0, a.hp / a.maxHp), 2, a.hp < a.maxHp * 0.25 ? '#f04040' : '#40d860');
-      }
-    }
-    // compact player-2 panel (bottom centre), since both players watch the same screen
-    if (a) {
-      const x = 258, y = H - 46, wdt = 200;
-      pixBox(ctx, x, y, wdt, 40, 'rgba(16,20,32,0.85)', '#80d0ff', 2);
-      text(ctx, `${a.label || 'P2'} · ${D.species[a.species]?.name || ''} Lv${a.level}`, x + 6, y + 3, { font: 'small', color: ['#80d0ff', '#202020'] });
-      const r2 = a.run; // its own partner and Call gauge
-      if (r2?.partner) text(ctx, `${D.species[r2.partner.species]?.name || ''} ${r2.callGauge >= 1 ? 'F!' : Math.floor(r2.callGauge * 100) + '%'}`, x + wdt - 6, y + 3, { align: 'right', font: 'small', color: r2.callGauge >= 1 ? 'gold' : 'gray' });
-      rect(ctx, x + 6, y + 16, wdt - 12, 4, '#202020'); rect(ctx, x + 7, y + 17, (wdt - 14) * Math.max(0, a.hp / a.maxHp), 2, a.hp < a.maxHp * 0.25 ? '#f04040' : '#40d860');
-      ['attack', 'special', 'cast'].forEach((slot, i) => {
-        const mv = a.slots?.[slot], cd = a.cds?.['slot_' + slot] || 0, max = a.cdMax?.['slot_' + slot] || 1;
-        const bx = x + 6 + i * 64;
-        rect(ctx, bx, y + 24, 60, 12, '#283048');
-        if (cd > 0) rect(ctx, bx, y + 24, 60 * Math.min(1, cd / max), 12, '#101420');
-        text(ctx, (D.moves[mv]?.name || '-').slice(0, 11), bx + 30, y + 24, { align: 'center', font: 'small', color: cd > 0 ? 'gray' : 'white' });
-      });
+      const down = Coop.p2?.downT || 0;
+      drawCoopTag(ctx, a, (a.x - this.cam.x) * 2, (a.y - this.cam.y) * 2 - a.r * 2 - 30, down);
+      if (!topOverlay()?.hidesHud) drawCoopPanel(ctx, a, 258, H - 80, down); // between the healthbox and the partner window
     }
     if (this.nearNpc2 && !topOverlay()) this.prompt(ctx, `${this.world.p2?.label || 'P2'}: E to ${this.nearNpc2.verb || 'talk'}`, this.nearNpc2.x, this.nearNpc2.y - 54);
     const s = coopStatusText();
-    if (s) { const tw = measure(s, 'small') + 16; pixBox(ctx, W / 2 - tw / 2, 4, tw, 16, 'rgba(16,20,32,0.85)', '#80d0ff', 2); text(ctx, s, W / 2, 5, { align: 'center', font: 'small', color: 'white' }); }
+    if (s) { const tw = measure(s, 'small') + 18; frBox(ctx, Math.round(W / 2 - tw / 2), 4, tw, 20, 'blue', '#ffffff'); text(ctx, s, W / 2, 7, { align: 'center', font: 'small', color: 'dark' }); }
   }
 
   // arrows at the screen edge pointing to exits that are off screen
@@ -540,10 +523,18 @@ export class RoomScene {
     text(ctx, body, x, sy + 4, { font: 'small', color: 'dark' });
   }
   // a small name tag over an NPC (world point wx, wy = the tag's bottom centre)
-  tag(ctx, str, wx, wy, alpha = 1) {
+  tag(ctx, str, wx, wy, alpha = 1, placed = null) {
     const tw = measure(str, 'small') + 12, h = 18;
     let sx = Math.round((wx - this.cam.x) * 2 - tw / 2), sy = Math.round((wy - this.cam.y) * 2 - h);
     sx = Math.max(4, Math.min(W - tw - 4, sx)); sy = Math.max(4, sy);
+    if (placed) { // move clear of tags already drawn: above them, or below when there's no room above
+      for (let tries = 0; tries < 4; tries++) {
+        const hit = placed.find(r => sx < r.x + r.w + 2 && sx + tw + 2 > r.x && sy < r.y + r.h + 2 && sy + h + 2 > r.y);
+        if (!hit) break;
+        sy = hit.y - h - 2 >= 4 ? hit.y - h - 2 : hit.y + hit.h + 2;
+      }
+      placed.push({ x: sx, y: sy, w: tw, h });
+    }
     ctx.save(); ctx.globalAlpha = alpha;
     windowFrame(ctx, sx, sy, tw, h, 'std');
     text(ctx, str, sx + tw / 2, sy + 2, { font: 'small', color: 'dark', align: 'center' });

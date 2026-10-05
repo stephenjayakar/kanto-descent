@@ -20,12 +20,12 @@ const CREAM = '#ffffde'; // the healthbox's fill
 const HP_TEXT = ['#424242', '#dedbb5']; // FireRed's healthbox text: dark grey with a cream shadow
 
 function hpColor(f) { return f > 0.5 ? 'green' : f > 0.2 ? 'yellow' : 'red'; }
-// FireRed's HP bar tiles at 2x: each 8x8 frame of the strip holds 0-8 px of fill; tiles = 8px (1x) each
-function hpTiles(ctx, x, y, tiles, frac) {
+// FireRed's HP bar tiles at s x (2 = the world's scale): each 8x8 frame of the strip holds 0-8 px of fill; tiles = 8px (1x) each
+function hpTiles(ctx, x, y, tiles, frac, s = 2) {
   const im = img(`${BATTLE}hpbar_${hpColor(frac)}_strip.png`);
   const px = Math.round(Math.max(0, Math.min(1, frac)) * tiles * 8);
-  if (!ready(im)) { rect(ctx, x, y + 4, tiles * 16, 8, '#4a425a'); rect(ctx, x, y + 6, Math.round(px * 2), 6, '#5ad684'); return; }
-  for (let i = 0; i < tiles; i++) ctx.drawImage(im, Math.max(0, Math.min(8, px - i * 8)) * 8, 0, 8, 8, x + i * 16, y, 16, 16);
+  if (!ready(im)) { rect(ctx, x, y + 2 * s, tiles * 8 * s, 4 * s, '#4a425a'); rect(ctx, x, y + 3 * s, Math.round(px * s), 3 * s, '#5ad684'); return; }
+  for (let i = 0; i < tiles; i++) ctx.drawImage(im, Math.max(0, Math.min(8, px - i * 8)) * 8, 0, 8, 8, x + i * 8 * s, y, 8 * s, 8 * s);
 }
 function statusOf(a) { return Object.keys(a.status || {}).find(k => STATUS_ICON[k]); }
 // the bar drains smoothly like the games' (per actor, frame-rate independent)
@@ -162,7 +162,8 @@ export function drawHud(ctx, world, run, opts = {}) {
   text(ctx, money, 10, 9, { color: 'dark' });
   if (area) text(ctx, area, 4 + mw - 6, 10, { font: 'small', color: 'blue', align: 'right' });
   if (run.held) { const im = img(ICON.item(run.held)); frBox(ctx, mw + 6, 4, 24, 24, 'type1', '#ffffff'); if (ready(im)) ctx.drawImage(im, mw + 6, 4); }
-  let by = 32;
+  const top = Math.max(32, (opts.top || 0) + 4); // below the map name popup while it's showing (room.js)
+  let by = top;
   for (const b of run.boons) {
     const def = BOONS[b.key]; const L = LEGENDS[def.legend];
     const ic = img(ICON.portrait(L.dex));
@@ -174,7 +175,7 @@ export function drawHud(ctx, world, run, opts = {}) {
   }
   // Deoxys' curse, under the money window
   const curse = run.chaos.find(c => !c.active);
-  if (curse) text(ctx, `DEOXYS: ${curse.curse.name} (${curse.rooms})`, 36, 32, { font: 'small', color: 'pink' });
+  if (curse) text(ctx, `DEOXYS: ${curse.curse.name} (${curse.rooms})`, 36, top, { font: 'small', color: 'pink' });
 
   // ---- bosses: opponent healthboxes at the top (side by side when there are two)
   const bosses = world.actors.filter(a => a.boss && !a.dead && a.spawnT <= 0);
@@ -183,8 +184,69 @@ export function drawHud(ctx, world, run, opts = {}) {
     const left = mw + (run.held ? 36 : 10); // clear of the money / held item windows
     const bw = n === 1 ? 320 : Math.min(240, Math.floor((W - left - 8 - gap * (n - 1)) / n / 2) * 2);
     const total = n * bw + (n - 1) * gap, x0 = n === 1 ? (W - bw) / 2 : Math.max(left, (W - total) / 2);
-    bosses.forEach((b, i) => drawBossBox(ctx, b, Math.round(x0 + i * (bw + gap)), 2, bw));
+    // a boss walking up under the boxes shows through them
+    const under = (x, w) => opts.cam && bosses.some(b => { const sx = (b.x - opts.cam.x) * 2, sy = (b.y - opts.cam.y) * 2; return sy - 64 < BOSS_BOX_H + 2 && sy > 0 && sx > x - 24 && sx < x + w + 24; });
+    bosses.forEach((b, i) => {
+      const x = Math.round(x0 + i * (bw + gap)), see = under(x, bw);
+      if (see) { ctx.save(); ctx.globalAlpha = 0.45; }
+      drawBossBox(ctx, b, x, 2, bw);
+      if (see) ctx.restore();
+    });
   }
+}
+
+// ---- co-op: player 2's box, between the player's healthbox and the partner window (x 258-460). FireRed's doubles
+// healthbox (the second POKéMON's in a double battle, 101x28) at 2x with P2's name / Lv / HP and its Call gauge in
+// the box's empty corner, the player's name above it, and its three moves as thin windows underneath (78px tall
+// overall, like the player's healthbox).
+export const P2_COLOR = ['#80d0ff', '#202020']; // player 2's colour everywhere (tags, menus)
+export function drawCoopPanel(ctx, a, x, y, downT = 0) {
+  const box = img(`${BATTLE}healthbox_doubles_player.png`);
+  if (ready(box)) ctx.drawImage(box, x, y, 202, 56); else frBox(ctx, x + 18, y + 4, 182, 48, 'type1', CREAM);
+  const r2 = a.run, name = D.species[a.species]?.name || '';
+  text(ctx, a.label || 'P2', x + 22, y - 10, { font: 'small', color: P2_COLOR });
+  text(ctx, name, x + (measure(name, 'small') > 48 ? 24 : 28), y + 10, { font: 'small', scale: 2, color: HP_TEXT });
+  text(ctx, String(a.level), x + 144, y + 10, { font: 'small', scale: 2, color: HP_TEXT });
+  const lab = img(`${BATTLE}hp_label.png`);
+  if (ready(lab)) ctx.drawImage(lab, x + 64, y + 32, 32, 16);
+  hpTiles(ctx, x + 96, y + 32, 6, a.dead ? 0 : shownFrac(a, Math.max(0, a.hp / a.maxHp)));
+  // the box's empty corner (1x cols 12-31, rows 17-23): the faint countdown, or its partner's Call gauge
+  if (a.dead) text(ctx, `${Math.max(0, Math.ceil(15 - downT))}s`, x + 44, y + 35, { font: 'small', color: 'red', align: 'center' });
+  else if (r2?.partner) {
+    const full = r2.callGauge >= 1, gx = img(`${BATTLE}expbar_strip.png`), gpx = Math.round(Math.max(0, Math.min(1, r2.callGauge)) * 32);
+    if (full && Math.floor(Engine.time * 4) % 2) text(ctx, 'CALL!', x + 44, y + 35, { font: 'small', color: 'red', align: 'center' });
+    else if (ready(gx)) for (let i = 0; i < 4; i++) ctx.drawImage(gx, Math.max(0, Math.min(8, gpx - i * 8)) * 8, 0, 8, 8, x + 28 + i * 8, y + 38, 8, 8);
+  }
+  // moves: thin windows with the move type's stripe and a cooldown shade, like the HUD's slots
+  ['attack', 'special', 'cast'].forEach((slot, i) => {
+    const mv = (a.slots || r2?.slots)?.[slot], pr = mv && D.moves[mv] ? profile(mv) : null, bx = x + i * 68, by = y + 58, cw = 66, ch = 20;
+    frBox(ctx, bx, by, cw, ch, 'type1', '#ffffff');
+    if (!pr) { text(ctx, '-', bx + cw / 2, by + 4, { font: 'small', color: 'gray', align: 'center' }); return; }
+    rect(ctx, bx + 3, by + 3, 3, ch - 6, TYPE_COLORS[pr.type] || '#736b84');
+    let nm = pr.name; while (nm.length > 1 && measure(nm, 'small') > cw - 14) nm = nm.slice(0, -1);
+    text(ctx, nm, bx + cw / 2 + 2, by + 4, { font: 'small', color: 'dark', align: 'center' });
+    const cd = a.cds?.['slot_' + slot] || 0, max = a.cdMax?.['slot_' + slot] || 1;
+    if (cd > 0.05) { ctx.fillStyle = 'rgba(41,49,49,0.5)'; ctx.fillRect(bx + 3, by + 3, Math.round((cw - 6) * Math.min(1, cd / max)), ch - 6); }
+  });
+}
+// player 2's tag over its head: a little cream healthbox (blue frame, P2's colour) with its name and a 1x HP bar.
+// (sx, sy) = the tag's bottom centre on screen.
+export function drawCoopTag(ctx, a, sx, sy, downT = 0) {
+  const label = a.label || 'P2';
+  if (a.dead) {
+    const s = `${label} fainted · back in ${Math.max(0, Math.ceil(15 - downT))}s`, w = measure(s, 'small') + 12;
+    const x = Math.round(Math.max(4, Math.min(W - w - 4, sx - w / 2))), y = Math.round(Math.max(4, sy - 18));
+    frBox(ctx, x, y, w, 18, 'blue', CREAM);
+    text(ctx, s, x + w / 2, y + 3, { font: 'small', color: 'red', align: 'center' });
+    return;
+  }
+  const w = Math.max(measure(label, 'small') + 12, 58), h = 26;
+  const x = Math.round(Math.max(4, Math.min(W - w - 4, sx - w / 2))), y = Math.round(Math.max(4, sy - h));
+  frBox(ctx, x, y, w, h, 'blue', CREAM);
+  text(ctx, label, x + w / 2, y + 2, { font: 'small', color: HP_TEXT, align: 'center' });
+  const lab = img(`${BATTLE}hp_label.png`), bx = x + Math.round((w - 48) / 2);
+  if (ready(lab)) ctx.drawImage(lab, bx, y + 14, 16, 8);
+  hpTiles(ctx, bx + 16, y + 14, 4, shownFrac(a, Math.max(0, a.hp / a.maxHp)), 1);
 }
 
 export function drawControlsHint(ctx, lines) {

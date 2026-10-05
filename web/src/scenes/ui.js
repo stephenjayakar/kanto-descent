@@ -103,7 +103,7 @@ export function say(lines, opts = {}) { return new Promise(res => pushOverlay(ne
 export class Choice {
   // opts.custom = { view(c), layout(c), draw(ctx, c) } replaces the card list with another look (the POKé MART) but keeps
   // the same input, scrolling and interface (the sim and autoplay bots drive Choice overlays).
-  constructor(title, cards, opts = {}) { this.title = title; this.cards = cards; this.opts = opts; this.sel = opts.start || 0; this.t = 0; this.scroll = 0; if (opts.hidesHud) this.hidesHud = true; }
+  constructor(title, cards, opts = {}) { this.title = title; this.cards = cards; this.opts = opts; this.sel = opts.start || 0; this.t = 0; this.scroll = 0; this.hidesHud = opts.hidesHud ?? true; } // the dimmed HUD would sit under the footer and SKIP
   enter() { Input.clear(); this.p2 = Coop.menuP2; Sound.playSE('se_win_open'); }
   update(dt) {
     const I = this.p2 ? Coop.remote : Input;
@@ -178,7 +178,7 @@ export class Choice {
     if (this.opts.footer) text(ctx, this.opts.footer, cx, H - 24, { align: 'center', color: 'whiteSoft', font: 'small' });
     if (this.p2) { // whose pick this is
       const s = `PLAYER 2 (${Coop.guest?.name || 'P2'}) CHOOSES  ·  arrows + Enter/Z, X to skip`, tw = measure(s, 'small') + 16;
-      pixBox(ctx, W / 2 - tw / 2, 4, tw, 16, 'rgba(16,40,64,0.95)', '#80d0ff', 2); text(ctx, s, W / 2, 5, { align: 'center', font: 'small', color: ['#80d0ff', '#202020'] });
+      frBox(ctx, Math.round(W / 2 - tw / 2), 4, tw, 20, 'blue', '#ffffff'); text(ctx, s, W / 2, 7, { align: 'center', font: 'small', color: 'blue' });
     }
     if (this.opts.canSkip) {
       const b = this.skipRect(), on = inRect(b.x, b.y, b.w, b.h);
@@ -220,7 +220,7 @@ export function drawCard(ctx, c, x, y, w, h, sel, opts = {}) {
 // Co-op: both players pick from their own cards at the same time (left: player 1 with this keyboard/mouse,
 // right: player 2 with the guest's controller). Resolves [pick1, pick2] once both chose (-1 = skipped).
 export class DualChoice {
-  constructor(sides, opts = {}) { this.sides = sides.map(s => ({ ...s, sel: 0, pick: s.cards.length ? null : -1 })); this.opts = opts; this.t = 0; }
+  constructor(sides, opts = {}) { this.sides = sides.map(s => ({ ...s, sel: 0, pick: s.cards.length ? null : -1 })); this.opts = opts; this.t = 0; this.hidesHud = true; }
   enter() { Input.clear(); Coop.remote.clear(); Sound.playSE('se_win_open'); }
   rects(i) { const cw = 356, ch = 66, x = i === 0 ? 24 : W - 8 - cw; return this.sides[i].cards.map((c, j) => ({ x, y: 96 + j * (ch + 6), w: cw, h: ch })); }
   update(dt) {

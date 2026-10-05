@@ -439,17 +439,30 @@ class EvolutionOverlay {
     if (this.stage === 0 && this.t > 5) { this.stage = 1; this.t = 0; Sound.playFanfare('mus_evolved'); Sound.playCry(this.to); }
     if (this.stage === 1 && this.t > 0.6 && (Input.justPressed('confirm') || Engine.mouse.clicked || this.t > 4)) { popOverlay(this); Sound.playBGM(areaOf(G.run)?.music || 'mus_pallet'); this.done(); }
   }
-  // FireRed's evolution scene at 2x: the static background's top 112 rows (its bottom 48 are the textbox's
-  // magenta placeholder), the battle textbox below, and the real front sprites (PMD fallback while they load).
-  // While evolving: the swirl background (4 frames, ~8 fps), white silhouettes of both forms trading size
-  // faster and faster, and sparkles spiralling in, then a white flash.
+  // FireRed's evolution scene at 2x across the whole screen: the static background's top 112 rows (its bottom 48 are
+  // the textbox's magenta placeholder; the stripes are flat across, so they stretch sideways), the battle textbox at
+  // the bottom like the blackout / Hall of Fame screens, and the real front sprites (PMD fallback while they load).
+  // While evolving: the swirl background (4 frames, ~8 fps, mirrored out to the screen's edges), a glow over its dark
+  // eye, white silhouettes of both forms trading size faster and faster, sparkles spiralling in, then a white flash.
   draw(ctx) {
-    const X = (W - 480) / 2, Y = (H - 320) / 2, t = this.t;
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    const t = this.t, cx = W / 2, cy = 156; // the POKéMON in the middle of the area above the textbox
     const evolving = this.stage === 0 && t > 1 && t < 4.7;
-    if (evolving) { const sw = img('gfx/misc/evolution/swirl_frames.png'); if (ready(sw)) ctx.drawImage(sw, (Math.floor(t * 8) % 4) * 240, 22, 240, 112, X, Y, 480, 224); } // its eye (row 80) behind the POKéMON
-    else { const bg = img('gfx/misc/evolution/static_bg.png'); if (ready(bg)) ctx.drawImage(bg, 0, 0, 240, 112, X, Y, 480, 224); }
-    const cx = W / 2, cy = Y + 116; // the sprite's centre: FireRed puts the POKéMON in the middle of the top area
+    ctx.fillStyle = evolving ? '#000' : '#e7ffe7'; ctx.fillRect(0, 0, W, H);
+    if (evolving) {
+      const sw = img('gfx/misc/evolution/swirl_frames.png');
+      if (ready(sw)) {
+        const sx = (Math.floor(t * 8) % 4) * 240, x0 = cx - 255, y0 = cy - 159; // its eye (127.5, 79.5) behind the POKéMON
+        for (const fy of [-1, 0, 1]) for (const fx of [-1, 0, 1]) { // mirrored copies meet the original seamlessly
+          ctx.save(); ctx.translate(x0 + fx * 480 + (fx ? 480 : 0), y0 + fy * 320 + (fy ? 320 : 0)); ctx.scale(fx ? -1 : 1, fy ? -1 : 1);
+          ctx.drawImage(sw, sx, 0, 240, 160, 0, 0, 480, 320); ctx.restore();
+        }
+      }
+      // the swirl's black eye would peek out round the silhouettes: a bright core (stepped discs on the 2x grid) covers it
+      for (const [r, c] of [[22, '#9cc6e7'], [16, '#d6efff'], [10, '#ffffff']]) {
+        ctx.fillStyle = c;
+        for (let dy = -r; dy < r; dy += 2) { const hw = Math.round(Math.sqrt(r * r - (dy + 1) * (dy + 1)) / 2) * 2; ctx.fillRect(cx - hw, cy + dy, hw * 2, 2); }
+      }
+    } else { const bg = img('gfx/misc/evolution/static_bg.png'); if (ready(bg)) { ctx.drawImage(bg, 0, 0, 240, 112, 0, 0, W, 224); ctx.drawImage(bg, 0, 111, 240, 1, 0, 224, W, H - 224); } }
     if (this.stage === 0) {
       if (t <= 1) this.drawMon(ctx, this.from, this.f, cx, cy, 1, Math.max(0, t - 0.4) / 0.6);
       else if (t < 4.7) {
@@ -460,11 +473,11 @@ class EvolutionOverlay {
         if (sTo > 0.02) this.drawMon(ctx, this.to, this.tdex, cx, cy, 0.25 + 0.75 * sTo, 1);
         this.drawSparkles(ctx, cx, cy, t - 1);
       } else this.drawMon(ctx, this.to, this.tdex, cx, cy, 1, 1);
-      if (t > 4.4) { ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (t - 4.4) / 0.3) * (t > 4.7 ? Math.max(0, 1 - (t - 4.7) / 0.3) : 1)})`; ctx.fillRect(X, Y, 480, 224); }
-      this.textbox(ctx, X, Y, [`What? ${D.species[this.from].name} is evolving!`]);
+      if (t > 4.4) { ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (t - 4.4) / 0.3) * (t > 4.7 ? Math.max(0, 1 - (t - 4.7) / 0.3) : 1)})`; ctx.fillRect(0, 0, W, H); }
+      this.textbox(ctx, [`What? ${D.species[this.from].name} is evolving!`]);
     } else {
       this.drawMon(ctx, this.to, this.tdex, cx, cy, 1, Math.max(0, 1 - t * 2));
-      this.textbox(ctx, X, Y, [`Congratulations! Your ${D.species[this.from].name}`, `evolved into ${D.species[this.to].name}!`]);
+      this.textbox(ctx, [`Congratulations! Your ${D.species[this.from].name}`, `evolved into ${D.species[this.to].name}!`], t > 0.6);
     }
   }
   // the front sprite (64x64, drawn 2x), as a white silhouette when white = 1; scale for the size trading
@@ -493,12 +506,14 @@ class EvolutionOverlay {
     }
     ctx.globalAlpha = 1;
   }
-  // FireRed's battle textbox (240x48, 2x) with white text, 2x when it fits
-  textbox(ctx, X, Y, lines) {
-    const tb = img('gfx/ui/battle/textbox.png');
-    if (ready(tb)) ctx.drawImage(tb, X, Y + 224, 480, 96); else windowFrame(ctx, X, Y + 224, 480, 96, 'std');
-    const big = lines.every(l => measure(l) * 2 <= 480 - 40);
-    lines.forEach((l, i) => text(ctx, l, X + 22, Y + 224 + (big ? 14 + i * 32 : 26 + i * 18), { color: 'white', scale: big ? 2 : 1 }));
+  // FireRed's battle textbox (240x48, 2x) where the blackout screen has it, white text (2x when it fits), and the
+  // bobbing arrow once a press continues
+  textbox(ctx, lines, more = false) {
+    const tb = img('gfx/ui/battle/textbox.png'), X = (W - 480) / 2, ty = H - 112;
+    if (ready(tb)) ctx.drawImage(tb, X, ty, 480, 96); else windowFrame(ctx, X, ty, 480, 96, 'std');
+    const big = lines.every(l => measure(l) * 2 <= 480 - 60);
+    lines.forEach((l, i) => text(ctx, l, X + 22, ty + (big ? 18 + i * 32 : 26 + i * 18), { color: 'white', scale: big ? 2 : 1 }));
+    if (more) { const im = img('gfx/ui/cursors/text_advance_arrow.png'); if (ready(im)) ctx.drawImage(im, (Math.floor(this.t * 6) % 4) * 10, 0, 10, 12, X + 440, ty + 64, 20, 24); }
   }
 }
 
@@ -697,7 +712,7 @@ export async function bossDefeated(scene) {
 // ---------------------------------------------------------------- pause
 export function openPause(scene) { pushOverlay(new PauseOverlay(scene)); }
 class PauseOverlay {
-  constructor(scene) { this.scene = scene; this.sel = 0; }
+  constructor(scene) { this.scene = scene; this.sel = 0; this.hidesHud = true; } // its windows show the run; the HUD's corners would peek out from under them
   enter() { Input.clear(); Sound.playSE('se_win_open'); }
   update() {
     Input.poll();
@@ -906,7 +921,9 @@ export function drawHubHints(ctx, scene) {
   const s = `STARDUST  ${G.meta.stardust}`, w = measure(s) + 22;
   frBox(ctx, W - w - 4, 4, w, 24, 'type1', '#ffffff'); // like the HUD's money window
   text(ctx, s, W - 15, 9, { align: 'right', color: 'blue' });
-  text(ctx, `Walk out the door to begin. ${Input.label('pause')}: pause/controls`, W - 8, 32, { align: 'right', font: 'small', color: 'whiteSoft' });
+  const hint = `Walk out the door to begin. ${Input.label('pause')}: pause/controls`, hw = measure(hint, 'small') + 16; // a window: it sits over the lab floor
+  frBox(ctx, W - hw - 4, 30, hw, 18, 'type1', '#ffffff');
+  text(ctx, hint, W - 12, 32, { align: 'right', font: 'small', color: 'dark' });
 }
 
 async function chooseStarter(scene) {
