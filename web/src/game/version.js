@@ -1,8 +1,19 @@
 // Game version and patch notes (shown from the title screen). Only cut a new version when asked.
-export const VERSION = 'v0.0.6';
+export const VERSION = 'v0.0.7';
 
 // Newest first. Each entry: { v, sections: [[TITLE, [lines]]] } (an empty title means no heading).
 export const PATCH_NOTES = [
+  {
+    v: 'v0.0.7',
+    sections: [
+      ['', [
+        'MEWTWO (and the GHOST) appear close enough to see when the fight starts, instead of off screen under their healthbox.',
+        'Doors on the top edge show their reward once, not twice.',
+        'VULNERABLE sits in its own window under the boss’s healthbox, readable on any floor.',
+        'Attack warnings near the edge of the arena stay inside it.',
+      ]],
+    ],
+  },
   {
     v: 'v0.0.6',
     sections: [

@@ -31,6 +31,8 @@ const talkReach = n => Math.max(44, (n.range || 30) * 1.4);
 // the last map name the popup showed, so it only shows when the name changes (a new area, another Silph floor)
 let lastPopup = '';
 
+const BOSS_REACH = 110;
+
 export class RoomScene {
   // spec: { kind: 'combat'|'trainer'|'boss'|'shop'|'center'|'chaos'|'hub', layout, crop, reward:{kind,legend}, first }
   constructor(spec) {
@@ -172,11 +174,20 @@ export class RoomScene {
       const me = D.species[this.run.species];
       const wildPic = name === 'GHOST' ? 'gfx/pokemon/ghost/front.png' : !tr && D.species[def.mons[0].species]?.sprites?.front ? `gfx/pokemon/${D.species[def.mons[0].species].sprites.front}` : null; // FireRed's battle sprites
       await mugshot({ pal: MUGSHOT_PAL[key], name, title: def.title, pic: tr ? `gfx/trainers/${tr.pic}.png` : wildPic, portrait: D.species[def.mons[0].species].dex, playerDex: me?.dex, playerName: me?.name });
-      const list = spawnBoss(this.world, key, this.bossSpawnAt);
+      const list = spawnBoss(this.world, key, def.sprite ? this.bossSpawnAt : this.bossSpawnNear(this.bossSpawnAt)); // trainers' POKéMON come out by the trainer
       for (const b of list) { b.spawnT = 0.8; b.spawnMax = 0.8; Sound.playCry(b.species); }
       if (def.sprite) Sound.playSE('se_ball_open');
       this.bossLive = true;
     };
+  }
+
+  // a boss comes out no further than BOSS_REACH from the player, so the camera (which looks partway toward it) shows
+  // both below the boss healthboxes; tall arenas (CERULEAN CAVE) used to start MEWTWO off screen
+  bossSpawnNear(at) {
+    const w = this.world, p = w.player, d = Math.hypot(at.x - p.x, at.y - p.y);
+    if (d <= BOSS_REACH) return at;
+    const k = BOSS_REACH / d, q = { x: p.x + (at.x - p.x) * k, y: p.y + (at.y - p.y) * k };
+    return w.reachable(q.x, q.y) ? q : w.nearestReachable(q.x, q.y);
   }
 
   setupHub() {
@@ -506,7 +517,8 @@ export class RoomScene {
       const off = { up: [0, 1], down: [0, -1], left: [1, 0], right: [-1, 0] }[dir]; // the icon sits on the inner side
       ctx.save(); ctx.scale(2, 2);
       R.drawWarpArrow(ctx, dir, ax, ay, this.t);
-      R.drawRewardIcon(ctx, d.reward, ax + off[0] * 24, ay + off[1] * 24);
+      const iy = (R.doorIconY(d) - this.cam.y) * 2; // the door's own icon is already in view: just the arrow
+      if (!(sx > 12 && sx < W - 12 && iy > 24 && iy < H - 64)) R.drawRewardIcon(ctx, d.reward, ax + off[0] * 24, ay + off[1] * 24);
       ctx.restore();
     }
   }

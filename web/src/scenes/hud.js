@@ -91,7 +91,11 @@ function drawBossBox(ctx, b, x, y, w) {
   if (b.barrier > 0) rect(ctx, barX, y + 37, Math.round(tiles * 16 * Math.min(1, b.barrier / (b.maxHp * 0.08))), 2, '#84c6ff');
   const st = statusOf(b);
   if (st && labX - 52 > x + 12) { const si = img(`${BATTLE}status_${STATUS_ICON[st]}.png`); if (ready(si)) ctx.drawImage(si, labX - 52, y + 32, 48, 16); }
-  if (b.vulnerable > 0 && Math.floor(Engine.time * 8) % 2) text(ctx, 'VULNERABLE', x + w / 2, y + BOSS_BOX_H - 2, { font: 'small', color: 'gold', align: 'center' });
+  if (b.vulnerable > 0) { // a small window under the box (readable on any floor), the text flashing red / dark
+    const vw = measure('VULNERABLE', 'small') + 16, vx = Math.round(x + w / 2 - vw / 2);
+    frBox(ctx, vx, y + BOSS_BOX_H - 4, vw, 18, 'type1', '#ffffff');
+    text(ctx, 'VULNERABLE', x + w / 2, y + BOSS_BOX_H - 1, { font: 'small', color: Math.floor(Engine.time * 6) % 2 ? 'red' : 'dark', align: 'center' });
+  }
 }
 
 // ---- move slots: thin FireRed windows with the move's type badge, the key, the name and a cooldown shade

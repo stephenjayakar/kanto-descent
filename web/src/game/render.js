@@ -164,9 +164,11 @@ export function drawWorld(ctx, w, cam, opts = {}) {
   opts.underlay?.(ctx);
   // zones
   for (const z of w.zones) drawZone(ctx, z, w);
-  // telegraphs
+  // telegraphs (clipped to the arena: big ones near the edge used to spill over the darkened surroundings)
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, R.w * TILE, R.h * TILE); ctx.clip();
   for (const v of w.vfx) if (v.kind === 'tele') drawTele(ctx, v);
   for (const s of w.strikes) drawStrikeWarn(ctx, s);
+  ctx.restore();
   // pickups
   for (const k of w.pickups) drawPickup(ctx, k, t);
   // sortable things
