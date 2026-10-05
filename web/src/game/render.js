@@ -101,11 +101,12 @@ function shadow(ctx, x, y, w, a = 0.35) {
   ctx.globalAlpha = ga;
 }
 
-// A FireRed sprite recoloured to `color` with its shading kept (the 'color' blend takes hue and saturation from
-// the fill and luminosity from the sprite), built once per (path, colour) on an offscreen canvas. Never reads pixels back.
+// A FireRed sprite recoloured to `color` with its shading kept, built once per (path, colour, mode) on an offscreen
+// canvas. mode 'color' takes hue and saturation from the fill and luminosity from the sprite (for saturated sprites
+// like Lock-On's green); 'multiply' tints a pale sprite (the hit splat). Never reads pixels back.
 const recolors = new Map();
-function recolored(path, color) {
-  const key = path + '|' + color;
+function recolored(path, color, mode = 'color') {
+  const key = path + '|' + color + '|' + mode;
   const hit = recolors.get(key);
   if (hit) return hit;
   const im = img(path);
@@ -114,7 +115,7 @@ function recolored(path, color) {
   c.width = im.naturalWidth; c.height = im.naturalHeight;
   const x = c.getContext('2d');
   x.drawImage(im, 0, 0);
-  x.globalCompositeOperation = 'color'; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+  x.globalCompositeOperation = mode; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
   x.globalCompositeOperation = 'destination-in'; x.drawImage(im, 0, 0);
   recolors.set(key, c);
   return c;
@@ -288,7 +289,7 @@ export function drawActor(ctx, a, w) {
   if (a.status.confuse || a.confused) drawBA(ctx, 'duck', a.x + Math.cos(w.time * 5) * 8, a.y - spriteTop(a) + 2, w.time, { anim: true, scale: 0.5 });
   if (a.status.para && Math.floor(w.time * 10) % 3 === 0) drawBA(ctx, 'spark_2', a.x + (Math.random() - 0.5) * a.r, a.y - 10 - Math.random() * a.r, 0, { frame: Math.floor(Math.random() * 3), scale: 0.5 });
   if (a.status.burn && Math.floor(w.time * 8) % 4 === 0) drawBA(ctx, 'small_ember', a.x + (Math.random() - 0.5) * a.r, a.y - 6 - Math.random() * a.r, w.time, { anim: true, scale: 0.5 });
-  if (a.protect > 0) drawBA(ctx, 'protect', a.x, a.y - 10, 0, { scale: Math.max(0.4, a.r / 22), alpha: 0.6 });
+  if (a.protect > 0) drawBA(ctx, 'protect', a.x, a.y - 10, 0, { scale: Math.max(0.5, a.r / 22), alpha: 0.45 + 0.12 * Math.sin(w.time * 10) }); // Protect's shimmer (FireRed blends it over the mon)
   if (a.shieldHits > 0 && a.team === 'player') drawBA(ctx, 'protect', a.x, a.y - 10, 0, { scale: 0.5, alpha: 0.35 + 0.15 * Math.sin(w.time * 4) }); // Rebirth Shield: a faint Protect bubble
   if (a.seeded) drawBA(ctx, 'seed', a.x - 6, a.y - 4 - a.r, 0, { frame: 0, scale: 0.5 });
 }
@@ -668,7 +669,7 @@ function drawSendout(ctx, v, k, w) {
 
 // The hit splat every damaging hit gets in FireRed (gBasicHitSplatSpriteTemplate: battle_anims impact), on the
 // side the hit came from. Water uses its own splat (water_impact); other types recolour the splat to the type's
-// colour. Critical hits get a big splat plus the sliding-hit burst (battle_anims hit); super-effective hits a
+// colour. Critical hits land a x1 splat plus the sliding-hit burst (battle_anims hit); super-effective hits a
 // Hyper Voice ring (thin_ring) bursting off the target.
 function drawHitSplat(ctx, v, k) {
   const b = v.tgt, top = b ? spriteTop(b) : 16;
@@ -684,9 +685,9 @@ function drawHitSplat(ctx, v, k) {
   if (Math.floor(v.t * 30) % 3 === 2) return; // sFlickeringImpact: the splat flickers
   const spec = v.type === 'WATER' ? 'water_impact' : 'impact';
   const col = v.type && v.type !== 'NORMAL' && v.type !== 'FIGHTING' && spec === 'impact' ? TYPE_COLORS[v.type] : null;
-  const im = col ? recolored(baPath(spec), col) : img(baPath(spec));
+  const im = col ? recolored(baPath(spec), col, 'multiply') : img(baPath(spec));
   if (!im || (!col && !ready(im))) return;
-  const d = big && age < 0.25 ? 32 : 16; // a heavier hit lands at x1 for its first frames, then x0.5
+  const d = v.crit && age < 0.25 ? 32 : 16; // a heavier hit lands at x1 for its first frames, then x0.5
   ctx.drawImage(im, 0, 0, 32, 32, Math.round(x - d / 2), Math.round(y - d / 2), d, d);
 }
 
