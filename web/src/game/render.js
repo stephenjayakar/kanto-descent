@@ -193,14 +193,22 @@ export function drawWorld(ctx, w, cam, opts = {}) {
   if (R.grass) drawGrassOver(ctx, w);
   // map over layer (tree tops, roofs)
   if (R.over && ready(R.over)) ctx.drawImage(R.over, -R.ox, -R.oy);
-  // darken everything outside the arena crop
+  // darken everything outside the arena crop, with a soft one-tile edge stepped in 2px rings (like a GBA palette
+  // fade) so the room doesn't look like a cut-out rectangle
   if (!opts.noMask) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    const fw = (R.fullW || R.w) * TILE, fh = (R.fullH || R.h) * TILE;
-    ctx.fillRect(-R.ox - 400, -R.oy - 400, fw + 800, R.oy + 400);
-    ctx.fillRect(-R.ox - 400, R.h * TILE, fw + 800, fh - R.oy - R.h * TILE + 400);
-    ctx.fillRect(-R.ox - 400, 0, R.ox + 400, R.h * TILE);
-    ctx.fillRect(R.w * TILE, 0, fw - R.ox - R.w * TILE + 400, R.h * TILE);
+    const fw = (R.fullW || R.w) * TILE, fh = (R.fullH || R.h) * TILE, rw = R.w * TILE, rh = R.h * TILE;
+    const A = 0.6, E = 16, X0 = -R.ox - 400, Y0 = -R.oy - 400, X1 = fw - R.ox + 400, Y1 = fh - R.oy + 400;
+    ctx.fillStyle = `rgba(0,0,0,${A})`;
+    ctx.fillRect(X0, Y0, X1 - X0, -E - Y0);
+    ctx.fillRect(X0, rh + E, X1 - X0, Y1 - rh - E);
+    ctx.fillRect(X0, -E, -E - X0, rh + 2 * E);
+    ctx.fillRect(rw + E, -E, X1 - rw - E, rh + 2 * E);
+    for (let d0 = 0; d0 < E; d0 += 2) {
+      const d1 = d0 + 2;
+      ctx.fillStyle = `rgba(0,0,0,${(A * d1 / (E + 2)).toFixed(3)})`;
+      ctx.fillRect(-d1, -d1, rw + 2 * d1, 2); ctx.fillRect(-d1, rh + d0, rw + 2 * d1, 2);
+      ctx.fillRect(-d1, -d0, 2, rh + 2 * d0); ctx.fillRect(rw + d0, -d0, 2, rh + 2 * d0);
+    }
   }
   opts.overlay?.(ctx);
   // effects (clipped to the arena so storms and long beams don't paint over the darkened surroundings)
@@ -692,10 +700,16 @@ function drawHitSplat(ctx, v, k) {
 }
 
 // screen-space darkness vignette for caves/towers
-export function drawVignette(ctx, W, H, strength = 0.5) {
-  const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.85);
-  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${strength})`);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+// (an ellipse matching the screen, so the sides aren't crushed while the top and bottom stay bright)
+// (cx, cy: its centre, e.g. the player, kept near the middle of the screen)
+export function drawVignette(ctx, W, H, strength = 0.5, cx = W / 2, cy = H / 2) {
+  cx = Math.max(W * 0.3, Math.min(W * 0.7, cx)); cy = Math.max(H * 0.3, Math.min(H * 0.7, cy));
+  const sx = W / H;
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(sx, 1);
+  const g = ctx.createRadialGradient(0, 0, H * 0.24, 0, 0, H * 0.72);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.55, `rgba(0,0,0,${(strength * 0.4).toFixed(3)})`); g.addColorStop(1, `rgba(0,0,0,${strength})`);
+  ctx.fillStyle = g; ctx.fillRect(-cx / sx, -cy, W / sx, H);
+  ctx.restore();
 }
 
 export { resolveAnim, pmdMeta, shadow };

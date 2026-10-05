@@ -237,18 +237,24 @@ export function chooseBoth(sides, opts = {}) { return new Promise(res => pushOve
 
 export function choose(title, cards, opts = {}) { return new Promise(res => pushOverlay(new Choice(title, cards, { ...opts, onPick: (i, c) => res(i) }))); }
 
-// ---- big banner text (area name, boss intro)
+// ---- announcements (trainer beaten, revived, curse lifted, boss phases): a FireRed sign window (std frame at 2x,
+// like the map name popup) that drops in at the top centre. Area names use the map popup (scenes/transitions.js)
+// and boss intros the VS mugshot.
 export class Banner {
   constructor(title, sub, opts = {}) { this.title = title; this.sub = sub; this.t = 0; this.life = opts.life || 2.4; this.color = opts.color || '#f8d030'; }
   update(dt) { this.t += dt; return this.t < this.life; }
   draw(ctx) {
-    const k = this.t / this.life;
-    const a = k < 0.15 ? k / 0.15 : k > 0.8 ? (1 - k) / 0.2 : 1;
-    const y = H * 0.3;
-    ctx.globalAlpha = a * 0.75; ctx.fillStyle = '#000'; ctx.fillRect(0, y - 8, W, this.sub ? 58 : 40); ctx.globalAlpha = 1;
-    ctx.fillStyle = this.color; ctx.globalAlpha = a; ctx.fillRect(0, y - 8, W, 2); ctx.fillRect(0, y + (this.sub ? 48 : 30), W, 2); ctx.globalAlpha = 1;
-    text(ctx, this.title, W / 2, y, { align: 'center', color: 'white', scale: 2, alpha: a });
-    if (this.sub) text(ctx, this.sub, W / 2, y + 30, { align: 'center', color: 'whiteSoft', alpha: a });
+    const k = this.t / this.life, kin = Math.min(1, this.t / 0.14);
+    const a = k > 0.85 ? (1 - k) / 0.15 : kin;
+    const tw = measure(this.title, 'normal') * 2, sw = this.sub ? measure(this.sub) : 0;
+    const w = Math.ceil((Math.max(tw, sw) + 44) / 4) * 4, h = this.sub ? 64 : 46;
+    const x = Math.round((W - w) / 2), y = Math.round(H * 0.17 - (1 - kin) * 14);
+    ctx.save(); ctx.globalAlpha = Math.max(0, a);
+    ctx.save(); ctx.translate(x, y); ctx.scale(2, 2); windowFrame(ctx, 0, 0, w / 2, h / 2, 'std'); ctx.restore();
+    rect(ctx, x + 10, y + 8, w - 20, 2, this.color); // the announcement's colour as a thin rule under the frame
+    text(ctx, this.title, W / 2, y + 12, { align: 'center', color: 'dark', scale: 2 });
+    if (this.sub) text(ctx, this.sub, W / 2, y + 42, { align: 'center', color: 'dark' });
+    ctx.restore();
   }
 }
 

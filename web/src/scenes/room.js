@@ -3,7 +3,7 @@
 import { Engine, W, H, setScene, pushOverlay, topOverlay } from '../engine/core.js';
 import { img, ready } from '../engine/assets.js';
 import { text, measure } from '../engine/font.js';
-import { pixBox, rect } from '../engine/ui.js';
+import { pixBox, rect, windowFrame } from '../engine/ui.js';
 import { Input } from '../engine/input.js';
 import { Sound } from '../audio/sound.js';
 import { D, TYPE_COLORS } from '../game/data.js';
@@ -22,11 +22,14 @@ import { drawHud } from './hud.js';
 import { Banner, say, drawOW, ICON } from './ui.js';
 import * as R from './rewards.js';
 import { Coop, coopFrame, coopStatusText, asP2Sync } from '../game/coop.js';
+import { MapPopup, popupName, drawWipe, WIPE_TIME, BATTLE_WIPES, mugshot, MUGSHOT_PAL } from './transitions.js';
 
 const VIEW_W = W / 2, VIEW_H = H / 2;
 
 // How close you must be to talk to / use something: generous, since the nearest one always wins anyway.
 const talkReach = n => Math.max(44, (n.range || 30) * 1.4);
+// the last map name the popup showed, so it only shows when the name changes (a new area, another Silph floor)
+let lastPopup = '';
 
 export class RoomScene {
   // spec: { kind: 'combat'|'trainer'|'boss'|'shop'|'center'|'chaos'|'hub', layout, crop, reward:{kind,legend}, first }
@@ -74,7 +77,7 @@ export class RoomScene {
     const music = B?.music || 'mus_pallet';
     if (spec.kind === 'combat' || spec.kind === 'trainer') {
       Sound.playBGM(music);
-      if (spec.first) this.banners.push(new Banner(`${ACTS[actOf(run.biome)].name}: ${B.name}`, B.intro, { life: 3.4 }));
+      this.mapPopup(spec.first ? `${ACTS[actOf(run.biome)].name} · ${B.intro}` : '');
       if (spec.kind === 'trainer' || (B.trainerOnly && run.rng.chance(0.6))) this.setupTrainer();
       else this.setupWaves();
     } else if (spec.kind === 'boss') {
@@ -85,17 +88,28 @@ export class RoomScene {
       this.clearRoom(true);
     } else if (spec.kind === 'center') {
       Sound.playBGM('mus_poke_center');
-      this.addNpc({ sprite: 'nurse', ...this.at(7, 2), dir: 'down', name: 'NURSE JOY', label: 'HEAL', range: 64, /* behind the counter: reachable from anywhere along its front */ onTalk: () => R.nurse(this) });
+      this.addNpc({ sprite: 'nurse', ...this.at(7, 2), dir: 'down', fixed: true, name: 'NURSE JOY', label: 'HEAL', range: 64, /* behind the counter: reachable from anywhere along its front */ onTalk: () => R.nurse(this) });
       if (spec.preBoss) this.addNpc({ sprite: 'clerk', ...this.at(12, 5), dir: 'left', name: 'CLERK', label: 'SHOP', range: 52, onTalk: () => R.openShop(this) });
       this.clearRoom(true);
     } else if (spec.kind === 'chaos') {
       Sound.playBGM('mus_encounter_deoxys');
+      this.mapPopup();
       const c = this.room.center;
       this.addNpc({ dex: 386, x: c.x, y: c.y - 10, name: 'DEOXYS', onTalk: () => R.chaosBargain(this) });
       this.clearRoom(true);
     } else if (spec.kind === 'hub') {
+      lastPopup = '';
       this.setupHub();
     }
+  }
+
+  // FireRed's map name popup when entering a map whose name differs from the last one shown
+  mapPopup(sub = '') {
+    const B = areaOf(this.run); if (!B) return;
+    const pn = popupName(B.name, this.layoutMap);
+    if (!this.spec.first && pn.name === lastPopup) return;
+    lastPopup = pn.name;
+    this.popup = new MapPopup(pn.name, { wide: pn.wide, sub, hold: sub ? 3 : 2 });
   }
 
   setupWaves() {
@@ -132,6 +146,7 @@ export class RoomScene {
       npc.emote = 1.0;
       await say([`${t.className} ${t.name} would like to battle!`], { pic: `gfx/trainers/${t.pic}.png` });
       Sound.playBGM('mus_vs_trainer');
+      this.blink = 0.36; // FireRed's battle intro: the screen blinks before the fight
       this.waveT = 0.2;
     };
   }
@@ -153,7 +168,10 @@ export class RoomScene {
       const tr = def.trainer && D.trainers[def.trainer];
       await say(def.intro.map(t => ({ text: t, name })), { portrait: def.sprite ? null : (key === 'MEWTWO' ? 150 : null), pic: tr ? `gfx/trainers/${tr.pic}.png` : null });
       Sound.playBGM(def.music);
-      this.banners.push(new Banner(name === 'GHOST' ? 'GHOST' : name, def.title, { color: '#ff5050' }));
+      // FireRed's Elite Four mugshot transition ("VS") instead of a banner; the world waits under it
+      const me = D.species[this.run.species];
+      const wildPic = name === 'GHOST' ? 'gfx/pokemon/ghost/front.png' : !tr && D.species[def.mons[0].species]?.sprites?.front ? `gfx/pokemon/${D.species[def.mons[0].species].sprites.front}` : null; // FireRed's battle sprites
+      await mugshot({ pal: MUGSHOT_PAL[key], name, title: def.title, pic: tr ? `gfx/trainers/${tr.pic}.png` : wildPic, portrait: D.species[def.mons[0].species].dex, playerDex: me?.dex, playerName: me?.name });
       const list = spawnBoss(this.world, key, this.bossSpawnAt);
       for (const b of list) { b.spawnT = 0.8; b.spawnMax = 0.8; Sound.playCry(b.species); }
       if (def.sprite) Sound.playSE('se_ball_open');
@@ -252,7 +270,7 @@ export class RoomScene {
     // mouse in world coordinates
     Input.mouseWorld = { x: Engine.mouse.x / 2 + this.cam.x, y: Engine.mouse.y / 2 + this.cam.y };
     if (this.state === 'intro') { this.fade = Math.max(0, this.fade - dt * 3); if (this.fade <= 0) { this.state = 'play'; if (this.pendingIntro) { const f = this.pendingIntro; this.pendingIntro = null; f(); } } }
-    if (this.state === 'exiting') { this.fade = Math.min(1, this.fade + dt * 3.5); if (this.fade >= 1 && this.next) { const n = this.next; this.next = null; n(); } return; }
+    if (this.state === 'exiting') { this.fade = Math.min(1, this.fade + dt / (this.wipe?.dur || 0.29)); if (this.fade >= 1 && this.next) { const n = this.next; this.next = null; n(); } return; }
     if (Input.justPressed('pause') && this.state === 'play') { R.openPause(this); return; }
     if (Coop.role === 'host') coopFrame(this, dt); // co-op: the guest's input drives player 2
     if (this.musicBackAt && this.t > this.musicBackAt) { this.musicBackAt = 0; Sound.playBGM(areaOf(this.run)?.music || 'mus_pallet'); } // back to the area's music after a win
@@ -264,6 +282,8 @@ export class RoomScene {
     if (steps >= 4) this.acc = 0;
     this.updateCamera(dt);
     this.banners = this.banners.filter(b => b.update(dt));
+    if (this.blink > 0) this.blink -= dt;
+    if (this.popup && this.state !== 'intro' && !this.popup.update(dt)) this.popup = null; // like FireRed: after the fade-in
   }
 
   step(dt) {
@@ -276,7 +296,7 @@ export class RoomScene {
     if (w.player) run.hp = Math.max(0, w.player.hp);
     if (this.trainer || this.waves.length) this.updateWaves(dt);
     if (this.bossLive) bossDirector(w);
-    for (const n of this.npcs) if (n.emote > 0) n.emote -= dt;
+    for (const n of this.npcs) { if (n.emote > 0) n.emote -= dt; this.npcFacing(n, dt); }
     for (const e of w.events.splice(0)) this.onEvent(e);
     // clear check
     if (!this.cleared && this.state === 'play') {
@@ -352,6 +372,14 @@ export class RoomScene {
   leave(reward) {
     Sound.playSE(this.spec.kind === 'hub' ? 'se_exit' : 'se_door');
     this.state = 'exiting';
+    // FireRed: doors, stairs and new areas fade to black; walking into another fight is a battle wipe; the boss
+    // gets the blinking intro and a closing circle
+    const from = this.spec.kind, to = reward.kind;
+    let kind = 'fade';
+    if (to === 'boss') kind = 'boss';
+    else if (!['hub', 'shop', 'center'].includes(from) && !['center', 'shop', 'next', 'victory', 'start'].includes(to)) kind = BATTLE_WIPES[Math.floor(Math.random() * BATTLE_WIPES.length)];
+    const p = this.world.player;
+    this.wipe = { kind, dur: WIPE_TIME[kind], cx: (p.x - this.cam.x) * 2, cy: (p.y - 8 - this.cam.y) * 2 };
     this.next = () => R.goNext(this, reward);
   }
 
@@ -385,6 +413,11 @@ export class RoomScene {
       const top = Math.min(...bosses.map(a => a.y)) - 36;
       y = Math.min(y, Math.max(top - pad, p.y - VIEW_H + 40, -24 - pad));
     }
+    // never look past the edge of the whole map into the black void when the map goes on (a crop at a layout's
+    // edge); a little slack at the bottom, where the HUD covers the corners anyway
+    const lx0 = -Rm.ox, lx1 = (Rm.fullW || Rm.w) * TILE - Rm.ox - VIEW_W, ly0 = -Rm.oy - (pad ? 8 : 0), ly1 = (Rm.fullH || Rm.h) * TILE - Rm.oy - VIEW_H + 20;
+    if (lx1 >= lx0) x = Math.max(lx0, Math.min(lx1, x));
+    if (ly1 >= ly0) y = Math.max(ly0, Math.min(ly1, y));
     return { x, y };
   }
   updateCamera(dt) {
@@ -399,9 +432,12 @@ export class RoomScene {
     if (this.state === 'loading' || !this.world) { text(ctx, 'Loading...', W / 2, H / 2, { align: 'center', color: 'white' }); return; }
     const w = this.world;
     const sh = w.shake * (G.meta.settings.shake ?? 1);
-    const cx = Math.round(this.cam.x + (sh ? (Math.random() - 0.5) * sh : 0)), cy = Math.round(this.cam.y + (sh ? (Math.random() - 0.5) * sh : 0));
+    // the camera snaps to screen pixels (half world pixels), not world pixels: scrolling moves in 1px steps and
+    // sprites wobble against the map by at most 1px instead of 2
+    const cx2 = Math.round((this.cam.x + (sh ? (Math.random() - 0.5) * sh : 0)) * 2), cy2 = Math.round((this.cam.y + (sh ? (Math.random() - 0.5) * sh : 0)) * 2);
+    const cx = cx2 / 2, cy = cy2 / 2;
     ctx.save();
-    ctx.setTransform(2, 0, 0, 2, -cx * 2, -cy * 2);
+    ctx.setTransform(2, 0, 0, 2, -cx2, -cy2);
     ctx.imageSmoothingEnabled = false;
     const tick = Math.floor(this.t * 60);
     drawWorld(ctx, w, this.cam, {
@@ -416,10 +452,13 @@ export class RoomScene {
     if (w.screenFlash) { const f = w.screenFlash; ctx.fillStyle = `rgba(${f.color},${f.a * (1 - f.t / f.life)})`; ctx.fillRect(0, 0, W, H); } // THUNDER's flash
     drawWorldTexts(ctx, w, { x: cx, y: cy });
     const B = areaOf(this.run);
-    if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette);
+    if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette, (w.player.x - cx) * 2, (w.player.y - 8 - cy) * 2); // centred on the player, like FLASH
     if (this.world.player.hp < this.world.player.maxHp * 0.25 && !this.world.player.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
-    // NPC labels (screen space)
-    for (const n of this.npcs) if (n.label && this.nearNpc !== n) { const sx = (n.x - this.cam.x) * 2, sy = (n.y - 36 - this.cam.y) * 2; text(ctx, n.label, sx, sy, { font: 'small', color: ['#f8f8f8', '#202020'], align: 'center' }); }
+    // NPC labels (screen space): small FireRed sign tags that fade with distance; the nearest one becomes the prompt
+    if (!topOverlay()) for (const n of this.npcs) if (n.label && this.nearNpc !== n && this.nearNpc2 !== n) {
+      const p = w.player, d = Math.hypot(n.x - p.x, n.y - 8 - p.y);
+      this.tag(ctx, n.label, n.x, n.y - (n.sprite ? 40 : 22), Math.max(0.7, Math.min(1, 1.6 - d / 160)));
+    }
     // prompts
     if (this.nearNpc && !topOverlay()) this.prompt(ctx, `${Input.label('interact')}: ${this.nearNpc.verb || 'Talk'}`, this.nearNpc.x, this.nearNpc.y - 40);
     if (this.nearDoor && this.doorsOpen) {
@@ -430,8 +469,10 @@ export class RoomScene {
     if ((this.spec.kind !== 'hub' || this.run) && !topOverlay()?.hidesHud) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub' }); // dialogue boxes cover the HUD
     this.drawCoop(ctx);
     for (const b of this.banners) b.draw(ctx);
-    if (this.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${this.fade})`; ctx.fillRect(0, 0, W, H); }
+    if (this.popup) this.popup.draw(ctx);
+    if (this.blink > 0) { const b = Math.sin((1 - this.blink / 0.36) * Math.PI * 2); ctx.fillStyle = `rgba(0,0,0,${(0.75 * b * b).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
     if (this.spec.kind === 'hub') R.drawHubHints(ctx, this);
+    if (this.fade > 0) { if (this.state === 'exiting' && this.wipe) drawWipe(ctx, this.wipe.kind, this.fade, this.wipe); else drawWipe(ctx, 'fade', this.fade); }
   }
 
   // co-op: player 2's name and HP over its head, plus the connection status
@@ -487,18 +528,47 @@ export class RoomScene {
     }
   }
 
+  // interaction prompt: a FireRed text window (std frame, dark text) with the key in a blue button cap
   prompt(ctx, str, wx, wy) {
-    const sx = (wx - this.cam.x) * 2, sy = (wy - this.cam.y) * 2;
-    const tw = measure(str, 'small') + 12;
-    pixBox(ctx, sx - tw / 2, sy - 8, tw, 16, 'rgba(16,20,32,0.85)', '#f8f8f8', 2);
-    text(ctx, str, sx, sy - 7, { font: 'small', color: 'white', align: 'center' });
+    const m = /^([^:]+): (.*)$/.exec(str), key = m && m[1].length <= 6 ? m[1] : null, body = key ? m[2] : str;
+    const kw = key ? measure(key, 'small') + 8 : 0, tw = measure(body, 'small') + 20 + (key ? kw + 4 : 0), h = 22;
+    let sx = Math.round((wx - this.cam.x) * 2 - tw / 2), sy = Math.round((wy - this.cam.y) * 2 - h / 2);
+    sx = Math.max(4, Math.min(W - tw - 4, sx)); sy = Math.max(4, Math.min(H - h - 64, sy));
+    windowFrame(ctx, sx, sy, tw, h, 'std');
+    let x = sx + 10;
+    if (key) { pixBox(ctx, x, sy + 5, kw, 12, '#3152ce', '#202858', 2); text(ctx, key, x + kw / 2, sy + 4, { font: 'small', color: 'white', align: 'center' }); x += kw + 4; }
+    text(ctx, body, x, sy + 4, { font: 'small', color: 'dark' });
+  }
+  // a small name tag over an NPC (world point wx, wy = the tag's bottom centre)
+  tag(ctx, str, wx, wy, alpha = 1) {
+    const tw = measure(str, 'small') + 12, h = 18;
+    let sx = Math.round((wx - this.cam.x) * 2 - tw / 2), sy = Math.round((wy - this.cam.y) * 2 - h);
+    sx = Math.max(4, Math.min(W - tw - 4, sx)); sy = Math.max(4, sy);
+    ctx.save(); ctx.globalAlpha = alpha;
+    windowFrame(ctx, sx, sy, tw, h, 'std');
+    text(ctx, str, sx + tw / 2, sy + 2, { font: 'small', color: 'dark', align: 'center' });
+    ctx.restore();
+  }
+
+  // NPCs turn to face you when you come close (FireRed NPCs face the player to talk); some look around when idle
+  npcFacing(n, dt) {
+    if (!n.sprite || n.trainer || n.fixed) return;
+    const p = this.world.player, near = p && Math.hypot(n.x - p.x, n.y - 8 - p.y) < talkReach(n) * 1.25;
+    if (near) {
+      const dx = p.x - n.x, dy = p.y - (n.y - 8);
+      n.face = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+      n.lookT = 1.2;
+    } else if (n.lookAround && (n.lookT = (n.lookT ?? 2) - dt) <= 0) { // MOVEMENT_TYPE_LOOK_AROUND
+      n.face = ['down', 'left', 'right', 'up', n.dir, n.dir][Math.floor(Math.random() * 6)];
+      n.lookT = 1.5 + Math.random() * 2.5;
+    } else if (!n.lookAround && n.lookT > 0 && (n.lookT -= dt) <= 0) n.face = null; // back to its post
   }
 
   drawNpc(ctx, n) {
     if (n.dex) drawPmd(ctx, n.dex, n.x, n.y - 4 - (n.float ? 6 + Math.sin(this.t * 2) * 3 : 0), { anim: n.anim || 'Idle', dir: n.pdir || 0, t: this.t });
-    else if (n.sprite) drawOW(ctx, n.sprite, n.x, n.y, n.dir || 'down');
+    else if (n.sprite) drawOW(ctx, n.sprite, n.x, n.y, n.face || n.dir || 'down');
     if (n.icon) { const im = img(n.icon); if (ready(im)) ctx.drawImage(im, Math.round(n.x - im.naturalWidth / 2), Math.round(n.y - im.naturalHeight - 2 + Math.sin(this.t * 3) * 1.5)); }
-    if (n.emote > 0) { const im = img('gfx/misc/emotes/exclamation.png'); if (ready(im)) ctx.drawImage(im, 0, 0, 16, 16, Math.round(n.x - 8), Math.round(n.y - 50), 16, 16); }
+    if (n.emote > 0) { const im = img('gfx/misc/emotes/exclamation.png'); if (ready(im)) ctx.drawImage(im, 0, 0, 16, 16, Math.round(n.x - 8), Math.round(n.y - 48), 16, 16); }
 
   }
 

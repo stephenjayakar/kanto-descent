@@ -786,9 +786,9 @@ export function setupHub(scene) {
   scene.addNpc({ sprite: 'prof_oak', ...at(6, 3), dir: 'down', name: 'PROF. OAK', label: 'RESEARCH', range: 30, onTalk: () => oakResearch(scene) });
   const ballNpc = (x, label) => scene.addNpc({ ...at(x, 4), name: 'POKé BALL', label, verb: 'Choose POKéMON', range: 34, onTalk: () => chooseStarter(scene) });
   ballNpc(8, ''); ballNpc(9, 'STARTERS'); ballNpc(10, '');
-  scene.addNpc({ sprite: 'scientist', ...at(11, 10), dir: 'left', name: 'AIDE', label: 'RECORDS', onTalk: () => records(scene) });
-  scene.addNpc({ sprite: 'worker_f', ...at(2, 10), dir: 'right', name: 'AIDE', label: 'HOW TO PLAY', onTalk: () => tutorial(scene) });
-  scene.addNpc({ sprite: 'blue', ...at(5, 4), dir: 'down', name: 'RIVAL', label: G.meta.wins ? `HEAT ${G.meta.heat || 0}` : '', onTalk: () => rivalTalk(scene) });
+  scene.addNpc({ sprite: 'scientist', ...at(11, 10), dir: 'left', lookAround: true, name: 'AIDE', label: 'RECORDS', onTalk: () => records(scene) });
+  scene.addNpc({ sprite: 'worker_f', ...at(2, 10), dir: 'right', lookAround: true, name: 'AIDE', label: 'HOW TO PLAY', onTalk: () => tutorial(scene) });
+  scene.addNpc({ sprite: 'blue', ...at(5, 4), dir: 'down', lookAround: true, name: 'RIVAL', label: G.meta.wins ? `HEAT ${G.meta.heat || 0}` : '', onTalk: () => rivalTalk(scene) });
   // the lab door is the way out
   const ex = scene.room.exits[0];
   scene.doors = [{ ...ex, reward: { kind: 'start' }, t: 0 }];
