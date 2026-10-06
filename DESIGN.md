@@ -99,6 +99,9 @@ Run it with `node serve.cjs 8092` and open http://localhost:8092/.
 * `extract_maps.py` (MAPS.md): renders every map layout to under/over PNG layers, plus collision,
   behaviour, warps and tile animations.
 * `room_candidates.py`: finds good arena crops in the layouts.
+* `room_audit.mjs` (MAPS.md): checks every room the game loads with the real collision code (thin walls, footprint reach,
+  dash probes, spawn spots, cramped or cut-off crops) and draws contact sheets with a collision overlay. Run it after
+  touching room pools or collision; `--strict` fails on errors.
 * `extract_battle_anims.py` (BATTLE_ANIMS.md): all 289 battle-animation sprite tags as frame strips.
 * `fetch_pmd.js`: PMDCollab SpriteCollab sprites and portraits for 172 species, pinned to the same commit
   as emerald-arena, with credits per species.
@@ -106,7 +109,8 @@ Run it with `node serve.cjs 8092` and open http://localhost:8092/.
 ## Testing
 * `node tests/browserd.cjs` drives headless Chrome. Send it commands with `tests/b.sh '{"cmd":...}'`.
 * `?dev=combat|boss|shop|center|chaos|trainer&biome=N&level=L&starter=X&boons=Z_ATTACK,...` jumps straight
-  into a room.
+  into a room. Add `&layout=LAYOUT_X&crop=N` (a candidate index, or `x,y,w,h`) for one exact room.
+* `node tests/review/room_shots.mjs 8121 LAYOUT_X:crop:area:biome[:boss]` takes muted spot screenshots of rooms.
 * `?hub` skips the title screen.
 * `import('./src/dev/autoplay.js').then(m => m.start({god:true}))` plays a full run.
 
@@ -170,8 +174,11 @@ Rules that came out of two adversarial review rounds and the sim:
   yours. Ranged foes fire from their full range. Lunges and charges start from 80% of their full travel distance.
 * **Boons:** a blessing that replaces another legend's blessing in the same slot is offered at least one rarity higher (max
   MASTER). Every boon offer can be skipped, and the screen lists the blessings you already have.
+* **Map collision follows FireRed:** collision bits, blocking behaviours, plus thin walls on cell sides (`room.edge`) for one-way
+  `MB_IMPASSABLE_*` sides and height changes (elevation). Thin walls stop walking and dashes, not shots or flyers. Boss and
+  trainer spots snap to open floor (`bossSpots`), the partner never phases through walls, and ghosts don't stop inside one.
 * **Dash crosses gaps** (tiles that block walking but not shots: water, ledges). A dash that ends over a gap carries on for up
-  to 0.1s more, otherwise the player drops onto the nearest ground. Onix's charge (`through: true`) burrows through rock;
+  to 0.1s more, otherwise the player drops onto the nearest ground in plain view (never through a wall; else back where the dash left the ground). Onix's charge (`through: true`) burrows through rock;
   leaps and burrowing charges `settle()` onto the nearest open ground.
 * **Every line can evolve:** `nextEvolution()` gives each method a level (trade/friendship/beauty 30, stones 32, SPECIAL_EVOS
   first). The caught partner evolves as the player levels (`evolvePartner`).

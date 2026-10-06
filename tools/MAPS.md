@@ -75,6 +75,11 @@ maps                MAP_* ids that use this layout
 
 Walkability is not the same as `collision == 0`. Water (`MB_POND_WATER`, `MB_OCEAN_WATER`, `MB_DEEP_WATER`, ...), ledges (`MB_JUMP_*`) and currents have collision 0 but need Surf or are one-way.
 
+Two more rules block a step between two passable cells (`event_object_movement.c GetCollisionAtCoords`), and `web/src/game/rooms.js` turns both into thin walls on cell sides (`room.edge`, bits N=1 S=2 W=4 E=8) that stop walking and dashes but not shots or flyers:
+
+- `MB_IMPASSABLE_NORTH/SOUTH/EAST/WEST` (and the diagonal ones) block that side of the cell, both ways. They are cliff rims, the floor in front of desks and map borders; the cell itself is floor.
+- **Elevation:** two cells on different heights can't be crossed unless one is elevation 0 (stairs, any height) or 15 (bridge). This keeps you from walking up and down plateau rims in Seafoam and Cerulean Cave.
+
 ### `anim.json`
 
 `src/tileset_anims.c` is parsed, not hard-coded. The animations are:
@@ -139,6 +144,25 @@ The data comes from `data/maps/*/map.json`. Several maps share a layout: there a
 **Whole layouts:** layouts no bigger than 30x25 also get a `whole: true` entry. It is the bounding box of the largest walkable component, which covers gyms, Elite Four rooms, tower floors, Marts and Centers.
 
 **Previews:** `tools/maps_verify/rooms/<LAYOUT>.png` shows every candidate on the layout. Non-walkable blocks are darkened, crops are drawn as numbered coloured boxes, and the whole-layout box is white.
+
+The candidates ignore thin walls, so check a crop with the audit before using it. Area pools (`content.js`) take candidate indices or hand-picked crops `{x, y, w, h}`.
+
+## Room audit (`tools/room_audit.mjs`)
+
+```
+node tools/room_audit.mjs                 # every room the game loads; sheets in tools/maps_verify/audit/<area>.png
+node tools/room_audit.mjs --area=seafoam --no-sheets
+node tools/room_audit.mjs --crop=LAYOUT_SEAFOAM_ISLANDS_B4F:11,5,16,16   # try a crop (explore.png)
+node tools/room_audit.mjs --strict        # exit 1 on any ERROR
+python tools/room_audit_sheet.py tools/maps_verify/audit/audit.json <dir> SILPH_CO_7F 2   # one room at 2x
+```
+
+It builds each room with the game's own `buildRoom` and `World` (combat.js) and flags:
+
+- **ERROR:** a reachable cell whose metatile is solid in at least 85% of its uses in all 364 layouts; height changes with no thin wall; exits that the player (r=6 footprint) or a boss (r=8) can't reach; boss and trainer spots in walls; real dashes from every reachable cell in 8 directions that pass through a solid cell, get dropped on the far side of a wall, or end stranded.
+- **WARN:** solid cells that are open nearly everywhere else, cells that block walking but not dashes, doors whose arrow points into solid map, small arenas (under 110 reachable cells), cramped ones (under 30% of cells with open floor all round), and unreachable pockets.
+
+Sheet legend: red = solid, blue = water or gap, yellow hatching = other walk-only blocks, purple = unreachable pockets, orange line = thin wall, green dot = entry, cyan box = exit, magenta or orange box = a flagged cell.
 
 ## Verification sheets (`--verify`)
 

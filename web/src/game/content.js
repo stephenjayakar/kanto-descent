@@ -6,21 +6,21 @@ export const TUNING = { enemyDmg: 3.4, bossDmg: 1.5, bossSecs: 4.6 }; // v0.0.3:
 export const BIOMES = [
   {
     key: 'forest', name: 'VIRIDIAN FOREST', music: 'mus_viridian_forest', rooms: 6, vignette: 0.25, design: 0,
-    pools: [['LAYOUT_VIRIDIAN_FOREST', [0, 1, 2, 3, 4, 5, 6, 7]]],
+    pools: [['LAYOUT_VIRIDIAN_FOREST', [0, 1, 2, 3, 4, 6]]], // map audit: #5 and #7 were thin grass strips (tools/room_audit.mjs)
     encounters: ['MAP_VIRIDIAN_FOREST', 'MAP_ROUTE2'], trainerMaps: ['MAP_VIRIDIAN_FOREST'], levelBonus: [0, 3],
     boss: 'BROCK', bossRoom: ['LAYOUT_PEWTER_CITY_GYM', 0], waves: [1, 2], perWave: [3, 4], maxAttackers: 2,
     intro: 'Bug-filled woods between Viridian and Pewter.',
   },
   {
     key: 'mtmoon', name: 'MT. MOON', music: 'mus_mt_moon', rooms: 7, vignette: 0.45, design: 1,
-    pools: [['LAYOUT_MT_MOON_1F', [0, 1, 2, 3, 4]], ['LAYOUT_MT_MOON_B1F', [0]], ['LAYOUT_MT_MOON_B2F', [0, 1, 2, 3]]],
+    pools: [['LAYOUT_MT_MOON_1F', [0, 1, 2, 3, 4]], ['LAYOUT_MT_MOON_B2F', [0, 1, 2]]], // map audit: B1F#0 was half black void, B2F#3 a 1-exit nook
     encounters: ['MAP_MT_MOON_1F', 'MAP_MT_MOON_B1F', 'MAP_MT_MOON_B2F'], trainerMaps: ['MAP_MT_MOON_1F', 'MAP_MT_MOON_B2F'], levelBonus: [4, 8],
     boss: 'MISTY', bossRoom: ['LAYOUT_CERULEAN_CITY_GYM', 0], waves: [2, 2], perWave: [3, 5], maxAttackers: 2,
     intro: 'A dark cave said to hold fallen stars. Team Rocket is digging for fossils.',
   },
   {
     key: 'tower', name: 'POKéMON TOWER', music: 'mus_poke_tower', rooms: 7, vignette: 0.6, dark: true, design: 2,
-    pools: [['LAYOUT_POKEMON_TOWER_1F', [0, 1]], ['LAYOUT_POKEMON_TOWER_2F', [0, 1]], ['LAYOUT_POKEMON_TOWER_3F', [0, 1]], ['LAYOUT_POKEMON_TOWER_4F', [0, 1]], ['LAYOUT_POKEMON_TOWER_5F', [0, 1]]],
+    pools: [['LAYOUT_POKEMON_TOWER_1F', [0]], ['LAYOUT_POKEMON_TOWER_2F', [0]], ['LAYOUT_POKEMON_TOWER_3F', [0]], ['LAYOUT_POKEMON_TOWER_4F', [0]], ['LAYOUT_POKEMON_TOWER_5F', [0]]], // map audit: the #1 crops were the same floors cut through the stairs
     encounters: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F', 'MAP_POKEMON_TOWER_6F'], trainerMaps: ['MAP_POKEMON_TOWER_3F', 'MAP_POKEMON_TOWER_4F', 'MAP_POKEMON_TOWER_5F'], levelBonus: [2, 5],
     boss: 'MAROWAK', bossRoom: ['LAYOUT_POKEMON_TOWER_6F', 0], waves: [2, 3], perWave: [3, 5], maxAttackers: 3,
     intro: 'Lavender\'s resting place for departed POKéMON. Something restless haunts the upper floors.',
@@ -34,7 +34,7 @@ export const BIOMES = [
   },
   {
     key: 'cave', name: 'CERULEAN CAVE', music: 'mus_rocket_hideout', rooms: 6, vignette: 0.55, design: 4, // v0.0.3: twice as long
-    pools: [['LAYOUT_CERULEAN_CAVE_1F', [0, 1]], ['LAYOUT_CERULEAN_CAVE_2F', [0]], ['LAYOUT_CERULEAN_CAVE_B1F', [1]]],
+    pools: [['LAYOUT_CERULEAN_CAVE_1F', [0, 1, { x: 5, y: 13, w: 26, h: 10 }]], ['LAYOUT_CERULEAN_CAVE_B1F', [1]]], // map audit: 2F#0 was a maze of 1-tile rock rows
     encounters: ['MAP_CERULEAN_CAVE_1F', 'MAP_CERULEAN_CAVE_2F', 'MAP_CERULEAN_CAVE_B1F'], trainerMaps: [], levelBonus: [-12, -6],
     boss: 'MEWTWO', bossRoom: ['LAYOUT_CERULEAN_CAVE_B1F', 0], waves: [2, 3], perWave: [3, 4], maxAttackers: 3,
     intro: 'The deepest cave in KANTO. An immense power waits at the bottom.',
@@ -49,7 +49,7 @@ export const BIOMES = [
   },
   {
     key: 'seafoam', name: 'SEAFOAM ISLANDS', music: 'mus_viridian_forest', rooms: 7, vignette: 0.4, design: 3,
-    pools: [['LAYOUT_SEAFOAM_ISLANDS_1F', [0]], ['LAYOUT_SEAFOAM_ISLANDS_B1F', [0]], ['LAYOUT_SEAFOAM_ISLANDS_B2F', [0, 1]], ['LAYOUT_SEAFOAM_ISLANDS_B3F', [0]], ['LAYOUT_SEAFOAM_ISLANDS_B4F', [0]]],
+    pools: [['LAYOUT_SEAFOAM_ISLANDS_1F', [0]], ['LAYOUT_SEAFOAM_ISLANDS_B1F', [0]], ['LAYOUT_SEAFOAM_ISLANDS_B2F', [0]], ['LAYOUT_SEAFOAM_ISLANDS_B3F', [0]], ['LAYOUT_SEAFOAM_ISLANDS_B4F', [{ x: 11, y: 5, w: 16, h: 16 }]]], // map audit: B2F#1 was mostly a raised platform you can't reach, B4F#0 a sliver beside the sea
     encounters: ['MAP_SEAFOAM_ISLANDS_1F', 'MAP_SEAFOAM_ISLANDS_B1F', 'MAP_SEAFOAM_ISLANDS_B2F', 'MAP_SEAFOAM_ISLANDS_B3F', 'MAP_SEAFOAM_ISLANDS_B4F'], trainerMaps: [], levelBonus: [-4, 0],
     boss: 'LORELEI', bossRoom: ['LAYOUT_POKEMON_LEAGUE_LORELEIS_ROOM', 0], waves: [2, 3], perWave: [3, 4], maxAttackers: 3,
     intro: 'Frozen caves under the sea between Fuchsia and Cinnabar. The ELITE FOUR\'s ice master trains here.',
