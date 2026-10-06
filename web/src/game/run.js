@@ -8,6 +8,7 @@ import { makeActor } from './combat.js';
 import { BOONS, LEGENDS, CHAOS, RARITY, legendBoonPool, rollRarity, boonInstance } from './boons.js';
 import { BIOMES, STARTERS, HELD, RESEARCH, SPECIAL_EVOS, areaOf, rollRoute } from './content.js';
 import { profile, slotFor } from './moves_rt.js';
+import { tallyOf } from './dmgstats.js';
 
 // Every player POKéMON levels on the same curve, so slow-growing species (DRATINI) aren't behind.
 export const PLAYER_CURVE = 'MEDIUM_SLOW';
@@ -85,6 +86,25 @@ export function recordRun(entry) {
   recordRun.after?.(entry); // co-op: the guest gets the run too
 }
 
+// The run's damage, compacted for the record: totals, the biggest hit and the top sources (moves, partners,
+// blessings, statuses). Blessing procs are tallied by type; here they are named after the run's legend of that type.
+const LEGEND_OF_TYPE = { ELECTRIC: 'ZAPDOS', ICE: 'ARTICUNO', FIRE: 'MOLTRES', WATER: 'LUGIA', FLYING: 'LUGIA', PSYCHIC: 'MEW', NORMAL: 'MEW' };
+export function dmgSummary(run) {
+  const t = run && tallyOf(run);
+  if (!t || !(t.dealt || t.taken)) return null;
+  const mine = [...new Set((run.boons || []).map(b => BOONS[b.key]?.legend).filter(l => LEGENDS[l]))];
+  const name = k => {
+    if (!k?.startsWith('b:')) return k;
+    const type = k.slice(2);
+    return 'b:' + (mine.find(l => LEGENDS[l].type === type) || LEGEND_OF_TYPE[type] || type);
+  };
+  const by = {};
+  let partner = 0;
+  for (const [k, n] of Object.entries(t.by)) { const kk = name(k); by[kk] = (by[kk] || 0) + n; if (k.startsWith('p:')) partner += n; }
+  const top = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  return { dealt: Math.round(t.dealt), taken: Math.round(t.taken), partner: Math.round(partner), best: t.best ? [Math.round(t.best), name(t.bestBy)] : null, top };
+}
+
 // Signing in: take whichever progression is further along, and the newer run in progress.
 export async function syncFromCloud() {
   const remote = await Cloud.load();
@@ -117,7 +137,7 @@ export function newRun(starterSpecies, seed = randomSeedString()) {
     partner: null, callGauge: 0, revives: rank('revive'), reviveFrac: 0.3, rerolls: rank('reroll'),
     biome: 0, roomInBiome: 0, depth: 0, kills: 0, time: 0, stardustGained: 0, caught: [], route: rollRoute(rng), // v0.0.3: areas change every run
     pendingLearn: [], seenTM: [], pendingEvo: null, focusUsed: false, visited: {}, lastLayouts: [],
-    history: [], over: false, won: false,
+    history: [], over: false, won: false, dmg: null, // dmg: damage tally (dmgstats.js)
   };
   G.run = run;
   run.hp = playerMaxHp(run);

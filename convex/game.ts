@@ -82,6 +82,18 @@ export const rename = mutation({
   },
 });
 
+// A run's damage summary (optional; older runs have none): { dealt, taken, partner, best: [n, key], top: [[key, n], ...] }.
+// Keys are short source ids ('m:MOVE', 'p:SPECIES', 'b:LEGEND', 's:burn'...). Cleaned so a client can't stuff the rows.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cleanDmg(d: any) {
+  if (!d || typeof d !== "object") return null;
+  const n = (x: unknown) => Math.max(0, Math.min(1e9, Math.round(Number(x) || 0)));
+  const key = (k: unknown) => String(k ?? "").slice(0, 32);
+  const top = Array.isArray(d.top) ? d.top.slice(0, 8).filter((r: unknown) => Array.isArray(r)).map((r: unknown[]) => [key(r[0]), n(r[1])] as [string, number]) : [];
+  const best = Array.isArray(d.best) ? [n(d.best[0]), key(d.best[1])] as [number, string] : null;
+  return { dealt: n(d.dealt), taken: n(d.taken), partner: n(d.partner), best, top };
+}
+
 // A run as the records screen sees it: no emails, just the trainer's public name and whether it's yours.
 type Names = Map<string, string>;
 async function publicRun(ctx: QueryCtx, r: Doc<"runs">, names: Names, me: string) {
@@ -96,7 +108,13 @@ async function publicRun(ctx: QueryCtx, r: Doc<"runs">, names: Names, me: string
     level: Number(e.level) || 0, biome: Number(e.biome) || 0, room: Number(e.room) || 0, area: typeof e.area === "string" ? e.area : null,
     time: Number(e.time) || 0, kills: Number(e.kills) || 0, at: r.at,
     // co-op: the teammate (name and POKéMON only)
-    coop: e.coop && typeof e.coop === "object" ? { name: String(e.coop.name || "").slice(0, 12), species: typeof e.coop.species === "string" ? e.coop.species : null } : null,
+    coop: e.coop && typeof e.coop === "object" ? {
+      name: String(e.coop.name || "").slice(0, 12), species: typeof e.coop.species === "string" ? e.coop.species : null,
+      starter: typeof e.coop.starter === "string" ? e.coop.starter : null, partner: typeof e.coop.partner === "string" ? e.coop.partner : null,
+    } : null,
+    // run details: blessings and damage (yours, and the co-op teammate's)
+    boons: Array.isArray(e.boons) ? e.boons.slice(0, 24).map((b: unknown) => String(b).slice(0, 24)) : [],
+    dmg: cleanDmg(e.dmg), dmg2: cleanDmg(e.dmg2),
   };
 }
 
@@ -128,16 +146,17 @@ export const leaderboard = query({
 
 const SCAN_CAP = 3000; // runs read for totals (plenty for a playtest; keeps queries inside Convex's limits)
 
-// The caller's own runs (newest first) and totals, optionally for one game version.
+// The caller's own runs (newest first) and totals, optionally for one game version and/or one starter.
 export const myRuns = query({
-  args: { version: v.optional(v.string()), limit: v.optional(v.number()) },
-  handler: async (ctx, { version, limit }) => {
+  args: { version: v.optional(v.string()), starter: v.optional(v.string()), limit: v.optional(v.number()) },
+  handler: async (ctx, { version, starter, limit }) => {
     const me = normEmail((await requireUser(ctx)).email);
     const n = clampLimit(limit);
     const q = version
       ? ctx.db.query("runs").withIndex("by_email_version_at", q => q.eq("email", me).eq("version", version))
       : ctx.db.query("runs").withIndex("by_email_at", q => q.eq("email", me));
-    const all = await q.order("desc").take(SCAN_CAP);
+    let all = await q.order("desc").take(SCAN_CAP);
+    if (starter) all = all.filter(r => (r.starter ?? runFields(r.entry).starter) === starter);
     const names: Names = new Map();
     const recent = await Promise.all(all.slice(0, n).map(r => publicRun(ctx, r, names, me)));
     let wins = 0, bestScore = 0;

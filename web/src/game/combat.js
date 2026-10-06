@@ -3,6 +3,7 @@
 import { D, monStats, typeEffect } from './data.js';
 import { profile } from './moves_rt.js';
 import { Sound } from '../audio/sound.js';
+import { tallyDamage } from './dmgstats.js';
 
 export const TILE = 16;
 export const STEP = 1 / 60;
@@ -982,7 +983,7 @@ export class World {
     this.hooks.beforeHit?.(this, info);
     if (info.cancel) return;
     if (info.dmg > 0) {
-      const dealt = this.applyDamage(src, b, { dmg: info.dmg, crit: info.crit, eff: info.eff, slot: info.slot, ang: info.ang, knock: o.noKnock ? 0 : info.knock, type: p.type });
+      const dealt = this.applyDamage(src, b, { dmg: info.dmg, crit: info.crit, eff: info.eff, slot: info.slot, ang: info.ang, knock: o.noKnock ? 0 : info.knock, type: p.type, move: p.key });
       if (dealt > 0 && !info.zone && (info.crit || info.eff > 1 || !(b._splatT > this.time - 0.1))) { b._splatT = this.time; this.vfx.push({ kind: 'hit', x: b.x, y: b.y, tgt: b, ang: info.ang, type: p.type, crit: info.crit, eff: info.eff, t: 0, life: info.crit || info.eff > 1 ? 0.36 : 0.16 }); } // hit splat (visual only; streams splat at most every 0.1s)
       if (p.drain && src && !src.dead) this.heal(src, Math.max(1, Math.round(info.dmg * p.drain * (src.team === 'player' ? 0.35 : 1))));
       if (p.money && src === this.player) this.emit({ type: 'money', amount: 1 + Math.floor(src.level / 8), x: b.x, y: b.y });
@@ -1052,6 +1053,7 @@ export class World {
       if (dmg <= 0) { b.flash = 0.06; return 0; }
     }
     b.hp -= dmg;
+    tallyDamage(this, src, b, dmg + Math.min(0, b.hp), o); // run records: damage dealt/taken (HP actually removed)
     if (!o.noFlash) b.flash = 0.12;
     if (b.status.sleep && o.slot !== 'dot') delete b.status.sleep;
     if (b.status.freeze && o.slot !== 'dot' && o.slot !== 'env') { b.wasFrozen = this.time; delete b.status.freeze; this.vfx.push({ kind: 'shatter', x: b.x, y: b.y - 8, t: 0, life: 0.4 }); Sound.playSE('se_ice_break'); }

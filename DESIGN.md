@@ -194,6 +194,17 @@ Rules that came out of two adversarial review rounds and the sim:
 * The title screen, records screen (`scenes/records.js`) and modals (`scenes/modal.js`) are ported from Kanto Spire. Records
   shows leaderboards by trainer name (`players` table, `game:rename`), never emails. After a prod deploy that changes run
   fields, run `npx convex run game:backfillRuns --prod`.
+* **Records per POKéMON:** every run stores its starter (indexed), the species it ended as, its partner and the co-op
+  teammate's. RECORDS → **BY POKéMON** has a row per starter (your runs, escapes, your best and the record, with what those
+  runs evolved into); pick one for MY RUNS filtered to it (the starter filter works on ALL RUNS and MY RUNS). Run rows show
+  the final species, and picking a run opens its details: team, blessings and each player's damage report.
+* **Damage stats:** `World.applyDamage` calls `tallyDamage` (`game/dmgstats.js`) with the HP actually removed. It credits the
+  player who owns the source (the player, player 2, their called partner, their blessing procs, their DoTs) on that
+  player's run (`run.dmg`; P2's run is its own object), keyed by move / partner / blessing type / status, plus damage taken.
+  `dmgSummary(run)` (run.js) compacts it into the run record: `dmg` (yours) and `dmg2` (the co-op teammate's; the guest's copy
+  swaps them). Optional fields inside `entry`, so no schema change. The blackout summary lists it in one line per player; an
+  escape adds a **DAMAGE REPORT** page after the Hall of Fame (one FireRed window per player: totals, share, biggest hit,
+  top sources, partner). `tests/records_shots.mjs` checks the co-op attribution and screenshots these screens.
 
 ## Saves, accounts and hosting
 * **Autosave:** the run is snapshotted at the start of every room, before the room rolls its enemies. Pause → **Save & quit to title**, or

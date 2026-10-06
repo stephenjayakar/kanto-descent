@@ -11,6 +11,8 @@ import { TILE, setAnim } from '../game/combat.js';
 import { profile, slotFor } from '../game/moves_rt.js';
 import { serializeRun, restoreRun, loadRunSave, clearRunSave, recordRun, runLabel } from '../game/run.js';
 import { Cloud } from '../game/cloud.js';
+import { dmgSummary } from '../game/run.js';
+import { drawDmgCard, dmgLine } from './dmgpanel.js';
 import { G, newRun, makePlayer, buildHooks, gainExp, evolve, learnMove, boonChoices, addBoon, tmChoices, heldChoices, chaosOffer, saveMeta, rank, playerMaxHp, REWARD_INFO, starterUnlocked } from '../game/run.js';
 import { BOONS, LEGENDS, RARITY, SLOT_NAMES, boonInstance } from '../game/boons.js';
 import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT, HEAT, ACTS, STAGES, areaOf, areaAt, areaByKey, actOf } from '../game/content.js';
@@ -19,7 +21,8 @@ import { areaRooms } from '../game/rooms.js';
 import { preloadPmd, drawPmd } from '../game/pmd.js';
 import { say, choose, chooseBoth, Banner, drawPortrait, ICON, drawOW, Choice, fitLines } from './ui.js';
 import { Coop, asP2, coopHeal, coopRefreshP2, coopWrapHooks, coopTeam, coopSendRun, coopResetP2 } from '../game/coop.js';
-recordRun.after = entry => coopSendRun(entry, Cloud.me?.name || 'P1');
+// the guest's copy of the run is from its point of view: its damage is `dmg`, the host's is `dmg2`
+recordRun.after = entry => coopSendRun(entry.coop ? { ...entry, dmg: entry.dmg2 || null, dmg2: entry.dmg || null } : entry, Cloud.me?.name || 'P1');
 import { drawBA } from '../game/render.js';
 
 let RoomSceneRef = null;
@@ -789,10 +792,17 @@ class PauseOverlay {
 }
 
 // ---------------------------------------------------------------- death & victory
+// The finished run's record. dmg: this player's damage summary; dmg2: player 2's (co-op).
+function runEntry(run, won) {
+  const coop = coopTeam();
+  return { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won, area: areaOf(run).key, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now(), coop,
+    dmg: dmgSummary(run), dmg2: coop && Coop.p2 ? dmgSummary(Coop.p2.run) : null };
+}
 export async function gameOver(scene) {
   const run = G.run;
   G.meta.deaths++;
-  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: false, area: areaOf(run).key, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now(), coop: coopTeam() };
+  const entry = runEntry(run, false);
+  run.endEntry = entry; // the summary shows its damage
   G.meta.history.unshift(entry);
   clearRunSave(); recordRun(entry);
   G.meta.history = G.meta.history.slice(0, 20);
@@ -805,8 +815,9 @@ function victory() {
   G.meta.wins++;
   G.meta.maxHeatWon = Math.max(G.meta.maxHeatWon ?? -1, run.heat || 0);
   if (!G.meta.bestTime || run.time < G.meta.bestTime) G.meta.bestTime = Math.round(run.time);
-  const entry = { starter: run.starter, species: run.species, level: run.level, biome: run.biome, room: run.roomInBiome, time: Math.round(run.time), won: true, area: areaOf(run).key, kills: run.kills, dust: run.stardustGained, heat: run.heat || 0, boons: run.boons.map(b => b.key), at: Date.now(), coop: coopTeam() };
+  const entry = runEntry(run, true);
   run.coopTeam = entry.coop; // the Hall of Fame shows both players
+  run.endEntry = entry; // and the DAMAGE REPORT page
   G.meta.history.unshift(entry);
   clearRunSave(); recordRun(entry);
   saveMeta();
@@ -822,8 +833,11 @@ class SummaryOverlay {
     const run = G.run, k = Math.min(1, this.t * 2);
     ctx.fillStyle = `rgba(0,0,0,${0.85 * k})`; ctx.fillRect(0, 0, W, H);
     if (this.t < 0.3) return;
-    const ww = 480, wx = (W - ww) / 2, wy = 46;
-    windowFrame(ctx, wx, wy, ww, 200, 'type1');
+    const ww = 480, wx = (W - ww) / 2, wy = 30, e = run.endEntry;
+    const dmgRows = [['DAMAGE', dmgLine(e?.dmg)]];
+    if (e?.coop) dmgRows.push([String(e.coop.name || 'P2').slice(0, 10), dmgLine(e.dmg2)]);
+    const wh = 196 + dmgRows.length * 14;
+    windowFrame(ctx, wx, wy, ww, wh, 'type1');
     drawPortrait(ctx, D.species[run.species].dex, wx + 18, wy + 18, 'Pain');
     text(ctx, `${D.species[run.species].name} fainted!`, wx + 72, wy + 16, { color: 'dark', scale: 2 });
     text(ctx, `Lv${run.level}   ${run.kills} KOs   ${fmtTime(run.time)}${run.heat ? `   HEAT ${run.heat}` : ''}`, wx + 72, wy + 46, { color: 'blue', font: 'small' });
@@ -835,8 +849,9 @@ class SummaryOverlay {
     rows.forEach(([a, b], i) => { text(ctx, a, wx + 18, wy + 74 + i * 18, { color: 'blue', font: 'small' }); text(ctx, b, wx + 96, wy + 72 + i * 18, { color: 'dark' }); });
     text(ctx, 'BLESSINGS', wx + 18, wy + 128, { color: 'blue', font: 'small' });
     fitLines(run.boons.map(b => BOONS[b.key].name).join(', ') || 'none', ww - 116, 3).forEach((l, i) => text(ctx, l, wx + 96, wy + 128 + i * 12, { color: 'dark', font: 'small' }));
+    dmgRows.forEach(([a, b], i) => { text(ctx, a, wx + 18, wy + 166 + i * 14, { color: i ? 'green' : 'blue', font: 'small' }); fitLines(b, ww - 116, 1).forEach(l => text(ctx, l, wx + 96, wy + 166 + i * 14, { color: 'dark', font: 'small' })); });
     const cr = Cloud.lastResult; // the run's score and whether it reached the cloud
-    if (cr) text(ctx, cr.status === 'saved' ? `Saved online · score ${(cr.score || 0).toLocaleString()}` : cr.status === 'error' ? `Score ${(cr.score || 0).toLocaleString()} · not uploaded` : cr.status === 'local' ? `Score ${(cr.score || 0).toLocaleString()}` : 'Uploading run...', wx + ww - 16, wy + 178, { color: 'green', font: 'small', align: 'right' });
+    if (cr) text(ctx, cr.status === 'saved' ? `Saved online · score ${(cr.score || 0).toLocaleString()}` : cr.status === 'error' ? `Score ${(cr.score || 0).toLocaleString()} · not uploaded` : cr.status === 'local' ? `Score ${(cr.score || 0).toLocaleString()}` : 'Uploading run...', wx + ww - 16, wy + wh - 22, { color: 'green', font: 'small', align: 'right' });
     // the battle textbox, as when the player blacks out
     const tb = img('gfx/ui/battle/textbox.png'), ty = H - 112;
     if (ready(tb)) ctx.drawImage(tb, wx, ty, ww, 96); else windowFrame(ctx, wx, ty, ww, 96, 'std');
@@ -847,11 +862,18 @@ class SummaryOverlay {
 }
 export const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+// The Hall of Fame, then a DAMAGE REPORT page (both players in co-op: totals, biggest hit, top moves, partner).
 class VictoryScene {
-  constructor() { this.t = 0; }
+  constructor() { this.t = 0; this.page = 0; this.pt = 0; }
   enter() { Sound.playBGM('mus_hall_of_fame'); Input.clear(); }
-  update(dt) { Input.poll(); this.t += dt; if (this.t > 3 && (Input.justPressed('confirm') || Engine.mouse.clicked)) toHub(); }
+  update(dt) {
+    Input.poll(); this.t += dt; this.pt += dt;
+    if (!(Input.justPressed('confirm') || Engine.mouse.clicked)) return;
+    if (this.page === 0 && this.t > 3) { this.page = 1; this.pt = 0; Sound.playSE('se_select'); }
+    else if (this.page === 1 && this.pt > 0.6) toHub();
+  }
   draw(ctx) {
+    if (this.page === 1) return this.drawReport(ctx);
     const run = G.run;
     const im = img('gfx/misc/hall_of_fame/bg.png');
     ctx.fillStyle = '#101828'; ctx.fillRect(0, 0, W, H);
@@ -874,6 +896,34 @@ class VictoryScene {
     fitLines(msg, 436, 2, 'normal').forEach((l, i) => text(ctx, l, bx + 22, by + 16 + i * 18, { color: 'white' }));
     text(ctx, `Level ${run.level}   Time ${fmtTime(run.time)}   KOs ${run.kills}   Wins ${G.meta.wins}`, bx + 22, by + 58, { color: ['#d6e7f7', '#424242'], font: 'small' });
     if (this.t > 3) { const im = img('gfx/ui/cursors/text_advance_arrow.png'); if (ready(im)) ctx.drawImage(im, (Math.floor(this.t * 6) % 4) * 10, 0, 10, 12, bx + 440, by + 62, 20, 24); }
+  }
+  drawReport(ctx) {
+    const run = G.run, e = run.endEntry || {}, team = run.coopTeam;
+    const im = img('gfx/misc/hall_of_fame/bg.png');
+    ctx.fillStyle = '#101828'; ctx.fillRect(0, 0, W, H);
+    if (ready(im)) ctx.drawImage(im, (W - 480) / 2, 20, 480, 320);
+    ctx.fillStyle = 'rgba(16,24,40,0.55)'; ctx.fillRect(0, 0, W, H);
+    const title = 'DAMAGE REPORT', tw = measure(title) * 2 + 40;
+    windowFrame(ctx, (W - tw) / 2, 8, tw, 44, 'type1');
+    text(ctx, title, W / 2, 16, { align: 'center', color: 'dark', scale: 2 });
+    const me = { title: Cloud.me?.name || (team ? 'PLAYER 1' : 'YOU'), species: run.species, starter: run.starter, level: run.level, partner: run.partner?.species, sum: e.dmg };
+    const cards = [me];
+    if (team) cards.push({ title: team.name || 'PLAYER 2', species: team.species, starter: team.starter, level: run.level, partner: team.partner, sum: e.dmg2 });
+    const total = cards.reduce((n, c) => n + (c.sum?.dealt || 0), 0);
+    const cw = team ? 370 : 460, ch = 224, gap = 8, x0 = (W - (cw * cards.length + gap * (cards.length - 1))) / 2;
+    cards.forEach((c, i) => {
+      const k = Math.min(1, Math.max(0, (this.pt - i * 0.12) * 5)); // slide in
+      drawDmgCard(ctx, x0 + i * (cw + gap), 60 + (1 - k) * 20, cw, ch, { ...c, share: team && total ? (c.sum?.dealt || 0) / total : null });
+    });
+    // the battle textbox: who carried
+    const bx = (W - 480) / 2, by = H - 100, tb = img('gfx/ui/battle/textbox.png');
+    if (ready(tb)) ctx.drawImage(tb, bx, by, 480, 96); else windowFrame(ctx, bx, by, 480, 96, 'std');
+    let msg;
+    if (team && total) { const top = (cards[1].sum?.dealt || 0) > (cards[0].sum?.dealt || 0) ? cards[1] : cards[0]; msg = `${top.title}'s ${D.species[top.species]?.name || ''} dealt the most damage!`; }
+    else msg = total ? `${D.species[run.species].name} dealt ${total.toLocaleString('en-US')} damage on the way out!` : 'What a climb!';
+    fitLines(msg, 436, 2, 'normal').forEach((l, i) => text(ctx, l, bx + 22, by + 16 + i * 18, { color: 'white' }));
+    text(ctx, `Time ${fmtTime(run.time)}   KOs ${run.kills}   ${Input.label('confirm')}: back to the lab`, bx + 22, by + 58, { color: ['#d6e7f7', '#424242'], font: 'small' });
+    if (this.pt > 0.6) { const ar = img('gfx/ui/cursors/text_advance_arrow.png'); if (ready(ar)) ctx.drawImage(ar, (Math.floor(this.t * 6) % 4) * 10, 0, 10, 12, bx + 440, by + 62, 20, 24); }
   }
 }
 
@@ -974,7 +1024,7 @@ async function records(scene) {
     { text: `Runs: ${m.runs}   Escapes: ${m.wins}   Best time: ${m.bestTime ? fmtTime(m.bestTime) : '--'}`, name: 'AIDE' },
     { text: `POKéDEX: seen ${seen}, caught ${caught}. Bosses beaten: ${m.badges.join(', ') || 'none yet'}.`, name: 'AIDE' },
     ...(last ? [{ text: `Last run: ${D.species[last.species]?.name} Lv${last.level}, reached ${(last.area ? areaByKey(last.area) : BIOMES[last.biome])?.name || '?'} (${last.won ? 'ESCAPED!' : 'fainted'}).`, name: 'AIDE' }] : []),
-    { text: 'Here are the full RECORDS: everyone\'s runs, yours, and the top trainers.', name: 'AIDE' },
+    { text: 'Here are the full RECORDS: everyone\'s runs, yours, the top trainers and a page for each POKéMON. Pick a run for its damage report.', name: 'AIDE' },
   ]);
   const { RecordsScene } = await import('./records.js'); // BACK returns to the lab
   setScene(new RecordsScene({ fromHub: true }));
