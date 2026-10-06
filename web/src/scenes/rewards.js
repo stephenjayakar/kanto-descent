@@ -525,7 +525,9 @@ export async function onCatch(scene, a, ball) {
   const prev = run.partner;
   run.partner = { species: a.species, level: a.level, moves: a.moves.slice() };
   run.caught.push(a.species);
-  Sound.playFanfare('mus_caught');
+  // mus_caught is FireRed's looping post-catch BGM (it never ends, so the area music never came back); play the
+  // short jingle, trimmed with a fade, and the area/combat music resumes right after
+  Sound.playFanfare('mus_caught_intro', { maxSecs: 2.4 });
   scene.banners.push(new Banner(`Gotcha! ${a.name} was caught!`, prev ? `${D.species[prev.species].name} was sent to the PC. ${a.name} is your partner now (F).` : `${a.name} is your partner! Press F to call it.`, { life: 2.8, color: '#f8f8f8' }));
   if (first) { G.meta.stardust += 5; G.meta.totalStardust += 5; run.stardustGained += 5; scene.world.text(scene.world.player, 'New DEX entry! +5 STARDUST', '#c0e0ff'); }
   run.callGauge = Math.max(run.callGauge, 0.5);
