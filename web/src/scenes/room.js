@@ -9,7 +9,7 @@ import { Sound } from '../audio/sound.js';
 import { D, TYPE_COLORS } from '../game/data.js';
 import { World, STEP, TILE, makeActor, setAnim } from '../game/combat.js';
 import '../game/combat_boons.js';
-import { loadLayout, buildRoom, candidates, drawTileAnims, mapIndex } from '../game/rooms.js';
+import { loadLayout, buildRoom, candidates, drawTileAnims, mapIndex, bossSpots } from '../game/rooms.js';
 import { drawWorld, drawWorldTexts, drawVignette, drawBA } from '../game/render.js';
 import { playerBrain, updateBalls, updateAllies } from '../game/player.js';
 import { G, makePlayer, buildHooks, gainExp, expFor, rollDoors, saveMeta, REWARD_INFO, playerMaxHp, rank, saveRunSnapshot } from '../game/run.js';
@@ -155,14 +155,14 @@ export class RoomScene {
 
   setupBoss() {
     const run = this.run, key = this.spec.boss, def = BOSSES[key];
-    const c = this.room.exits[0] ? { x: this.room.center.x, y: (this.room.center.y + this.room.exits[0].y) / 2 } : this.room.center;
+    const spots = bossSpots(this.room), c = spots.boss; // never inside a tombstone, a PC or the pool
     this.bossKey = key;
     const dexes = def.mons.map(m => D.species[m.species].dex);
     if (def.adds) dexes.push(D.species[def.adds.species].dex);
     if (def.finale) dexes.push(D.species[def.finale.species].dex);
     preloadPmd(dexes);
     Sound.playBGM(key === 'MAROWAK' ? 'mus_poke_tower' : key === 'MEWTWO' ? 'mus_rocket_hideout' : 'mus_gym');
-    if (def.sprite) this.addNpc({ sprite: def.sprite, x: c.x, y: c.y - 30, dir: 'down', name: D.trainers[def.trainer]?.name || key, trainer: true });
+    if (def.sprite) this.addNpc({ sprite: def.sprite, x: spots.trainer.x, y: spots.trainer.y, dir: 'down', name: D.trainers[def.trainer]?.name || key, trainer: true });
     this.bossSpawnAt = c;
     this.pendingIntro = async () => {
       const name = def.sprite ? (D.trainers[def.trainer]?.name || key) : key === 'MAROWAK' ? 'GHOST' : 'MEWTWO';

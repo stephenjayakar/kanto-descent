@@ -6,7 +6,7 @@ import { allyBrain, enemyMoves } from './ai.js';
 import { D } from './data.js';
 import { Sound } from '../audio/sound.js';
 
-const DASH_DIST = 54, DASH_TIME = 0.13;
+export const DASH_DIST = 54, DASH_TIME = 0.13;
 
 export function playerBrain(world, a, dt) {
   const run = a.run || world.run; // co-op: P2 has its own run (moves, blessings, partner)
@@ -186,7 +186,8 @@ function callPartner(world, a) {
   const lvl = Math.max(pt.level, run.level - 2);
   const ally = makeActor(pt.species, lvl, 'ally', { x: a.x + Math.cos(a.facing) * 18, y: a.y + Math.sin(a.facing) * 18, moves: enemyMoves(pt.species, lvl), hpMul: 3 });
   ally.owner = a; ally.brain = allyBrain; ally.lifeT = 10 + (run.callBonus || 0); ally.spawnT = 0.35; ally.iframes = 99; ally.dmgMul = 0.8 + (run.callPower || 0);
-  if (world.collides(ally.x, ally.y, 6, 'walk')) { ally.x = a.x; ally.y = a.y; }
+  ally.ghost = false; // like the player, a partner never phases through walls (flyers still cross water)
+  if (world.collides(ally.x, ally.y, 6, 'walk') || world.crossesEdge(a.x, a.y, ally.x, ally.y, 6, 'walk') || !world.lineClear(a.x, a.y, ally.x, ally.y, 'walk')) { ally.x = a.x; ally.y = a.y; }
   world.add(ally);
   world.vfx.push({ kind: 'sendout', x: ally.x, y: ally.y, t: 0, life: 0.5 });
   Sound.playSE('se_ball_open');

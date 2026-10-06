@@ -15,7 +15,7 @@ import { G, newRun, makePlayer, buildHooks, gainExp, evolve, learnMove, boonChoi
 import { BOONS, LEGENDS, RARITY, SLOT_NAMES, boonInstance } from '../game/boons.js';
 import { BIOMES, STARTERS, HELD, RESEARCH, EEVEE_CHOICES, BOSS_UNLOCK_TEXT, HEAT, ACTS, STAGES, areaOf, areaAt, areaByKey, actOf } from '../game/content.js';
 import { BOSSES } from '../game/bosses.js';
-import { candidates } from '../game/rooms.js';
+import { areaRooms } from '../game/rooms.js';
 import { preloadPmd, drawPmd } from '../game/pmd.js';
 import { say, choose, chooseBoth, Banner, drawPortrait, ICON, drawOW, Choice, fitLines } from './ui.js';
 import { Coop, asP2, coopHeal, coopRefreshP2, coopWrapHooks, coopTeam, coopSendRun, coopResetP2 } from '../game/coop.js';
@@ -29,11 +29,13 @@ const go = spec => setScene(new RoomSceneRef(spec));
 // ---------------------------------------------------------------- moving between rooms
 function pickRoom(run) {
   const B = areaOf(run);
-  const opts = [];
-  for (const [layout, idxs] of B.pools) for (const i of idxs) if (candidates(layout)[i]) opts.push({ layout, cropIndex: i });
-  const fresh = opts.filter(o => !run.lastLayouts.includes(o.layout + o.cropIndex));
-  const pick = run.rng.pick(fresh.length ? fresh : opts);
-  run.lastLayouts = [...run.lastLayouts.slice(-3), pick.layout + pick.cropIndex];
+  const opts = areaRooms(B);
+  const fresh = opts.filter(o => !run.lastLayouts.includes(o.key));
+  // and, where the area has other maps, not the same map (floor) as either of the last two rooms
+  const recentMaps = run.lastLayouts.slice(-2).map(k => opts.find(o => o.key === k)?.layout);
+  const freshest = fresh.filter(o => !recentMaps.includes(o.layout));
+  const { key, ...pick } = run.rng.pick(freshest.length ? freshest : fresh.length ? fresh : opts);
+  run.lastLayouts = [...run.lastLayouts.slice(-3), key];
   return pick;
 }
 
@@ -997,6 +999,10 @@ export function devStart(q) {
   const kind = q.get('dev');
   if (kind === 'boss') { run.roomInBiome = areaOf(run).rooms; return goNext({ spec: { kind: 'x' } }, { kind: 'boss' }) || run; }
   run.roomInBiome--; run.depth--;
+  if (q.get('layout')) { // dev: one exact room (&layout=LAYOUT_X&crop=N, or &crop=x,y,w,h in metatiles)
+    const c = (q.get('crop') || '0').split(',').map(Number);
+    return go({ kind: kind === 'boss' ? 'boss' : 'combat', layout: q.get('layout'), ...(c.length === 4 ? { crop: { x: c[0], y: c[1], w: c[2], h: c[3] } } : { cropIndex: c[0] }), boss: areaOf(run).boss, reward: { kind: 'rare_candy' } });
+  }
   goNext({ spec: { kind: 'x' } }, kind === 'combat' ? { kind: 'rare_candy' } : { kind });
 }
 

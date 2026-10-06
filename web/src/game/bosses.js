@@ -162,7 +162,7 @@ function phaseBehind(w, a, t) {
   const behind = { x: t.x - Math.cos(t.facing) * 34, y: t.y - Math.sin(t.facing) * 34 };
   w.later(0.6, () => {
     if (a.dead) return;
-    if (!w.collides(behind.x, behind.y, 8, 'walk')) { a.x = behind.x; a.y = behind.y; }
+    if (!w.collides(behind.x, behind.y, 8, 'walk') && w.reachable(behind.x, behind.y)) { a.x = behind.x; a.y = behind.y; } // never into a pocket the player can't reach
     a.untargetable = false; a.alpha = 1;
     w.useMove(a, P('BONE_CLUB', { kind: 'swipe', range: 36, arc: 2.6, windup: 0.55 }), { target: t, aim: aimAt(a, t) });
   });

@@ -45,9 +45,9 @@ function pathDir(w, p, tx, ty) {
     const q = [gy * R.w + gx]; d[q[0]] = 0;
     for (let i = 0; i < q.length; i++) {
       const c = q[i], x = c % R.w, y = (c / R.w) | 0;
-      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      for (const [nx, ny, side] of [[x + 1, y, 4], [x - 1, y, 8], [x, y + 1, 1], [x, y - 1, 2]]) { // side: the thin-wall bit on the neighbour facing us
         if (nx < 0 || ny < 0 || nx >= R.w || ny >= R.h) continue;
-        const j = ny * R.w + nx; if (d[j] >= 0 || (R.walk[j] && !(nx === gx && ny === gy))) continue;
+        const j = ny * R.w + nx; if (d[j] >= 0 || (R.walk[j] && !(nx === gx && ny === gy)) || (R.edge && R.edge[j] & side)) continue;
         d[j] = d[c] + 1; q.push(j);
       }
     }
@@ -59,6 +59,7 @@ function pathDir(w, p, tx, ty) {
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
     const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= R.w || ny >= R.h) continue;
     if (dx && dy && (R.walk[y * R.w + nx] || R.walk[ny * R.w + x])) continue;
+    if (w.crossesEdge(p.x, p.y, nx * T + 8, p.y, 6, 'walk') || w.crossesEdge(nx * T + 8, p.y, nx * T + 8, ny * T + 8, 6, 'walk')) continue;
     const v = d[ny * R.w + nx]; if (v >= 0 && v < bv) { bv = v; best = [nx * T + 8 - p.x, ny * T + 8 - p.y]; }
   }
   if (!best) { const l = Math.hypot(tx - p.x, ty - p.y) || 1; return { x: (tx - p.x) / l, y: (ty - p.y) / l }; }

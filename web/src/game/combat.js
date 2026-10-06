@@ -27,6 +27,8 @@ const CONTACT_ABILITY = {
   EFFECT_SPORE: { kind: ['poison', 'para', 'sleep'], name: 'EFFECT SPORE', color: '#78c850' },
 };
 
+const EDGE_N = 1, EDGE_S = 2, EDGE_W = 4, EDGE_E = 8; // room.edge bits (rooms.js)
+
 export function makeActor(speciesKey, level, team, opts = {}) {
   const sp = D.species[speciesKey];
   const st = monStats(speciesKey, level, opts.iv ?? 15);
@@ -102,12 +104,12 @@ export class World {
     if (tx < 0 || ty < 0 || tx >= R.w || ty >= R.h) return true;
     const i = ty * R.w + tx;
     if (mode === 'ghost') return false;
-    if (mode === 'fly') return R.walk[i] === 1 && R.shot[i] === 1; // flyers cross water/ledges, not walls
+    if (mode === 'fly' || mode === 'dash') return R.walk[i] === 1 && R.shot[i] === 1; // flyers and dashes cross water/ledges, not walls
     if (mode === 'shot') return R.shot[i] === 1;
     return R.walk[i] !== 0;
   }
-  // the player's dash crosses gaps (water, ledges, low terrain) like Hades; walls still stop it
-  moveMode(a) { return a.ghost ? 'ghost' : a.flying || (a.dashing && a.action?.p.kind === 'dash') ? 'fly' : 'walk'; }
+  // the player's dash crosses gaps (water, ledges, low terrain) like Hades; walls and cliff rims still stop it
+  moveMode(a) { return a.ghost ? 'ghost' : a.flying ? 'fly' : a.dashing && a.action?.p.kind === 'dash' ? 'dash' : 'walk'; }
   // circle vs grid; axis separated with corner sampling
   collides(x, y, r, mode) {
     const s = r * 0.75;
@@ -115,6 +117,24 @@ export class World {
       this.blocked(x - s, y + s * 0.5, mode) || this.blocked(x + s, y + s * 0.5, mode) ||
       this.blocked(x, y, mode);
   }
+  // thin walls (room.edge, from rooms.js: cliff rims, one-way sides, height changes): does the point step
+  // (x0,y0)->(x1,y1) cross a blocked cell side? Steps are short (<= 1 tile per axis).
+  edgeBlocked(x0, y0, x1, y1) {
+    const R = this.room, E = R.edge; if (!E) return false;
+    const tx0 = Math.floor(x0 / TILE), ty0 = Math.floor(y0 / TILE), tx1 = Math.floor(x1 / TILE), ty1 = Math.floor(y1 / TILE);
+    if (tx0 === tx1 && ty0 === ty1) return false;
+    const at = (tx, ty) => (tx < 0 || ty < 0 || tx >= R.w || ty >= R.h ? 0 : E[ty * R.w + tx]);
+    if (tx1 !== tx0 && at(tx0, ty0) & (tx1 > tx0 ? EDGE_E : EDGE_W)) return true;
+    if (ty1 !== ty0 && at(tx1, ty0) & (ty1 > ty0 ? EDGE_S : EDGE_N)) return true;
+    return false;
+  }
+  crossesEdge(x, y, nx, ny, r, mode) {
+    if (mode !== 'walk' && mode !== 'dash' || !this.room.edge) return false;
+    const s = r * 0.75, dx = nx - x, dy = ny - y;
+    for (const [ox, oy] of [[-s, -s * 0.5], [s, -s * 0.5], [-s, s * 0.5], [s, s * 0.5], [0, 0]]) if (this.edgeBlocked(x + ox, y + oy, x + ox + dx, y + oy + dy)) return true;
+    return false;
+  }
+  canStep(x, y, nx, ny, r, mode) { return !this.collides(nx, ny, r, mode) && !this.crossesEdge(x, y, nx, ny, r, mode); }
   moveBy(a, dx, dy) {
     const mode = this.moveMode(a);
     const R = this.room;
@@ -126,8 +146,8 @@ export class World {
     const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 4) || 1;
     for (let i = 0; i < steps; i++) {
       const sx = dx / steps, sy = dy / steps;
-      if (sx) { if (!this.collides(a.x + sx, a.y, r, mode)) a.x += sx; else { hitX = true; if (!sy) this.slide(a, r, mode, sx, 0); } }
-      if (sy) { if (!this.collides(a.x, a.y + sy, r, mode)) a.y += sy; else { hitY = true; if (!sx) this.slide(a, r, mode, 0, sy); } }
+      if (sx) { if (this.canStep(a.x, a.y, a.x + sx, a.y, r, mode)) a.x += sx; else { hitX = true; if (!sy) this.slide(a, r, mode, sx, 0); } }
+      if (sy) { if (this.canStep(a.x, a.y, a.x, a.y + sy, r, mode)) a.y += sy; else { hitY = true; if (!sx) this.slide(a, r, mode, 0, sy); } }
     }
     return { hitX, hitY };
   }
@@ -135,16 +155,21 @@ export class World {
   slide(a, r, mode, sx, sy) {
     for (let k = 1; k <= 7; k++) for (const sg of [1, -1]) {
       const ox = sy ? sg * k : 0, oy = sx ? sg * k : 0;
-      if (!this.collides(a.x + ox, a.y + oy, r, mode) && !this.collides(a.x + ox + sx, a.y + oy + sy, r, mode)) {
+      if (this.canStep(a.x, a.y, a.x + ox, a.y + oy, r, mode) && this.canStep(a.x + ox, a.y + oy, a.x + ox + sx, a.y + oy + sy, r, mode)) {
         const nx = a.x + Math.sign(ox) * Math.min(1.5, Math.abs(ox)), ny = a.y + Math.sign(oy) * Math.min(1.5, Math.abs(oy));
-        if (!this.collides(nx, ny, r, mode)) { a.x = nx; a.y = ny; }
+        if (this.canStep(a.x, a.y, nx, ny, r, mode)) { a.x = nx; a.y = ny; }
         return;
       }
     }
   }
   lineClear(x0, y0, x1, y1, mode = 'shot') {
     const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 6);
-    for (let i = 1; i < n; i++) { const t = i / n; if (this.blocked(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, mode)) return false; }
+    let px = x0, py = y0;
+    for (let i = 1; i < n; i++) {
+      const t = i / n, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      if (this.blocked(x, y, mode) || mode === 'walk' && this.edgeBlocked(px, py, x, y)) return false;
+      px = x; py = y;
+    }
     return true;
   }
   // first wall along a ray (for beams)
@@ -192,7 +217,7 @@ export class World {
   // BFS distance field toward the player (for enemy navigation around walls)
   updateFlow() {
     const p = this.player; if (!p) return;
-    const R = this.room, N = R.w * R.h;
+    const R = this.room, N = R.w * R.h, E = R.edge;
     if (!this.flow) this.flow = new Int16Array(N);
     const f = this.flow; f.fill(-1);
     const [px, py] = this.tileAt(p.x, p.y);
@@ -200,11 +225,11 @@ export class World {
     const q = new Int32Array(N); let h = 0, t = 0;
     q[t++] = py * R.w + px; f[py * R.w + px] = 0;
     while (h < t) {
-      const i = q[h++], x = i % R.w, y = (i / R.w) | 0, d = f[i] + 1;
-      if (x > 0 && f[i - 1] < 0 && R.walk[i - 1] === 0) { f[i - 1] = d; q[t++] = i - 1; }
-      if (x < R.w - 1 && f[i + 1] < 0 && R.walk[i + 1] === 0) { f[i + 1] = d; q[t++] = i + 1; }
-      if (y > 0 && f[i - R.w] < 0 && R.walk[i - R.w] === 0) { f[i - R.w] = d; q[t++] = i - R.w; }
-      if (y < R.h - 1 && f[i + R.w] < 0 && R.walk[i + R.w] === 0) { f[i + R.w] = d; q[t++] = i + R.w; }
+      const i = q[h++], x = i % R.w, y = (i / R.w) | 0, d = f[i] + 1, e = E ? E[i] : 0;
+      if (x > 0 && f[i - 1] < 0 && R.walk[i - 1] === 0 && !(e & EDGE_W)) { f[i - 1] = d; q[t++] = i - 1; }
+      if (x < R.w - 1 && f[i + 1] < 0 && R.walk[i + 1] === 0 && !(e & EDGE_E)) { f[i + 1] = d; q[t++] = i + 1; }
+      if (y > 0 && f[i - R.w] < 0 && R.walk[i - R.w] === 0 && !(e & EDGE_N)) { f[i - R.w] = d; q[t++] = i - R.w; }
+      if (y < R.h - 1 && f[i + R.w] < 0 && R.walk[i + R.w] === 0 && !(e & EDGE_S)) { f[i + R.w] = d; q[t++] = i + R.w; }
     }
   }
   // direction to step along the flow field from (x,y)
@@ -218,6 +243,7 @@ export class World {
       const v = f[ny * R.w + nx];
       if (v < 0) continue;
       if (dx && dy && (R.walk[ty * R.w + nx] !== 0 || R.walk[ny * R.w + tx] !== 0)) continue;
+      if (R.edge && (this.edgeBlocked(x, y, nx * TILE + 8, y) || this.edgeBlocked(nx * TILE + 8, y, nx * TILE + 8, ny * TILE + 8) || this.edgeBlocked(x, y, x, ny * TILE + 8))) continue;
       if (v < bd) { bd = v; best = [nx * TILE + 8 - x, ny * TILE + 8 - y]; }
     }
     if (!best) return null;
@@ -664,11 +690,19 @@ export class World {
       }
       case 'protect': break;
       case 'dash': {
+        const fr = Math.min(a.r, 6), onGround = () => !this.collides(a.x, a.y, fr, 'walk') && this.reachable(a.x, a.y);
+        if (!act.ground && onGround()) act.ground = { x: a.x, y: a.y };
         this.moveBy(a, act.vx * dt, act.vy * dt);
-        // still over a gap when the dash ends: carry on a little to the far side, else drop back onto the nearest ground
-        if (act.t >= act.dur && (this.collides(a.x, a.y, Math.min(a.r, 6), 'walk') || !this.reachable(a.x, a.y))) {
+        if (onGround()) act.ground = { x: a.x, y: a.y };
+        // still over a gap when the dash ends: carry on a little to the far side, else drop back onto the nearest
+        // ground in plain view (never through a wall: then it's back to where the dash left the ground)
+        if (act.t >= act.dur && !onGround()) {
           if ((act.extra = (act.extra || 0) + dt) < 0.1) act.dur += dt;
-          else { const q = this.nearestReachable(a.x, a.y); a.x = q.x; a.y = q.y; }
+          else {
+            let q = this.nearestReachable(a.x, a.y);
+            if (act.ground && !this.lineClear(a.x, a.y, q.x, q.y, 'dash')) q = act.ground;
+            a.x = q.x; a.y = q.y;
+          }
         }
         act.ghostT = (act.ghostT || 0) - dt;
         if (act.ghostT <= 0) { act.ghostT = 0.03; this.vfx.push({ kind: 'afterimage', dex: a.dex, x: a.x, y: a.y, dir: a.dir, anim: a.anim, animT: a.animT, t: 0, life: 0.2 }); }

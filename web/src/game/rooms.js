@@ -15,6 +15,16 @@ export async function loadMapIndex() {
 }
 export const mapIndex = () => INDEX;
 export const candidates = id => CANDS?.[id]?.candidates || [];
+// an area's combat rooms: pools list [layout, [entries]], where an entry is an index into rooms_candidates.json
+// or a hand-picked crop {x, y, w, h} (metatiles). key identifies the room for "don't repeat it soon".
+export function areaRooms(B) {
+  const out = [];
+  for (const [layout, entries] of B.pools) for (const e of entries) {
+    if (typeof e === 'object') out.push({ layout, crop: { x: e.x, y: e.y, w: e.w, h: e.h }, key: `${layout}@${e.x},${e.y}` });
+    else if (candidates(layout)[e]) out.push({ layout, cropIndex: e, key: layout + e });
+  }
+  return out;
+}
 
 export function loadLayout(id) {
   if (layouts.has(id)) return layouts.get(id);
@@ -31,7 +41,21 @@ export function loadLayout(id) {
 
 const WATER = /WATER|POND|OCEAN|SEAWEED|WATERFALL|CURRENT|DIVE|PUDDLE_DEEP/;
 const LEDGE = /JUMP_/;
-const BLOCKS_WALK = /COUNTER|IMPASSABLE|HOLE|CRACKED_ICE|BOOKSHELF|PC$|CABINET|TV/;
+const BLOCKS_WALK = /COUNTER|HOLE|CRACKED_ICE|BOOKSHELF|PC$|CABINET|TV/;
+// Thin walls on a cell's sides (room.edge bits). FireRed blocks a step between two cells when
+//  - the cell being left or entered has a one-way MB_IMPASSABLE_* side there (event_object_movement.c
+//    IsMetatileDirectionallyImpassable: cliff rims, the floor in front of desks, map borders), or
+//  - the two cells are on different heights (IsElevationMismatchAt: elevation 0 = stairs/any, 15 = bridge).
+// The cells themselves stay walkable floor; only the step across that side is blocked (for walking and dashes).
+export const EDGE_N = 1, EDGE_S = 2, EDGE_W = 4, EDGE_E = 8;
+const DIR_SIDES = {
+  MB_IMPASSABLE_NORTH: EDGE_N, MB_IMPASSABLE_SOUTH: EDGE_S, MB_IMPASSABLE_WEST: EDGE_W, MB_IMPASSABLE_EAST: EDGE_E,
+  MB_IMPASSABLE_NORTHEAST: EDGE_N | EDGE_E, MB_IMPASSABLE_NORTHWEST: EDGE_N | EDGE_W,
+  MB_IMPASSABLE_SOUTHEAST: EDGE_S | EDGE_E, MB_IMPASSABLE_SOUTHWEST: EDGE_S | EDGE_W,
+};
+const heightsMeet = (a, b) => a === 0 || b === 0 || a === 15 || b === 15 || a === b;
+// the four steps out of a cell: [dx, dy, side bit on this cell, side bit on the neighbour]
+export const STEPS = [[1, 0, EDGE_E, EDGE_W], [-1, 0, EDGE_W, EDGE_E], [0, 1, EDGE_S, EDGE_N], [0, -1, EDGE_N, EDGE_S]];
 
 // Build a room from a layout and a crop {x,y,w,h} (in metatiles).
 export function buildRoom(L, crop, opts = {}) {
@@ -57,19 +81,44 @@ export function buildRoom(L, crop, opts = {}) {
     if (x >= 0 && y >= 0 && x < w && y < h && !warps.some(q => q.x === x && q.y === y)) warps.push({ x, y, dest: wv.dest_map });
   }
   for (const q of warps) walk[q.y * w + q.x] = 0;
-  const room = { layout: L.id, crop, w, h, ox: crop.x * TILE, oy: crop.y * TILE, walk, shot, grass, water, under: L.under, over: L.over, anim: L.anim, warps, fullW: M.w, fullH: M.h };
-  placeEntryExits(room, opts);
+  // thin walls (see DIR_SIDES): one-way sides and height changes between two walkable cells
+  const edge = new Uint8Array(w * h);
+  const elev = (x, y) => parseInt(M.elevation?.[(crop.y + y) * M.w + crop.x + x] ?? '0', 16);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, sides = !walk[i] && DIR_SIDES[names[M.behavior[(crop.y + y) * M.w + crop.x + x]]];
+    if (sides) for (const [dx, dy, me, them] of STEPS) if (sides & me) {
+      edge[i] |= me;
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < w && ny < h) edge[ny * w + nx] |= them;
+    }
+    if (walk[i]) continue;
+    for (const [dx, dy, me, them] of STEPS) {
+      const nx = x + dx, ny = y + dy;
+      if (dx < 0 || dy < 0 || nx >= w || ny >= h || walk[ny * w + nx]) continue;
+      if (!heightsMeet(elev(x, y), elev(nx, ny))) { edge[i] |= me; edge[ny * w + nx] |= them; }
+    }
+  }
+  const room = { layout: L.id, crop, w, h, ox: crop.x * TILE, oy: crop.y * TILE, walk, shot, grass, water, edge, under: L.under, over: L.over, anim: L.anim, warps, fullW: M.w, fullH: M.h };
+  // walkable in the whole layout (outside the crop too): an exit should lead on into the map, not into a wall
+  const fullWalk = (x, y) => {
+    const lx = crop.x + x, ly = crop.y + y;
+    if (lx < 0 || ly < 0 || lx >= M.w || ly >= M.h) return false;
+    const mi = ly * M.w + lx, bn = names[M.behavior[mi]] || '';
+    return M.collision[mi] === '0' && !WATER.test(bn) && !LEDGE.test(bn) && !BLOCKS_WALK.test(bn);
+  };
+  placeEntryExits(room, opts, fullWalk);
   return room;
 }
 
 function bfs(room, sx, sy) {
-  const { w, h, walk } = room;
+  const { w, h, walk, edge } = room;
   const d = new Int16Array(w * h).fill(-1);
   const q = [sy * w + sx]; d[q[0]] = 0;
   for (let k = 0; k < q.length; k++) {
     const i = q[k], x = i % w, y = (i / w) | 0;
-    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+    for (const [dx, dy, side] of STEPS) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h || (edge && edge[i] & side)) continue;
       const j = ny * w + nx;
       if (d[j] >= 0 || walk[j]) continue;
       d[j] = d[i] + 1; q.push(j);
@@ -79,7 +128,7 @@ function bfs(room, sx, sy) {
 }
 
 // pick the largest walkable region, an entry near the bottom and up to 3 exits far from it
-function placeEntryExits(room, opts) {
+function placeEntryExits(room, opts, fullWalk = () => true) {
   const { w, h, walk } = room;
   // largest component
   const seen = new Uint8Array(w * h); let best = null;
@@ -125,7 +174,10 @@ function placeEntryExits(room, opts) {
     if (!open(x, y)) continue;
     const edge = y <= 1 || x <= 1 || x >= w - 2;
     if (!edge) continue;
-    cand.push({ x, y, score: dist[j] + (y <= 1 ? 10 : 0) });
+    // the door's arrow points out of the room (rewards.js exitDir); prefer cells where the map carries on that way
+    const [dx, dy] = y <= 1 ? [0, -1] : x <= 1 ? [-1, 0] : [1, 0];
+    let on = 0; while (on < 3 && fullWalk(x + dx * (on + 1), y + dy * (on + 1))) on++;
+    cand.push({ x, y, score: dist[j] + (y <= 1 ? 10 : 0) + (on >= 2 ? 25 : on ? 0 : -25) });
   }
   cand.sort((a, b) => b.score - a.score);
   const exits = [];
@@ -147,11 +199,38 @@ function placeEntryExits(room, opts) {
 function isRoomy(room, x, y) {
   // a cell with open neighbours, so an entity can stand there
   let n = 0;
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  for (const [dx, dy, side] of STEPS) {
     const nx = x + dx, ny = y + dy;
-    if (nx >= 0 && ny >= 0 && nx < room.w && ny < room.h && !room.walk[ny * room.w + nx]) n++;
+    if (nx >= 0 && ny >= 0 && nx < room.w && ny < room.h && !room.walk[ny * room.w + nx] && !(room.edge && room.edge[y * room.w + x] & side)) n++;
   }
   return n >= 2;
+}
+
+// the centre of the reachable, roomy cell nearest to (x, y) in pixels (boss and NPC spots: never inside a wall;
+// a cell centre is clear for any terrain footprint up to r=8)
+export function openSpot(room, x, y) {
+  const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+  if (tx >= 0 && ty >= 0 && tx < room.w && ty < room.h && room.reach?.[ty * room.w + tx] && isRoomy(room, tx, ty)) return { x: tx * TILE + 8, y: ty * TILE + 8 };
+  let best = null, bd = 1e9;
+  for (let j = 0; j < room.w * room.h; j++) {
+    if (!room.reach?.[j]) continue;
+    const cx = j % room.w, cy = (j / room.w) | 0;
+    if (!isRoomy(room, cx, cy)) continue;
+    const d = Math.hypot(cx * TILE + 8 - x, cy * TILE + 8 - y);
+    if (d < bd) { bd = d; best = { x: cx * TILE + 8, y: cy * TILE + 8 }; }
+  }
+  return best || { x, y };
+}
+// where a boss room puts the boss and its trainer: between the centre and the exit, the trainer just above
+export function bossSpots(room) {
+  const c = room.exits[0] ? { x: room.center.x, y: (room.center.y + room.exits[0].y) / 2 } : room.center;
+  const boss = openSpot(room, c.x, c.y);
+  let trainer = null;
+  for (const [dx, dy] of [[0, -30], [0, -22], [0, -38], [-16, -30], [16, -30], [-16, -22], [16, -22], [0, -14]]) {
+    const q = { x: boss.x + dx, y: boss.y + dy }, tx = Math.floor(q.x / TILE), ty = Math.floor(q.y / TILE);
+    if (tx >= 0 && ty >= 0 && tx < room.w && ty < room.h && room.reach?.[ty * room.w + tx]) { trainer = q; break; }
+  }
+  return { boss, trainer: trainer || openSpot(room, boss.x, boss.y - 30) };
 }
 
 function centroid(room, comp) {

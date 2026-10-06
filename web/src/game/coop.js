@@ -247,7 +247,7 @@ export function coopSpawnP2(scene) {
   if (!Coop.active || !w?.player || (w.p2 && !w.p2.removed)) return;
   if (!ensureP2(scene.run)) return;
   const p = w.player;
-  const at = w.collides(p.x + 16, p.y, 6, 'walk') ? { x: p.x, y: p.y } : { x: p.x + 16, y: p.y };
+  const at = w.collides(p.x + 16, p.y, 6, 'walk') || !w.lineClear(p.x, p.y, p.x + 16, p.y, 'walk') ? { x: p.x, y: p.y } : { x: p.x + 16, y: p.y }; // never across a wall or cliff rim
   const a = buildP2(w, at.x, at.y);
   a.iframes = 1.5;
   w.p2 = a; w.add(a);

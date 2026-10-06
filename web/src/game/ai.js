@@ -46,6 +46,7 @@ export function wildBrain(world, a, dt) {
   const dx = tgt.x - a.x, dy = tgt.y - a.y, d = Math.hypot(dx, dy) || 1;
   const mode = world.moveMode(a);
   const los = world.lineClear(a.x, a.y - 4, tgt.x, tgt.y - 4, 'shot');
+  const inWall = mode === 'ghost' && world.blocked(a.x, a.y, 'walk'); // ghosts drift through walls but never lurk inside one
   // choose the move we're working toward
   if (!ai.move || ai.think <= 0 || (a.cds[ai.move] || 0) > 0) {
     ai.think = 1.2;
@@ -71,7 +72,7 @@ export function wildBrain(world, a, dt) {
   // attack if we can
   const busy = attackersBusy(world);
   const maxBusy = a.maxBusy ?? world.maxAttackers ?? 2;
-  if (p && ai.cool <= 0 && d < range + tgt.r && (los || mode === 'ghost' && p.kind !== 'proj') && busy < maxBusy && !a.status.trap) {
+  if (p && ai.cool <= 0 && d < range + tgt.r && (los || mode === 'ghost' && p.kind !== 'proj') && !inWall && busy < maxBusy && !a.status.trap) {
     let aim = Math.atan2(dy, dx);
     if (p.kind === 'proj' && !p.homing && !p.lob) { // lead the target a little
       const t = d / (p.speed || 200) * 0.5;
@@ -88,12 +89,12 @@ export function wildBrain(world, a, dt) {
   }
   // movement
   let mx = 0, my = 0;
-  if (d > wantD + 8 || !los) {
+  if (d > wantD + 8 || !los || inWall) {
     if (los || mode === 'ghost') { mx = dx / d; my = dy / d; }
     else { const f = world.flowDir(a.x, a.y); if (f) { mx = f.x; my = f.y; } else { mx = dx / d; my = dy / d; } }
   } else if (d < wantD - 16 && ranged) { mx = -dx / d; my = -dy / d; }
   // strafe around the target when in range
-  if (d < wantD + 30 && los) {
+  if (d < wantD + 30 && los && !inWall) {
     if (ai.strafeT <= 0) { ai.strafeT = 1 + world.rand() * 1.5; if (world.rand() < 0.4) ai.strafe *= -1; }
     mx += (-dy / d) * ai.strafe * 0.7; my += (dx / d) * ai.strafe * 0.7;
   }
@@ -120,7 +121,11 @@ export function allyBrain(world, a, dt) {
   const pl = world.player;
   if (!tgt) { // follow the player
     const d = Math.hypot(pl.x - a.x, pl.y - a.y);
-    if (d > 30) { const sp = moveSpeed(a); a.vx = (pl.x - a.x) / d * sp; a.vy = (pl.y - a.y) / d * sp; } else a.vx = a.vy = 0;
+    if (d > 30) {
+      let dir = { x: (pl.x - a.x) / d, y: (pl.y - a.y) / d };
+      if (!a.flying && !world.lineClear(a.x, a.y, pl.x, pl.y, 'walk')) dir = world.flowDir(a.x, a.y) || dir; // around walls, not through them
+      const sp = moveSpeed(a); a.vx = dir.x * sp; a.vy = dir.y * sp;
+    } else a.vx = a.vy = 0;
     return;
   }
   const moves = a.moves.filter(m => profile(m).damaging);
