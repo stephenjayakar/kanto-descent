@@ -3,7 +3,7 @@
 // host's canvas + audio as a WebRTC stream and sends its inputs back over a data channel. Convex only
 // relays the one-time offer/answer (game:coop.*); after that the browsers talk directly (STUN only, so
 // some strict networks can't connect yet).
-import { Engine } from '../engine/core.js';
+import { Engine, W, H } from '../engine/core.js';
 import { Sound } from '../audio/sound.js';
 import { D } from './data.js';
 import { STARTERS } from './content.js';
@@ -12,7 +12,8 @@ import { profile } from './moves_rt.js';
 import { movesLearnedAt } from './data.js';
 import { preloadPmd } from './pmd.js';
 import { playerBrain } from './player.js';
-import { coopCreate, coopGet, coopAnswer } from './cloud.js';
+import { Cloud, coopCreate, coopGet, coopAnswer } from './cloud.js';
+import { Input } from '../engine/input.js';
 
 const ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 const ACTIONS = ['attack', 'special', 'dash', 'cast', 'call', 'ball', 'interact', 'pause', 'confirm', 'back', 'up', 'down', 'left', 'right'];
@@ -22,8 +23,8 @@ const BUFFER_FRAMES = 8;
 class RemoteInput {
   constructor() { this.reset(); }
   reset() {
-    this.move = { x: 0, y: 0 }; this.aim = null; this.mouseWorld = null; this.msg = null;
-    this._held = new Set(); this._prev = new Set(); this._buffer = new Map(); this._counts = {}; this._mouseAim = false;
+    this.move = { x: 0, y: 0 }; this.aim = null; this.mouseWorld = null; this.msg = null; this.usingPad = false;
+    this._held = new Set(); this._prev = new Set(); this._buffer = new Map(); this._counts = {}; this._mouseAim = false; this._fresh = new Set();
   }
   receive(m) { this.msg = m; }
   // once per host frame; cam converts the guest's screen-space mouse to world coordinates
@@ -33,14 +34,18 @@ class RemoteInput {
     this.move.x = m.mx || 0; this.move.y = m.my || 0;
     this.aim = m.ax != null ? { x: m.ax, y: m.ay } : null;
     this._mouseAim = !!m.ma;
+    this.usingPad = !!m.pad; // the guest's button names (its HUD and menus show its own controls)
     this.mouseWorld = m.ms && cam ? { x: m.ms[0] / 2 + cam.x, y: m.ms[1] / 2 + cam.y } : null;
     for (const [k, v] of this._buffer) { if (v <= 1) this._buffer.delete(k); else this._buffer.set(k, v - 1); }
     // presses arrive as counters, so a quick tap survives a dropped (unreliable) packet
-    for (const a of ACTIONS) { const n = m.c?.[a] || 0; if (n > (this._counts[a] || 0)) this._buffer.set(a, BUFFER_FRAMES); this._counts[a] = n; }
+    this._fresh.clear();
+    for (const a of ACTIONS) { const n = m.c?.[a] || 0; if (n > (this._counts[a] || 0)) { this._buffer.set(a, BUFFER_FRAMES); this._fresh.add(a); } this._counts[a] = n; }
   }
   down(a) { return this._held.has(a); }
   pressed(a) { return this._buffer.has(a); }
-  justPressed(a) { return this._held.has(a) && !this._prev.has(a); }
+  // a tap is held for one guest frame only: when that packet was dropped or overtaken before this poll, its press
+  // counter still says it happened (menus read justPressed)
+  justPressed(a) { return (this._held.has(a) && !this._prev.has(a)) || this._fresh.has(a); }
   consume(a) { this._buffer.delete(a); }
   clear() { this._buffer.clear(); }
   mouseAiming() { return this._mouseAim && !!this.mouseWorld; }
@@ -56,6 +61,7 @@ export const Coop = {
   p2: null,          // host side: the second player's run state { starter, species, hp, slots, downT }
   hostName: null,    // guest side
   menuP2: false,     // a menu is open for P2: it reads the guest's controller
+  drawingP2: false,  // host side: drawing the guest's view right now (asP2View)
   get active() { return this.role === 'host' && this.status === 'connected' && !!this.guest; },
 };
 
@@ -85,7 +91,8 @@ export async function hostCoop() {
   try {
     const pc = Coop.pc = new RTCPeerConnection({ iceServers: ICE });
     watch(pc);
-    const video = Engine.canvas.captureStream(60).getVideoTracks()[0];
+    const video = guestCanvas().captureStream(60).getVideoTracks()[0]; // the guest's own view (its HUD), not the host's screen
+    Engine.afterDraw = composeGuestView;
     video.contentHint = 'motion';
     const out = new MediaStream([video]);
     const master = Sound.output;
@@ -118,6 +125,7 @@ export async function hostCoop() {
 
 export function stopCoop() {
   try { Coop.pc?.close(); } catch { /* already closed */ }
+  if (Engine.afterDraw === composeGuestView) Engine.afterDraw = null;
   Object.assign(Coop, { role: null, status: 'off', pc: null, input: null, ctl: null, guest: null, p2: null, code: null, link: null });
   Coop.remote.reset();
 }
@@ -366,9 +374,60 @@ const counts = {};
 export function guestPacket(Input, mouse) {
   for (const a of ACTIONS) if (Input.justPressed(a)) counts[a] = (counts[a] || 0) + 1;
   const m = { h: ACTIONS.filter(a => Input.down(a)), mx: +Input.move.x.toFixed(3), my: +Input.move.y.toFixed(3), c: counts, ma: Input.mouseAiming() };
+  if (Input.usingPad) m.pad = 1;
   if (Input.aim) { m.ax = +Input.aim.x.toFixed(3); m.ay = +Input.aim.y.toFixed(3); }
   if (mouse.x >= 0) m.ms = [Math.round(mouse.x), Math.round(mouse.y)];
   return JSON.stringify(m);
 }
+
+// ---------------------------------------------------------------- the guest's own view (host side)
+// The stream isn't the host's screen. The world is drawn once; the room copies it onto this canvas and draws the HUD
+// again from player 2's side (its healthbox, moves, Call gauge and blessings where player 1's are, player 1 as the
+// ally panel), then the overlays are drawn on top again as P2 sees them (its own button names, its run in G.run).
+// Outside a room, or before P2 is in, the host's finished frame is copied as it is. Solo play never gets here.
+const GV = { canvas: null, ctx: null, frame: -1 };
+function guestCanvas() {
+  if (!GV.canvas) {
+    const c = GV.canvas = document.createElement('canvas');
+    c.width = W; c.height = H;
+    // in the page (1px, invisible) so every browser keeps capturing it
+    Object.assign(c.style, { position: 'fixed', left: '0', top: '0', width: '1px', height: '1px', opacity: '0', pointerEvents: 'none' });
+    document.body.appendChild(c);
+    GV.ctx = c.getContext('2d', { alpha: false });
+    GV.ctx.imageSmoothingEnabled = false;
+  }
+  return GV.canvas;
+}
+
+// The room, once its world is drawn: the guest view's context to copy the world onto and draw P2's HUD into, or null
+// (not hosting, nobody connected, P2 not in the room yet).
+export function coopGuestView(scene) {
+  if (!GV.ctx || !Coop.active || !scene.world?.p2 || !Coop.p2) return null;
+  GV.frame = Engine.frame;
+  return GV.ctx;
+}
+
+// Draw something as player 2 sees it: the guest's button names (keyboard or pad), P2's run as G.run (pause menu,
+// shop), and Coop.drawingP2 for the menus that word things differently for P2 (ui.js).
+export function asP2View(fn) {
+  const pad = Input.usingPad, run = G.run, swap = !!Coop.p2 && run === Coop.p2.base;
+  Input.usingPad = Coop.remote.usingPad; Coop.drawingP2 = true;
+  if (swap) G.run = Coop.p2.run;
+  try { fn(); } finally { Input.usingPad = pad; Coop.drawingP2 = false; if (swap) G.run = run; }
+}
+
+// Engine.afterDraw while hosting: finish the guest's frame.
+function composeGuestView() {
+  const g = GV.ctx;
+  if (Coop.role !== 'host' || !g) return;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (GV.frame !== Engine.frame) { g.drawImage(Engine.canvas, 0, 0); return; } // not a co-op room frame: the host's screen
+  if (Engine.overlays.length) asP2View(() => { for (const o of Engine.overlays) { g.save(); o.draw?.(g); g.restore(); } });
+}
+
+// Host name as player 2 sees player 1 (ally panel, tag).
+export { GV as coopView }; // (tests: the guest view's canvas)
+
+export function hostLabel() { return String(Cloud.me?.name || Cloud.me?.email?.split('@')[0] || 'P1').toUpperCase().slice(0, 12); }
 
 export { G };

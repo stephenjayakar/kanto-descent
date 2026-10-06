@@ -151,7 +151,7 @@ export class Choice {
     const x = this.opts.side ? W - cw - 16 : (W - cw) / 2;
     return this.cards.map((c, i) => ({ x, y: V.y0 + i * (V.ch + V.gap) - this.scroll, w: cw, h: V.ch }));
   }
-  skipRect() { const label = this.opts.skipLabel || 'SKIP (X)', w = measure(label, 'small') + 18; return { x: W - w - 10, y: H - 30, w, h: 22, label }; }
+  skipRect() { const label = (this.opts.skipLabel || 'SKIP (X)').replace('(X)', `(${Input.label('back')})`), w = measure(label, 'small') + 18; return { x: W - w - 10, y: H - 30, w, h: 22, label }; }
   draw(ctx) {
     if (this.opts.custom) return this.opts.custom.draw(ctx, this);
     const k = Math.min(1, this.t * 5);
@@ -176,10 +176,10 @@ export class Choice {
       rect(ctx, x, V.y0, 3, V.h, '#ffffff22'); rect(ctx, x, barY, 3, barH, '#f8d038');
     }
     if (this.opts.footer) text(ctx, this.opts.footer, cx, H - 24, { align: 'center', color: 'whiteSoft', font: 'small' });
-    if (this.p2) { // whose pick this is
-      const s = `PLAYER 2 (${Coop.guest?.name || 'P2'}) CHOOSES  ·  arrows + Enter/Z, X to skip`, tw = measure(s, 'small') + 16;
-      frBox(ctx, Math.round(W / 2 - tw / 2), 4, tw, 20, 'blue', '#ffffff'); text(ctx, s, W / 2, 7, { align: 'center', font: 'small', color: 'blue' });
-    }
+    // whose pick this is (Coop.drawingP2: the guest's own view, where P2's menus are simply theirs)
+    const who = Coop.drawingP2 ? (this.p2 ? `YOUR PICK  ·  ${Input.usingPad ? 'D-pad' : 'arrows'} + ${Input.label('confirm')}${this.opts.canSkip ? `, ${Input.label('back')} to skip` : ''}` : 'PLAYER 1 IS CHOOSING...')
+      : this.p2 ? `PLAYER 2 (${Coop.guest?.name || 'P2'}) CHOOSES  ·  arrows + Enter/Z, X to skip` : null;
+    if (who) { const tw = measure(who, 'small') + 16; frBox(ctx, Math.round(W / 2 - tw / 2), 4, tw, 20, this.p2 ? 'blue' : 'gold', '#ffffff'); text(ctx, who, W / 2, 7, { align: 'center', font: 'small', color: this.p2 ? 'blue' : 'dark' }); }
     if (this.opts.canSkip) {
       const b = this.skipRect(), on = inRect(b.x, b.y, b.w, b.h);
       frBox(ctx, b.x, b.y, b.w, b.h, 'type1', on ? '#fff8d0' : '#ffffff');
@@ -222,7 +222,8 @@ export function drawCard(ctx, c, x, y, w, h, sel, opts = {}) {
 export class DualChoice {
   constructor(sides, opts = {}) { this.sides = sides.map(s => ({ ...s, sel: 0, pick: s.cards.length ? null : -1 })); this.opts = opts; this.t = 0; this.hidesHud = true; }
   enter() { Input.clear(); Coop.remote.clear(); Sound.playSE('se_win_open'); }
-  rects(i) { const cw = 356, ch = 66, x = i === 0 ? 24 : W - 8 - cw; return this.sides[i].cards.map((c, j) => ({ x, y: 96 + j * (ch + 6), w: cw, h: ch })); }
+  // col: the column side i is drawn in (the guest's view swaps them: its own picks on the left, like player 1's)
+  rects(i, col = i) { const cw = 356, ch = 66, x = col === 0 ? 24 : W - 8 - cw; return this.sides[i].cards.map((c, j) => ({ x, y: 96 + j * (ch + 6), w: cw, h: ch })); }
   update(dt) {
     this.t += dt; Input.poll(); Coop.remote.poll();
     this.sides.forEach((s, i) => {
@@ -245,7 +246,7 @@ export class DualChoice {
     this.opts.header?.(ctx);
     const allDone = this.sides.every(o => o.pick !== null);
     this.sides.forEach((s, i) => {
-      const R = this.rects(i), cw = 356, x = i === 0 ? 24 : W - 8 - cw, half = cw / 2;
+      const col = Coop.drawingP2 ? 1 - i : i, R = this.rects(i, col), cw = 356, x = col === 0 ? 24 : W - 8 - cw, half = cw / 2;
       text(ctx, s.title, x + 4, 80, { font: 'small', color: [i === 0 ? '#f8d030' : '#80d0ff', '#202020'] });
       if (!s.cards.length) text(ctx, s.empty || 'Nothing more to offer.', x + half, 150, { align: 'center', font: 'small', color: 'gray' });
       const done = s.pick !== null && s.cards.length && !allDone;
@@ -258,7 +259,9 @@ export class DualChoice {
       }
       s.owned?.(ctx, x, 96 + Math.max(1, R.length) * 72 + 4, cw, s.pick === null ? s.sel : s.pick);
     });
-    text(ctx, this.opts.footer || 'Both pick at once.  P1: arrows + Enter (X skips).  P2: their own controls.', W / 2, H - 14, { align: 'center', font: 'small', color: 'whiteSoft' });
+    const foot = Coop.drawingP2 ? `Both pick at once.  You: ${Input.usingPad ? 'D-pad' : 'arrows'} + ${Input.label('confirm')} (${Input.label('back')} skips).  Player 1 picks on their side.`
+      : this.opts.footer || 'Both pick at once.  P1: arrows + Enter (X skips).  P2: their own controls.';
+    text(ctx, foot, W / 2, H - 14, { align: 'center', font: 'small', color: 'whiteSoft' });
   }
 }
 export function chooseBoth(sides, opts = {}) { return new Promise(res => pushOverlay(new DualChoice(sides, { ...opts, onDone: res }))); }

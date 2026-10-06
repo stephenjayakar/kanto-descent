@@ -1,5 +1,6 @@
 // Co-op guest (staging prototype): pick a starter, then watch the host's game stream and play player 2.
-// Inputs (keyboard, mouse, gamepad) go to the host every frame; the video is the host's canvas.
+// Inputs (keyboard, mouse, gamepad) go to the host every frame. The video is drawn for this player by the host
+// (game/coop.js): the same world, with P2's own HUD laid out like player 1's and player 1 as the ally panel.
 import { Engine, W, H } from '../engine/core.js';
 import { text, wrap } from '../engine/font.js';
 import { frBackdrop, frBox } from '../engine/ui.js';

@@ -64,6 +64,41 @@ const after = await host.evaluate(() => { const a = window.__room.world.p2; retu
 const gv = await guest.evaluate(() => { const v = document.querySelector('video'); return v ? { ready: v.readyState, w: v.videoWidth, h: v.videoHeight, paused: v.paused, audio: v.srcObject?.getAudioTracks().length } : null; });
 console.log('p2 before', JSON.stringify(before), 'after', JSON.stringify(after));
 console.log('guest video', JSON.stringify(gv));
+// the guest's view is its own: P2's healthbox and moves where player 1's are on the host's screen, P1 as the ally
+// panel. The received video's HUD regions are compared with both players' HUDs drawn on the host (test code may
+// read pixels; the game never does).
+await guest.waitForTimeout(1500); // cooldowns run out
+await guest.screenshot({ path: 'tests/out/coop_guest_hud.png' });
+await host.screenshot({ path: 'tests/out/coop_host_hud.png' });
+const REGIONS = { healthbox: [24, 358, 176, 22], moves: [528, 400, 234, 20], ally: [280, 358, 176, 22] };
+const grab = (x, R) => Object.fromEntries(Object.entries(R).map(([k, [rx, ry, rw, rh]]) => [k, Array.from(x.getImageData(rx, ry, rw, rh).data)]));
+const frame = await guest.evaluate(([R, grabSrc]) => {
+  const v = document.querySelector('video'), c = document.createElement('canvas'); c.width = 768; c.height = 432;
+  const x = c.getContext('2d'); x.drawImage(v, 0, 0, 768, 432); return eval(grabSrc)(x, R);
+}, [REGIONS, grab.toString()]);
+const refs = await host.evaluate(async ([R, grabSrc]) => {
+  const { drawHud, drawCoopPanel } = await import('/src/scenes/hud.js'); const { Coop } = await import('/src/game/coop.js'); const { G } = await import('/src/game/run.js');
+  const r = window.__room, w = r.world;
+  const shot = fn => { const c = document.createElement('canvas'); c.width = 768; c.height = 432; const x = c.getContext('2d'); x.imageSmoothingEnabled = false; fn(x); return eval(grabSrc)(x, R); };
+  return {
+    p2: shot(x => { drawHud(x, w, Coop.p2.run, { player: w.p2, p2: true, cam: r.cam }); drawCoopPanel(x, w.player, 258, 432 - 80, 0, { run: G.run }); }),
+    p1: shot(x => { drawHud(x, w, G.run, { cam: r.cam }); drawCoopPanel(x, w.p2, 258, 432 - 80); }),
+    names: { p1: w.player.species, p2: w.p2.species, p2moves: Object.values(Coop.p2.run.slots) },
+  };
+}, [REGIONS, grab.toString()]);
+const diff = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); return +(s / (a.length / 4) / 3).toFixed(1); };
+const hud = Object.fromEntries(Object.keys(REGIONS).map(k => [k, { vsP2: diff(frame[k], refs.p2[k]), vsP1: diff(frame[k], refs.p1[k]) }]));
+const hudOk = Object.values(hud).every(d => d.vsP2 < d.vsP1 / 2); if (!hudOk) process.exitCode = 1;
+console.log(`guest HUD ${hudOk ? 'OK' : 'FAIL'}: bottom-left healthbox shows ${refs.names.p2} (P2), bottom-right slots ${refs.names.p2moves.join('/')}, ally panel ${refs.names.p1} (P1); mean pixel diff of the stream vs each layout:`, JSON.stringify(hud));
+// what drawing the guest's view costs the host: frame draw time with and without it
+console.log('perf', JSON.stringify(await host.evaluate(async () => {
+  const { Engine } = await import('/src/engine/core.js'); const { coopView } = await import('/src/game/coop.js');
+  const sc = Engine.scene, draw = sc.draw, after = Engine.afterDraw;
+  const measure = async () => { const ts = []; sc.draw = function (c) { const t0 = performance.now(); draw.call(this, c); ts.push(performance.now() - t0); }; Engine.afterDraw = () => { const t0 = performance.now(); after?.(); ts[ts.length - 1] += performance.now() - t0; }; await new Promise(r => setTimeout(r, 2000)); sc.draw = draw; Engine.afterDraw = after; ts.sort((a, b) => a - b); return { n: ts.length, median: +ts[ts.length >> 1].toFixed(2), p90: +ts[Math.floor(ts.length * 0.9)].toFixed(2) }; };
+  const withView = await measure();
+  const ctx = coopView.ctx; coopView.ctx = null; const without = await measure(); coopView.ctx = ctx;
+  return { drawMsWithGuestView: withView, drawMsHostOnly: without };
+})));
 // per-player rewards: a blessing for each player, chosen on each player's own keyboard
 await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); window.__rw = R.applyReward(window.__room, { kind: 'boon', legend: 'ZAPDOS' }).then(() => (window.__rwDone = true)); });
 await host.waitForTimeout(900);
@@ -79,7 +114,7 @@ console.log('boons', JSON.stringify(boons));
 await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); window.__rwDone = false; R.applyReward(window.__room, { kind: 'tm' }).then(() => (window.__rwDone = true)); });
 await host.waitForTimeout(900); await host.keyboard.press('Enter'); await host.waitForTimeout(700);
 for (let i = 0; i < 4; i++) { await host.keyboard.press('Enter'); await host.waitForTimeout(450); } // slot prompt / dialogs
-await guest.waitForTimeout(600); await guest.keyboard.press('Enter');
+await guest.waitForTimeout(600); await guest.screenshot({ path: 'tests/out/coop_guest_tm.png' }); await guest.keyboard.press('Enter');
 for (let i = 0; i < 4; i++) { await guest.waitForTimeout(450); await guest.keyboard.press('Enter'); }
 await host.waitForTimeout(800);
 const moves = await host.evaluate(async () => { const { Coop } = await import('/src/game/coop.js'); const { G } = await import('/src/game/run.js'); return { done: !!window.__rwDone, p1: G.run.slots, p2: Coop.p2.run.slots, p2actor: window.__room.world.p2.slots || window.__room.world.p2.run.slots }; });
@@ -87,6 +122,7 @@ console.log('moves', JSON.stringify(moves));
 // P2 shops on its own (shared money; the POTION heals P2)
 const shop0 = await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); const { G } = await import('/src/game/run.js'); const r = window.__room; G.run.money = 500; r.world.p2.hp = 10; window.__shopDone = false; R.coopTalk(r, { name: 'CLERK', onTalk: () => R.openShop(r) }).then(() => (window.__shopDone = true)); return { money: G.run.money }; });
 await guest.waitForTimeout(700); await guest.keyboard.press('Enter'); // "Hi there!"
+await guest.waitForTimeout(500); await guest.screenshot({ path: 'tests/out/coop_guest_shop.png' });
 await guest.waitForTimeout(700); await guest.keyboard.press('Enter'); // buy the first item (POTION)
 await guest.waitForTimeout(700); await guest.keyboard.press('x');     // leave
 await guest.waitForTimeout(700);
@@ -94,6 +130,12 @@ console.log('shop', JSON.stringify({ before: shop0, after: await host.evaluate(a
 // heal reaches P2
 const heal = await host.evaluate(async () => { const { coopHeal } = await import('/src/game/coop.js'); const a = window.__room.world.p2; a.hp = 5; coopHeal(window.__room, 0.5); return { hp: a.hp, max: a.maxHp }; });
 console.log('heal', JSON.stringify(heal));
+// the guest's view of player 1's pause menu (P2's own build and controls) and of P2 fainting (its countdown tag)
+await host.evaluate(async () => { const R = await import('/src/scenes/rewards.js'); R.openPause(window.__room); });
+await host.waitForTimeout(500); await guest.waitForTimeout(300); await guest.screenshot({ path: 'tests/out/coop_guest_pause.png' });
+await host.evaluate(async () => { const { popOverlay } = await import('/src/engine/core.js'); popOverlay(); const w = window.__room.world; w.p2.hp = 0; w.kill(w.p2, null); });
+await host.waitForTimeout(1500); await guest.screenshot({ path: 'tests/out/coop_guest_fainted.png' });
+console.log('p2 fainted', JSON.stringify(await host.evaluate(async () => { const { coopHeal } = await import('/src/game/coop.js'); const a = window.__room.world.p2, dead = a.dead; coopHeal(window.__room, 1); return { dead, back: !a.dead }; })));
 await host.screenshot({ path: 'tests/out/coop_host.png' });
 // co-op rooms have twice the foes
 console.log('waves', JSON.stringify(await host.evaluate(async () => {

@@ -224,6 +224,10 @@ Rules that came out of two adversarial review rounds and the sim:
   * When P2 faints it is revived after 8s, or when the room is cleared. It never uses the run's revives or ends the run.
 * **Streaming:** the guest (`scenes/guest.js`, link `?coop=CODE`) gets the host's canvas and audio as a WebRTC stream, and sends
   keyboard/mouse/gamepad state over an unreliable data channel. Presses are sent as counters, so a dropped packet can't eat a tap.
+* **The guest's own view:** the stream is not the host's screen. The host draws the world once, copies it to a second (hidden)
+  canvas and draws the HUD again from P2's side: P2's healthbox, moves, Call gauge and blessings where P1's are, P1 as the ally
+  panel and gold tag, P2's prompts with the guest's own button names, and the overlays again (DualChoice with P2's column on the
+  left, "YOUR PICK" on P2's menus, P2's build in the pause menu). Outside a co-op room the host's frame is copied. Solo play pays nothing.
 * **Signalling:** Convex `coop:create/get/answer` relays the offer and answer only. STUN only, with no TURN server yet.
 * **Test:** `node tests/coop_e2e.mjs` runs two headless Chromes with a mocked Convex and real WebRTC.
 * **Staging:** https://kanto-descent-staging.stephenjayakar.chatgpt.site (project appgprj_6ac14ba642f4819197cbfbb4c58ad4cf) uses the

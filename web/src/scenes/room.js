@@ -18,10 +18,10 @@ import { LEGENDS } from '../game/boons.js';
 import { rollWave, makeEnemy, rollTrainer, trainerParty, trainerSprite } from '../game/spawn.js';
 import { BOSSES, spawnBoss, bossDirector, bossesDefeated } from '../game/bosses.js';
 import { preloadPmd, drawPmd } from '../game/pmd.js';
-import { drawHud, drawCoopPanel, drawCoopTag, BOSS_BOX_H } from './hud.js';
+import { drawHud, drawCoopPanel, drawCoopTag, BOSS_BOX_H, P1_COLOR } from './hud.js';
 import { Banner, say, drawOW, ICON } from './ui.js';
 import * as R from './rewards.js';
-import { Coop, coopFrame, coopStatusText, asP2Sync } from '../game/coop.js';
+import { Coop, coopFrame, coopStatusText, asP2Sync, coopGuestView, asP2View, hostLabel } from '../game/coop.js';
 import { MapPopup, popupName, drawWipe, WIPE_TIME, BATTLE_WIPES, mugshot, MUGSHOT_PAL } from './transitions.js';
 
 const VIEW_W = W / 2, VIEW_H = H / 2;
@@ -462,24 +462,35 @@ export class RoomScene {
     if (w.bgFlash) { const f = w.bgFlash, k = f.t / f.life; if (k >= 1) w.bgFlash = null; else { const im = img(`gfx/battle_anims/backgrounds/${f.bg}.png`); if (ready(im)) { ctx.save(); ctx.globalAlpha = 0.22 * Math.sin(k * Math.PI); const ox = (this.t * 40) % im.naturalWidth; for (let x = -ox; x < W; x += im.naturalWidth * 2) for (let y = 0; y < H; y += im.naturalHeight * 2) ctx.drawImage(im, x, y, im.naturalWidth * 2, im.naturalHeight * 2); ctx.restore(); } } }
     if (w.screenFlash) { const f = w.screenFlash; ctx.fillStyle = `rgba(${f.color},${f.a * (1 - f.t / f.life)})`; ctx.fillRect(0, 0, W, H); } // THUNDER's flash
     drawWorldTexts(ctx, w, { x: cx, y: cy });
-    const B = areaOf(this.run);
-    if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette, (w.player.x - cx) * 2, (w.player.y - 8 - cy) * 2); // centred on the player, like FLASH
-    if (this.world.player.hp < this.world.player.maxHp * 0.25 && !this.world.player.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
+    // co-op host: the guest gets this same world with its own HUD on top (game/coop.js streams that canvas)
+    const g = coopGuestView(this);
+    if (g) { g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(Engine.canvas, 0, 0); asP2View(() => this.drawFront(g, cx, cy, true)); }
+    this.drawFront(ctx, cx, cy, false);
+  }
+
+  // Everything over the world, from one player's side: the vignette and low-HP tint around them, NPC tags and their
+  // prompts, door arrows, their HUD, the other player's panel and tag, banners and fades. p2 = player 2's screen
+  // (co-op guest view): P2's HUD laid out exactly like player 1's, with player 1 as the ally panel.
+  drawFront(ctx, cx, cy, p2) {
+    const w = this.world, me = p2 ? w.p2 : w.player, near = p2 ? this.nearNpc2 : this.nearNpc;
+    const B = areaOf(this.run), eye = me.dead && p2 ? w.player : me; // (P2 fainted: around player 1 until it's back)
+    if (B?.vignette && this.spec.kind !== 'hub' && this.spec.kind !== 'shop' && this.spec.kind !== 'center') drawVignette(ctx, W, H, B.vignette, (eye.x - cx) * 2, (eye.y - 8 - cy) * 2); // centred on the player, like FLASH
+    if (me.hp < me.maxHp * 0.25 && !me.dead) { ctx.fillStyle = `rgba(200,0,0,${0.12 + 0.08 * Math.sin(this.t * 6)})`; ctx.fillRect(0, 0, W, H); }
     // NPC labels (screen space): small FireRed sign tags that fade with distance; the nearest one becomes the prompt
     const placed = []; // tags of NPCs standing side by side (OAK and the rival) stack instead of overlapping
-    if (!topOverlay()) for (const n of this.npcs) if (n.label && this.nearNpc !== n && this.nearNpc2 !== n) {
-      const p = w.player, d = Math.hypot(n.x - p.x, n.y - 8 - p.y);
+    if (!topOverlay()) for (const n of this.npcs) if (n.label && near !== n && (p2 || this.nearNpc2 !== n)) {
+      const d = Math.hypot(n.x - me.x, n.y - 8 - me.y);
       this.tag(ctx, n.label, n.x, n.y - (n.sprite ? 40 : 22), Math.max(0.7, Math.min(1, 1.6 - d / 160)), placed);
     }
     // prompts
-    if (this.nearNpc && !topOverlay()) this.prompt(ctx, `${Input.label('interact')}: ${this.nearNpc.verb || 'Talk'}`, this.nearNpc.x, this.nearNpc.y - 40);
+    if (near && !topOverlay()) this.prompt(ctx, `${Input.label('interact')}: ${near.verb || 'Talk'}`, near.x, near.y - 40);
     if (this.nearDoor && this.doorsOpen) {
-      const info = R.rewardLabel(this.nearDoor.reward);
-      this.prompt(ctx, info + (this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind) ? `   (${Input.label('interact')}: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
+      const info = R.rewardLabel(this.nearDoor.reward); // (only player 1 can reroll a door)
+      this.prompt(ctx, info + (!p2 && this.run.rerolls > 0 && !['boss', 'center', 'next', 'victory', 'start'].includes(this.nearDoor.reward.kind) ? `   (${Input.label('interact')}: reroll ×${this.run.rerolls})` : ''), this.nearDoor.x, this.nearDoor.y - 40);
     }
     if (this.doorsOpen && this.spec.kind !== 'hub') this.drawDoorArrows(ctx);
-    if ((this.spec.kind !== 'hub' || this.run) && !topOverlay()?.hidesHud) drawHud(ctx, w, this.run, { hub: this.spec.kind === 'hub', cam: this.cam, top: this.popup?.bottom?.() || 0 }); // dialogue boxes cover the HUD
-    this.drawCoop(ctx);
+    if ((this.spec.kind !== 'hub' || this.run) && !topOverlay()?.hidesHud) drawHud(ctx, w, p2 ? Coop.p2.run : this.run, { hub: this.spec.kind === 'hub', cam: this.cam, top: this.popup?.bottom?.() || 0, player: me, p2 }); // dialogue boxes cover the HUD
+    if (p2) this.drawCoopGuest(ctx); else this.drawCoop(ctx);
     for (const b of this.banners) b.draw(ctx);
     if (this.popup) this.popup.draw(ctx);
     if (this.blink > 0) { const b = Math.sin((1 - this.blink / 0.36) * Math.PI * 2); ctx.fillStyle = `rgba(0,0,0,${(0.75 * b * b).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
@@ -499,6 +510,14 @@ export class RoomScene {
     if (this.nearNpc2 && !topOverlay()) this.prompt(ctx, `${this.world.p2?.label || 'P2'}: E to ${this.nearNpc2.verb || 'talk'}`, this.nearNpc2.x, this.nearNpc2.y - 54);
     const s = coopStatusText();
     if (s) { const tw = measure(s, 'small') + 18; frBox(ctx, Math.round(W / 2 - tw / 2), 4, tw, 20, 'blue', '#ffffff'); text(ctx, s, W / 2, 7, { align: 'center', font: 'small', color: 'dark' }); }
+  }
+  // the same from player 2's side (the guest's view): player 1's tag over its head and its box where P2's is on the
+  // host's screen; P2's own tag only while it's fainted (the countdown)
+  drawCoopGuest(ctx) {
+    const p = this.world.player, a = this.world.p2, label = hostLabel();
+    if (!p.dead) drawCoopTag(ctx, p, (p.x - this.cam.x) * 2, (p.y - this.cam.y) * 2 - p.r * 2 - 30, 0, { label, frame: 'gold' });
+    if (a.dead) drawCoopTag(ctx, a, (a.x - this.cam.x) * 2, (a.y - this.cam.y) * 2 - a.r * 2 - 30, Coop.p2?.downT || 0, { label: 'You' });
+    if (!topOverlay()?.hidesHud) drawCoopPanel(ctx, p, 258, H - 80, 0, { run: this.run, label, color: P1_COLOR });
   }
 
   // arrows at the screen edge pointing to exits that are off screen
