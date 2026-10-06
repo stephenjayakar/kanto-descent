@@ -221,12 +221,21 @@ export const Sound = {
     const players = name ? [songInfo(name).player] : SE_PLAYERS;
     for (const p of players) post({ type: 'stop', player: p });
   },
-  /** Fanfare (mus_level_up, mus_obtain_item, ...): pauses the BGM, resumes it after. Resolves on end. */
-  playFanfare(name) {
+  /**
+   * Fanfare (mus_level_up, mus_obtain_item, ...): pauses the BGM, resumes it after. Resolves on end.
+   * @param {object} [o] { maxSecs: fade the fanfare out after this long so the BGM comes back promptly }
+   */
+  playFanfare(name, o = {}) {
     const s = songInfo(name);
     const tag = state.nextTag++;
     const p = track(tag);
-    post({ type: 'fanfare', player: s.player === PLAYER_BGM ? 2 : s.player, header: s.header, tag });
+    const player = s.player === PLAYER_BGM ? 2 : s.player;
+    post({ type: 'fanfare', player, header: s.header, tag });
+    state.fanfareTag = tag;
+    // the fade's end makes the worklet continue the BGM (EngineHost.process), exactly like a natural end
+    if (o.maxSecs > 0) setTimeout(() => {
+      if (state.fanfareTag === tag && state.pending.has(tag)) post({ type: 'fadeOut', player, speed: Math.max(1, Math.round(24 / FADE_STEPS)) });
+    }, o.maxSecs * 1000);
     return p;
   },
 

@@ -180,7 +180,7 @@ export function drawWorld(ctx, w, cam, opts = {}) {
   opts.extraSprites?.(items);
   // shadows first
   for (const it of items) {
-    if (it.a && !it.a.dead && it.a.spawnT <= 0 && !it.a.burrowed) shadow(ctx, it.a.x, it.a.y + 1, it.a.r * 0.9 * (it.a.scale || 1), it.a.flying ? 0.2 : 0.3);
+    if (it.a && !it.a.dead && it.a.spawnT <= 0 && !it.a.burrowed) { shadow(ctx, it.a.x, it.a.y + 1, it.a.r * 0.9 * (it.a.scale || 1), it.a.flying ? 0.2 : 0.3); if (isFriend(it.a, w)) drawAllyRing(ctx, it.a, t); }
     if (it.p) shadow(ctx, it.p.x, it.p.y + 8, Math.max(2, it.p.r * 0.6), 0.25);
   }
   items.sort((a, b) => a.y - b.y);
@@ -259,6 +259,21 @@ function drawGrassOver(ctx, w) {
 
 const STATUS_ICON = { burn: 'brn', poison: 'psn', toxic: 'psn', para: 'par', sleep: 'slp', freeze: 'frz' };
 
+// ---- telling friends from foes at a glance: your called partner, a co-op player (both players, in co-op) and any
+// other friendly actor stand on a blue ring, wear a thin blue outline and carry the player-side HP plate. Blue is
+// never used by enemy telegraphs (red) or your own strikes (yellow); the dark rim keeps it readable on pale floors.
+const ALLY = { rim: '#68c8ff', dark: 'rgba(8,24,72,0.85)', fill: 'rgba(72,168,255,0.28)', outline: '#78d0ff', plate: '#183870' };
+export function isFriend(a, w) { return a.team === 'ally' || (a.team === 'player' && (a !== w.player || !!w.p2)); }
+function drawAllyRing(ctx, a, t) {
+  const rx = Math.max(9, a.r * 1.25 * (a.scale || 1)) + 2, ry = rx * 0.5, x = a.x, y = a.y + 1; // wider than the sprite's feet so it shows
+  const pulse = 0.8 + 0.2 * Math.sin(t * 4 + (a.id || 0));
+  ctx.save();
+  ctx.fillStyle = ALLY.fill; ellipsePath(ctx, x, y, rx, ry); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = ALLY.dark; ellipsePath(ctx, x, y, rx, ry); ctx.stroke();
+  ctx.lineWidth = 1; ctx.globalAlpha = pulse; ctx.strokeStyle = ALLY.rim; ellipsePath(ctx, x, y, rx, ry); ctx.stroke();
+  ctx.restore();
+}
+
 export function drawActor(ctx, a, w) {
   const t = a.animT;
   let alpha = a.alpha ?? 1;
@@ -293,7 +308,7 @@ export function drawActor(ctx, a, w) {
   const z = a.flying || a.hover ? 4 + Math.sin(w.time * 4 + a.id) * 2 : 0;
   const frozen = a.status.freeze || a.status.sleep;
   const speed = a.action?.stage === 'windup' && a.anim === 'Charge' ? 1 : (a.status.para ? 0.5 : 1);
-  drawPmd(ctx, a.dex, a.x, a.y - 4 - z - (a.z || 0), { anim: a.status.sleep ? 'Sleep' : a.anim, dir: a.dir, t: frozen ? 0 : t, loop, alpha, tint, tintA, scale: a.scale, speed });
+  drawPmd(ctx, a.dex, a.x, a.y - 4 - z - (a.z || 0), { anim: a.status.sleep ? 'Sleep' : a.anim, dir: a.dir, t: frozen ? 0 : t, loop, alpha, tint, tintA, scale: a.scale, speed, outline: isFriend(a, w) ? ALLY.outline : null });
   if (a.status.freeze) drawBA(ctx, 'ice_cube', a.x, a.y - 10, 0, { scale: Math.min(0.5, a.r / 26), alpha: 0.75 });
   if (a.status.sleep) for (let i = 0; i < 2; i++) { const k = (w.time * 0.9 + i * 0.5) % 1; drawBA(ctx, 'letter_z', a.x + 4 + k * 8, a.y - spriteTop(a) + 4 - k * 10, 0, { scale: 0.5, alpha: k < 0.8 ? 1 : (1 - k) / 0.2 }); } // Status_Sleep: Zs drift up and fade
   if (a.status.confuse || a.confused) drawBA(ctx, 'duck', a.x + Math.cos(w.time * 5) * 8, a.y - spriteTop(a) + 2, w.time, { anim: true, scale: 0.5 });
@@ -346,13 +361,20 @@ function drawActorBar(ctx, a) {
   const w = tiles * 4;
   const x = Math.round(a.x - w / 2), y = Math.round(a.y - spriteTop(a) - 5);
   const frac = Math.max(0, a.hp / a.maxHp);
-  drawHpTiles(ctx, x, y, tiles, frac, frac > 0.5 || a.team === 'ally' ? 'green' : frac > 0.2 ? 'yellow' : 'red');
+  const friend = a.team !== 'enemy';
+  if (friend) { // the player-side plate: a blue-rimmed navy box with FireRed's healthbox "HP" tag in front of the bar
+    ctx.fillStyle = ALLY.dark; ctx.fillRect(x - 10, y - 1.5, w + 11.5, 7);
+    ctx.fillStyle = ALLY.plate; ctx.fillRect(x - 9.5, y - 1, w + 10.5, 6);
+    ctx.strokeStyle = ALLY.rim; ctx.lineWidth = 0.5; ctx.strokeRect(x - 9.25, y - 0.75, w + 10, 5.5);
+    const hp = img('gfx/ui/battle/hp_label.png'); if (ready(hp)) ctx.drawImage(hp, x - 9, y, 8, 4);
+  }
+  drawHpTiles(ctx, x, y, tiles, frac, frac > 0.5 ? 'green' : frac > 0.2 ? 'yellow' : 'red');
   if (a.elite) drawBA(ctx, 'sparkle_4', x - 3, y + 2, 0, { frame: 1, scale: 0.5 });
   // catchable: the healthbox's caught-ball mark
   if (a.team === 'enemy' && !a.trainerMon && frac <= 0.45) { const im = img('gfx/ui/battle/ball_caught.png'); if (ready(im)) ctx.drawImage(im, x + w + 1, y, 4, 4); }
   // status icon (24x8) to the left of the bar
   const st = Object.keys(a.status).find(k => STATUS_ICON[k]);
-  if (st) { const im = img(`gfx/ui/battle/status_${STATUS_ICON[st]}.png`); if (ready(im)) ctx.drawImage(im, x - 13, y, 12, 4); }
+  if (st) { const im = img(`gfx/ui/battle/status_${STATUS_ICON[st]}.png`); if (ready(im)) ctx.drawImage(im, x - (friend ? 23 : 13), y, 12, 4); }
   // stat stages: FireRed's scroll arrows (up if any stat is raised, down if any is lowered)
   const up = ['atk', 'def', 'spe'].some(k => a.stages[k] > 0), down = ['atk', 'def', 'spe'].some(k => a.stages[k] < 0);
   if (up || down) { const im = img(`gfx/ui/cursors/scroll_${up ? 'up' : 'down'}.png`); if (ready(im)) ctx.drawImage(im, x + w + (frac <= 0.45 ? 6 : 1), y - 2, 8, 8); }

@@ -325,6 +325,8 @@ async function offerTMs(scene) {
   const run = G.run;
   const tms = tmChoices(run);
   if (!tms.length) { await applyReward(scene, { kind: 'money' }); return; }
+  if (!Object.hasOwn(run, 'seenTM')) run.seenTM = []; // (older saves; P2's run must not share P1's list)
+  for (const m of tms) if (!run.seenTM.includes(m)) run.seenTM.push(m);
   const cards = tms.map(m => moveCard(m));
   const i = await choose('Choose a TM', cards, { canSkip: true });
   if (i >= 0) await assignMove(scene, tms[i], `${D.species[run.species].name} can learn ${D.moves[tms[i]].name}!`);
@@ -341,6 +343,7 @@ export function moveCard(m, extra = {}) {
 
 async function assignMove(scene, move, title) {
   const run = G.run;
+  if (Object.values(run.slots).includes(move)) { if (!run.known.includes(move)) run.known.push(move); return; } // already in a slot: never twice
   const best = slotFor(move);
   const order = [best, ...['attack', 'special', 'cast'].filter(s => s !== best)];
   const newName = D.moves[move].name;
@@ -411,7 +414,7 @@ export async function levelPrompts(scene) {
   if (run.pendingEvo) await evolutionSequence(scene);
   while (run.pendingLearn.length) {
     const mv = run.pendingLearn.shift();
-    if (run.known.includes(mv) || !D.moves[mv]) continue;
+    if (run.known.includes(mv) || Object.values(run.slots).includes(mv) || !D.moves[mv]) continue;
     await assignMove(scene, mv, `${D.species[run.species].name} wants to learn ${D.moves[mv].name}!`);
   }
   if (!G.run.isP2) await asP2(scene, () => levelPrompts(scene)); // co-op: then player 2's own
@@ -527,7 +530,9 @@ export async function onCatch(scene, a, ball) {
   const prev = run.partner;
   run.partner = { species: a.species, level: a.level, moves: a.moves.slice() };
   run.caught.push(a.species);
-  Sound.playFanfare('mus_caught');
+  // mus_caught is FireRed's looping post-catch BGM (it never ends, so the area music never came back); play the
+  // short jingle, trimmed with a fade, and the area/combat music resumes right after
+  Sound.playFanfare('mus_caught_intro', { maxSecs: 2.4 });
   scene.banners.push(new Banner(`Gotcha! ${a.name} was caught!`, prev ? `${D.species[prev.species].name} was sent to the PC. ${a.name} is your partner now (F).` : `${a.name} is your partner! Press F to call it.`, { life: 2.8, color: '#f8f8f8' }));
   if (first) { G.meta.stardust += 5; G.meta.totalStardust += 5; run.stardustGained += 5; scene.world.text(scene.world.player, 'New DEX entry! +5 STARDUST', '#c0e0ff'); }
   run.callGauge = Math.max(run.callGauge, 0.5);

@@ -61,7 +61,8 @@ function tintSheet(path, color) {
 }
 
 // Draw centred on (x, y) = the sprite's ground anchor (frame centre in PMD sheets).
-// opts: anim, dir (0-7), t, loop, alpha, tint (css colour, full silhouette), tintA, scale, frame (force)
+// opts: anim, dir (0-7), t, loop, alpha, tint (css colour, full silhouette), tintA, scale, frame (force),
+//   outline (css colour: a 1-screen-pixel silhouette ring around the sprite, behind it), outlineW (world px, 0.5)
 export function drawPmd(ctx, dex, x, y, opts = {}) {
   const meta = pmdMeta(dex);
   if (meta === undefined) loadPmd(dex);
@@ -77,6 +78,10 @@ export function drawPmd(ctx, dex, x, y, opts = {}) {
   const dx = Math.round(x - (fw * s) / 2), dy = Math.round(y - (fh * s) / 2);
   ctx.save();
   if (opts.alpha !== undefined) ctx.globalAlpha *= opts.alpha;
+  if (opts.outline) { // the silhouette nudged out in 8 directions, under the sprite
+    const o = tintSheet(path, opts.outline), d = opts.outlineW || 0.5;
+    if (o) for (const [ox, oy] of [[-d, 0], [d, 0], [0, -d], [0, d], [-d, -d], [d, -d], [-d, d], [d, d]]) ctx.drawImage(o, f * fw, row * fh, fw, fh, dx + ox, dy + oy, fw * s, fh * s);
+  }
   ctx.drawImage(im, f * fw, row * fh, fw, fh, dx, dy, fw * s, fh * s);
   if (opts.tint) {
     const t = tintSheet(path, opts.tint);
