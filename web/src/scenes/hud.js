@@ -117,14 +117,16 @@ function drawSlot(ctx, run, p, slot, key, label, x, y) {
   if (cd > 0.05) { ctx.fillStyle = 'rgba(41,49,49,0.5)'; ctx.fillRect(x + 3, y + 3, Math.round((SLOT_W - 6) * Math.min(1, cd / max)), SLOT_H - 6); }
 }
 
+// opts.player / opts.p2: the HUD from player 2's side in co-op (the guest's view, game/coop.js): P2's actor and run in
+// these same places, without the run's revives (P2 never uses them)
 export function drawHud(ctx, world, run, opts = {}) {
-  const p = world.player;
+  const p = opts.player || world.player;
   if (!p) return;
   // ---- player healthbox (bottom left)
   const hx = 2, hy = H - HB_H - 2;
   drawPlayerBox(ctx, p, run, hx, hy);
   // revives: the 24x24 REVIVE icon at 1:1 above the box's right end, with a count
-  if (run.revives > 0) { const im = img('gfx/items/revive.png'); if (ready(im)) ctx.drawImage(im, hx + 168, hy - 18); if (run.revives > 1) text(ctx, `×${run.revives}`, hx + 192, hy - 8, { font: 'small', color: 'white' }); }
+  if (run.revives > 0 && !opts.p2) { const im = img('gfx/items/revive.png'); if (ready(im)) ctx.drawImage(im, hx + 168, hy - 18); if (run.revives > 1) text(ctx, `×${run.revives}`, hx + 192, hy - 8, { font: 'small', color: 'white' }); }
   if (run.heat) text(ctx, `HEAT ${run.heat}`, hx + 22, hy - 8, { font: 'small', color: ['#ff6040', '#301000'] });
 
   // ---- slots (bottom right)
@@ -209,11 +211,13 @@ export function drawHud(ctx, world, run, opts = {}) {
 // the box's empty corner, the player's name above it, and its three moves as thin windows underneath (78px tall
 // overall, like the player's healthbox).
 export const P2_COLOR = ['#80d0ff', '#202020']; // player 2's colour everywhere (tags, menus)
-export function drawCoopPanel(ctx, a, x, y, downT = 0) {
+export const P1_COLOR = ['#f8d030', '#202020']; // player 1's, on player 2's screen
+// o: { run, label, color } for player 1 shown this way on player 2's screen
+export function drawCoopPanel(ctx, a, x, y, downT = 0, o = {}) {
   const box = img(`${BATTLE}healthbox_doubles_player.png`);
   if (ready(box)) ctx.drawImage(box, x, y, 202, 56); else frBox(ctx, x + 18, y + 4, 182, 48, 'type1', CREAM);
-  const r2 = a.run, name = D.species[a.species]?.name || '';
-  text(ctx, a.label || 'P2', x + 22, y - 10, { font: 'small', color: P2_COLOR });
+  const r2 = o.run || a.run, name = D.species[a.species]?.name || '';
+  text(ctx, o.label || a.label || 'P2', x + 22, y - 10, { font: 'small', color: o.color || P2_COLOR });
   text(ctx, name, x + (measure(name, 'small') > 48 ? 24 : 28), y + 10, { font: 'small', scale: 2, color: HP_TEXT });
   text(ctx, String(a.level), x + 144, y + 10, { font: 'small', scale: 2, color: HP_TEXT });
   const lab = img(`${BATTLE}hp_label.png`);
@@ -239,19 +243,19 @@ export function drawCoopPanel(ctx, a, x, y, downT = 0) {
   });
 }
 // player 2's tag over its head: a little cream healthbox (blue frame, P2's colour) with its name and a 1x HP bar.
-// (sx, sy) = the tag's bottom centre on screen.
-export function drawCoopTag(ctx, a, sx, sy, downT = 0) {
-  const label = a.label || 'P2';
+// (sx, sy) = the tag's bottom centre on screen. o: { label, frame } (player 1's tag on player 2's screen: gold).
+export function drawCoopTag(ctx, a, sx, sy, downT = 0, o = {}) {
+  const label = o.label || a.label || 'P2';
   if (a.dead) {
     const s = `${label} fainted · back in ${Math.max(0, Math.ceil(15 - downT))}s`, w = measure(s, 'small') + 12;
     const x = Math.round(Math.max(4, Math.min(W - w - 4, sx - w / 2))), y = Math.round(Math.max(4, sy - 18));
-    frBox(ctx, x, y, w, 18, 'blue', CREAM);
+    frBox(ctx, x, y, w, 18, o.frame || 'blue', CREAM);
     text(ctx, s, x + w / 2, y + 3, { font: 'small', color: 'red', align: 'center' });
     return;
   }
   const w = Math.max(measure(label, 'small') + 12, 58), h = 26;
   const x = Math.round(Math.max(4, Math.min(W - w - 4, sx - w / 2))), y = Math.round(Math.max(4, sy - h));
-  frBox(ctx, x, y, w, h, 'blue', CREAM);
+  frBox(ctx, x, y, w, h, o.frame || 'blue', CREAM);
   text(ctx, label, x + w / 2, y + 2, { font: 'small', color: HP_TEXT, align: 'center' });
   const lab = img(`${BATTLE}hp_label.png`), bx = x + Math.round((w - 48) / 2);
   if (ready(lab)) ctx.drawImage(lab, bx, y + 14, 16, 8);

@@ -8,6 +8,7 @@ export const Engine = {
   keys: new Set(), pressed: new Set(), suppressed: new Set(),
   shake: 0, cursor: 'default', hoverAny: false,
   timeScale: 1,
+  afterDraw: null, // called once a frame after the scene and overlays are drawn
 };
 
 export function initEngine(canvas) {
@@ -83,6 +84,7 @@ function tick(dt) {
     for (const o of Engine.overlays) o.draw?.(ctx);
   } catch (e) { console.error(e); }
   ctx.restore();
+  if (Engine.afterDraw) try { Engine.afterDraw(); } catch (e) { console.error(e); } // co-op host: compose the guest's view (game/coop.js)
   Engine.canvas.style.cursor = Engine.hoverAny ? 'pointer' : 'default';
   Engine.mouse.clicked = false; Engine.mouse.rclicked = false; Engine.mouse.justPressed = false; Engine.mouse.wheel = 0;
   Engine.pressed.clear();
