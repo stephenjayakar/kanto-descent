@@ -40,7 +40,7 @@ export function enemyLevel(run, base) {
 export const ENEMY_DMG = biome => (0.8 + 0.05 * biome) * TUNING.enemyDmg;
 
 export function makeEnemy(world, speciesKey, level, opts = {}) {
-  const moves = opts.moves?.filter(m => D.moves[m]) || enemyMoves(speciesKey, level);
+  const moves = opts.moves ? [...new Set(opts.moves.filter(m => D.moves[m]))] : enemyMoves(speciesKey, level); // a trainer's real party can list a move twice
   const a = makeActor(speciesKey, level, 'enemy', { ...opts, moves, hpMul: opts.hpMul ?? 1.7 });
   a.brain = opts.brain || wildBrain;
   a.spawnT = opts.spawnT ?? 0.7; a.spawnMax = a.spawnT;

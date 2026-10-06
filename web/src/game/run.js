@@ -48,6 +48,7 @@ export function serializeRun(run) {
 }
 export function restoreRun(o) {
   const run = { ...o };
+  run.known = [...new Set([...(o.known || []), ...Object.values(o.slots || {})].filter(Boolean))];
   run.rng = new RNG(1); run.rng.state = o.rng;
   run.chaos = (o.chaos || []).map(c => ({ curse: CHAOS.curses.find(x => x.key === c.curse) || CHAOS.curses[0], blessing: CHAOS.blessings.find(x => x.key === c.blessing) || CHAOS.blessings[0], rooms: c.rooms, active: c.active }));
   G.run = run;
@@ -115,7 +116,7 @@ export function newRun(starterSpecies, seed = randomSeedString()) {
     callBonus: rank('call') * 2, heat,
     partner: null, callGauge: 0, revives: rank('revive'), reviveFrac: 0.3, rerolls: rank('reroll'),
     biome: 0, roomInBiome: 0, depth: 0, kills: 0, time: 0, stardustGained: 0, caught: [], route: rollRoute(rng), // v0.0.3: areas change every run
-    pendingLearn: [], pendingEvo: null, focusUsed: false, visited: {}, lastLayouts: [],
+    pendingLearn: [], seenTM: [], pendingEvo: null, focusUsed: false, visited: {}, lastLayouts: [],
     history: [], over: false, won: false,
   };
   G.run = run;
@@ -236,7 +237,7 @@ export function gainExp(run, amount) {
     run.level++;
     run.hp += playerMaxHp(run) - beforeMax;
     ev.push({ type: 'level', level: run.level });
-    for (const mv of movesLearnedAt(run.species, run.level)) if (!PLAYER_BANNED.has(mv) && !run.known.includes(mv) && !run.pendingLearn.includes(mv)) run.pendingLearn.push(mv);
+    for (const mv of movesLearnedAt(run.species, run.level)) if (!PLAYER_BANNED.has(mv) && !knowsMove(run, mv)) run.pendingLearn.push(mv);
     checkEvolution(run);
   }
   return ev;
@@ -278,14 +279,21 @@ export function evolve(run, into) {
   run.exp = Math.max(run.exp, expForLevel(PLAYER_CURVE, run.level));
   run.hp += playerMaxHp(run) - beforeMax;
   run.pendingEvo = null;
-  for (const mv of movesLearnedAt(into, run.level)) if (!run.known.includes(mv) && !run.pendingLearn.includes(mv)) run.pendingLearn.push(mv);
+  for (const mv of movesLearnedAt(into, run.level)) if (!PLAYER_BANNED.has(mv) && !knowsMove(run, mv)) run.pendingLearn.push(mv);
   // offer the best move of the new form's own type it could already know (Eevee -> Flareon gets Ember)
   const types = D.species[into].types;
-  const own = (D.species[into].learnset || []).filter(([l, m]) => l <= run.level && D.moves[m] && types.includes(D.moves[m].type) && D.moves[m].power > 0 && !run.known.includes(m) && !run.pendingLearn.includes(m));
+  const own = (D.species[into].learnset || []).filter(([l, m]) => l <= run.level && D.moves[m] && types.includes(D.moves[m].type) && D.moves[m].power > 0 && !PLAYER_BANNED.has(m) && !knowsMove(run, m));
   if (own.length && !Object.values(run.slots).some(m => types.includes(D.moves[m]?.type))) run.pendingLearn.push(own[own.length - 1][1]);
 }
+// A move the run already has (in a slot, or learned/declined before): never offered or slotted again.
+export function knowsMove(run, m) { return run.known.includes(m) || Object.values(run.slots).includes(m) || run.pendingLearn?.includes(m); }
 export function learnMove(run, move, slot) {
-  if (slot) run.slots[slot] = move;
+  if (slot && run.slots[slot] !== move) {
+    // never two slots with the same move: if it already sits in another slot, the two slots swap
+    const other = Object.keys(run.slots).find(s => s !== slot && run.slots[s] === move);
+    if (other) run.slots[other] = run.slots[slot];
+    run.slots[slot] = move;
+  }
   if (!run.known.includes(move)) run.known.push(move);
 }
 export function expProgress(run) {
@@ -374,8 +382,11 @@ export function addBoon(run, choice) {
 
 export function tmChoices(run) {
   const sp = D.species[run.species];
-  const pool = [...new Set([...(sp.tmhm || []), ...(sp.tutor || [])])].filter(m => D.moves[m] && !PLAYER_BANNED.has(m) && !run.known.includes(m) && !['CUT', 'FLY', 'SURF', 'STRENGTH', 'FLASH', 'ROCK_SMASH', 'WATERFALL', 'DIVE', 'SECRET_POWER', 'FRUSTRATION', 'RETURN', 'HIDDEN_POWER', 'ATTRACT', 'SNORE', 'SUBSTITUTE', 'ROLE_PLAY', 'MIMIC', 'SLEEP_TALK', 'ENDURE', 'CURSE', 'COUNTER', 'MIRROR_COAT', 'NATURE_POWER', 'TORMENT', 'TAUNT', 'FACADE', 'THIEF', 'DEFENSE_CURL', 'SWAGGER', 'DOUBLE_EDGE', 'MEGA_KICK', 'MEGA_PUNCH', 'SOFT_BOILED'].includes(m) || ['DOUBLE_EDGE'].includes(m) && false);
-  const scored = pool.map(m => { const mv = D.moves[m]; let s = (mv.power || 30) / 40 + (sp.types.includes(mv.type) ? 1 : 0) + run.rng.next(); if (mv.power > 100 && run.biome < 2) s -= 1; return [m, s]; }).sort((a, b) => b[1] - a[1]);
+  const pool = [...new Set([...(sp.tmhm || []), ...(sp.tutor || [])])].filter(m => D.moves[m] && !PLAYER_BANNED.has(m) && !knowsMove(run, m) && !['CUT', 'FLY', 'SURF', 'STRENGTH', 'FLASH', 'ROCK_SMASH', 'WATERFALL', 'DIVE', 'SECRET_POWER', 'FRUSTRATION', 'RETURN', 'HIDDEN_POWER', 'ATTRACT', 'SNORE', 'SUBSTITUTE', 'ROLE_PLAY', 'MIMIC', 'SLEEP_TALK', 'ENDURE', 'CURSE', 'COUNTER', 'MIRROR_COAT', 'NATURE_POWER', 'TORMENT', 'TAUNT', 'FACADE', 'THIEF', 'DEFENSE_CURL', 'SWAGGER', 'DOUBLE_EDGE', 'MEGA_KICK', 'MEGA_PUNCH', 'SOFT_BOILED'].includes(m) || ['DOUBLE_EDGE'].includes(m) && false);
+  // TMs already shown (and passed on) come back only when nothing new is left to offer
+  const seen = Object.hasOwn(run, 'seenTM') ? run.seenTM : [];
+  const fresh = pool.filter(m => !seen.includes(m));
+  const scored = (fresh.length >= 3 ? fresh : pool).map(m => { const mv = D.moves[m]; let s = (mv.power || 30) / 40 + (sp.types.includes(mv.type) ? 1 : 0) + run.rng.next(); if (mv.power > 100 && run.biome < 2) s -= 1; return [m, s]; }).sort((a, b) => b[1] - a[1]);
   return scored.slice(0, 6).sort(() => run.rng.next() - 0.5).slice(0, 3).map(x => x[0]);
 }
 
@@ -390,8 +401,9 @@ export function heldChoices(run, n = 3) {
 
 export function chaosOffer(run) {
   const rng = run.rng;
-  return rng.sample([0, 1, 2], 2).map(() => ({
-    curse: rng.pick(CHAOS.curses), blessing: rng.pick(CHAOS.blessings), rooms: rng.int(3, 5), active: false,
+  const blessings = rng.sample(CHAOS.blessings, 2); // two different offers, never the same blessing twice
+  return blessings.map(blessing => ({
+    curse: rng.pick(CHAOS.curses), blessing, rooms: rng.int(3, 5), active: false,
   }));
 }
 

@@ -7,7 +7,7 @@ import { Engine } from '../engine/core.js';
 import { Sound } from '../audio/sound.js';
 import { D } from './data.js';
 import { STARTERS } from './content.js';
-import { G, makePlayer, buildHooks, checkEvolution, nextEvolution, PLAYER_BANNED } from './run.js';
+import { G, makePlayer, buildHooks, checkEvolution, nextEvolution, PLAYER_BANNED, knowsMove } from './run.js';
 import { profile } from './moves_rt.js';
 import { movesLearnedAt } from './data.js';
 import { preloadPmd } from './pmd.js';
@@ -157,21 +157,25 @@ function makeP2Run(base, starter) {
   for (const k of SHARED) Object.defineProperty(r2, k, { get: () => base[k], set: v => { base[k] = v; }, enumerable: true });
   Object.assign(r2, {
     isP2: true, starter: kit.species, species: kit.species, slots: { ...kit.slots }, known: Object.values(kit.slots),
-    boons: [], held: null, partner: null, maxHpMul: base.maxHpMul, callGauge: 0, pendingLearn: [], pendingEvo: null, partnerEvo: null,
+    boons: [], held: null, partner: null, maxHpMul: base.maxHpMul, callGauge: 0, pendingLearn: [], seenTM: [], pendingEvo: null, partnerEvo: null,
     focusUsed: false, hp: null, lastLevel: base.level,
   });
   // joining mid-run: start evolved and with a sensible kit for the shared level (later levels prompt as usual)
   for (let i = 0; i < 3; i++) { const n = nextEvolution(r2.species, base.level); if (!n || !D.species[n] || n === 'CHOICE') break; r2.species = n; }
-  r2.slots = { attack: bestMove(r2.species, base.level, 'attack', kit.slots.attack), special: bestMove(r2.species, base.level, 'special', kit.slots.special), cast: kit.slots.cast };
-  r2.known = [...new Set([...r2.known, ...Object.values(r2.slots)])];
+  const attack = bestMove(r2.species, base.level, 'attack', kit.slots.attack);
+  // never the same move in two slots (DRATINI's TWISTER is its attack and was also its best special)
+  const special = bestMove(r2.species, base.level, 'special', kit.slots.special, attack);
+  r2.slots = { attack, special, cast: kit.slots.cast !== attack && kit.slots.cast !== special ? kit.slots.cast : null };
+  r2.known = [...new Set([...r2.known, ...Object.values(r2.slots)].filter(Boolean))];
   return r2;
 }
 
-function bestMove(species, level, want, fallback) {
-  let best = fallback, bp = fallback ? profile(fallback).power : -1;
+function bestMove(species, level, want, fallback, avoid) {
+  const ok = fallback && fallback !== avoid;
+  let best = ok ? fallback : null, bp = ok ? profile(fallback).power : -1;
   const lines = [species]; for (let s = D.species[species]?.preEvolution; s; s = D.species[s]?.preEvolution) lines.push(s);
   for (const sp of lines) for (const [lv, m] of D.species[sp]?.learnset || []) {
-    if (lv > level || !D.moves[m] || PLAYER_BANNED.has(m)) continue;
+    if (lv > level || !D.moves[m] || PLAYER_BANNED.has(m) || m === avoid) continue;
     const p = profile(m);
     if (!p.damaging || p.melee !== (want === 'attack') || p.power <= bp || p.power > 100) continue;
     best = m; bp = p.power;
@@ -182,7 +186,7 @@ function bestMove(species, level, want, fallback) {
 // The shared level went up: queue P2's own level-up moves and evolution (offered at the next prompts).
 function syncP2Level(r2) {
   for (let l = r2.lastLevel + 1; l <= r2.level; l++) {
-    for (const mv of movesLearnedAt(r2.species, l)) if (!PLAYER_BANNED.has(mv) && !r2.known.includes(mv) && !r2.pendingLearn.includes(mv)) r2.pendingLearn.push(mv);
+    for (const mv of movesLearnedAt(r2.species, l)) if (!PLAYER_BANNED.has(mv) && !knowsMove(r2, mv)) r2.pendingLearn.push(mv);
   }
   r2.lastLevel = r2.level;
   checkEvolution(r2);
