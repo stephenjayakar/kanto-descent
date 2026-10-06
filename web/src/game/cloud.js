@@ -158,10 +158,10 @@ export async function rename(name) {
   if (Cloud.me) Cloud.me.name = r.name;
   return r;
 }
-// rows: [{name, me, score, result: 'win'|'lose', version, heat, starter, species, partner, level, biome, room, time, kills, at}]
+// rows: [{name, me, score, result: 'win'|'lose', version, heat, starter, species, partner, level, biome, room, time, kills, at, coop, boons, dmg, dmg2}]
 export const leaderboard = ({ version, sort, starter, limit } = {}) => call('query', 'game:leaderboard', opt({ version, sort, starter, limit }));
 // {player: {name, runs, wins, bestScore}, recent: rows}
-export const myRuns = (version, limit) => call('query', 'game:myRuns', opt({ version, limit }));
+export const myRuns = (version, limit, starter) => call('query', 'game:myRuns', opt({ version, limit, starter }));
 // [{name, me, runs, wins, bestScore}]
 export const topTrainers = (version, limit) => call('query', 'game:topTrainers', opt({ version, limit }));
 export const starterRecords = (starters, version) => call('query', 'game:starterRecords', opt({ starters, version }));

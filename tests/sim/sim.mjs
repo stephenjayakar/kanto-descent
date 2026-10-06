@@ -269,7 +269,7 @@ async function playRun(starter, seed) {
   if (lastSig) stats.roomLog.push({ sig: lastSig, t: +((frames - roomStart) / 60).toFixed(1) });
   stats.time = Math.round(frames / 60);
   stats.level = run.level; stats.species = run.species;
-  stats.boons = run.boons.map(b => b.key);
+  stats.boons = run.boons.map(b => b.key); stats.run = run;
   stats.reached = lastSig;
   return stats;
 }
@@ -285,6 +285,7 @@ for (let i = 0; i < N; i++) {
   const hurt = Object.entries(r.hurtBy).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => k + ':' + v).join(' ');
   console.log(`${String(i).padStart(2)} ${st.padEnd(10)} ${r.won ? 'WON ' : 'died'} at ${r.reached.padEnd(14)} L${r.level} ${r.species} ${r.time}s  levels ${r.levels.map(x => x[1]).join('/')}  hurt ${hurt}`);
   if (r.stuck) console.log('   STUCK', JSON.stringify(r.stuck));
+  if (VERBOSE) console.log('   damage', JSON.stringify(RUN.dmgSummary(r.run))); // what the run record's damage summary would hold
   if (VERBOSE) console.log('   rooms', r.roomLog.map(x => `${x.sig}=${x.t}s`).join(' '), '\n   boons', r.boons.join(','));
 }
 // summary: furthest biome reached
