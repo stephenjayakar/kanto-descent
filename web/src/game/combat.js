@@ -971,7 +971,7 @@ export class World {
     const scale = info.scale ?? 1;
     if (p.fixed === 'level') { // Night Shade / Seismic Toss: damage equals the user's level (scaled for realtime)
       const e0 = typeEffect(p.type, b.types);
-      if (e0 === 0 && src?.team === 'enemy') return { dmg: 0, crit: false, eff: 0 };
+      if (e0 === 0 && src?.team === 'enemy' && !(src.boss && b.team !== 'enemy')) return { dmg: 0, crit: false, eff: 0 };
       if (src?.team === 'enemy') return { dmg: Math.max(1, Math.round((src.level || 10) * 0.5 * Math.sqrt((src.dmgScale ?? 0.55) / 0.55) * scale)), crit: false, eff: 1 };
       const crit = this.rand() < (p.crit || 0.0625) + (src?.critBonus || 0) + (info.slot && src?.slotCrit?.[info.slot] || 0);
       let d = (src?.level || 10) * 1.4 * scale * (src?.dmgMul || 1) * (crit ? 2 : 1) * (src?.slotMul?.[info.slot] || 1);
@@ -987,6 +987,7 @@ export class World {
     let eff = typeEffect(p.type, b.types);
     // against the player, type matchups are compressed: they matter, but never decide a run
     if (src?.team === 'enemy' && b.team === 'player' && eff > 0) eff = src.boss ? Math.max(0.9, Math.min(1.1, eff)) : Math.max(0.6, Math.min(1.5, eff)); // type weaknesses sting but don't decide runs
+    if (eff === 0 && src?.boss && src.team === 'enemy' && b.team !== 'enemy') eff = 0.7; // a boss is never harmless to a typing (MAROWAK's GROUND moves vs a CHARIZARD): an immunity is a strong resist
     if (eff === 0 && src && src.team !== 'enemy') eff = 0.5; // the player's moves are never fully blocked (a Gastly run must stay winnable)
     const critChance = (p.crit || 0.0625) + (src?.stages.crit || 0) * 0.125 + (src?.critBonus || 0) + (info.slot && src?.slotCrit?.[info.slot] || 0);
     const crit = this.rand() < critChance;
