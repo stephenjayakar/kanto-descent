@@ -1,8 +1,33 @@
 // Game version and patch notes (shown from the title screen). Only cut a new version when asked.
-export const VERSION = 'v0.0.7';
+export const VERSION = 'v0.0.8';
 
 // Newest first. Each entry: { v, sections: [[TITLE, [lines]]] } (an empty title means no heading).
 export const PATCH_NOTES = [
+  {
+    v: 'v0.0.8',
+    sections: [
+      ['CO-OP', [
+        'Player 2 sees their own HUD, laid out like player 1’s: their healthbox bottom-left, their moves bottom-right, their CALL gauge and blessings. Player 1 shows as the small ally box. Menus, prompts and blessing picks are drawn for player 2 too.',
+        'Menus no longer miss player 2’s quick taps.',
+        'A DAMAGE REPORT after the Hall of Fame shows what each player dealt, took and with which moves and partners.',
+      ]],
+      ['RECORDS', [
+        'Every run now records damage: total dealt, damage taken, biggest hit and the top moves, partners and blessings (both players in co-op).',
+        'BY POKéMON (was BY STARTER) shows what each starter evolved into; pick one to see all your runs with it. Pick any run for its details: team, blessings and damage.',
+      ]],
+      ['MAPS', [
+        'Collision follows FireRed’s rules: you can no longer walk or dash up and down cliff and platform edges (SEAFOAM, CERULEAN CAVE, MT. MOON), and floor in front of ledges is walkable again.',
+        'Dashes that end over water land back on the near side, never past a wall. Bosses and trainers no longer start inside walls or furniture; partners no longer phase through walls.',
+        'Rooms that didn’t make sense are gone (cut-through stairs, half-void crops, narrow strips) and new crops were added for CERULEAN CAVE and SEAFOAM.',
+      ]],
+      ['FIXES', [
+        'Your allies are easy to spot: a blue ring underfoot, a blue outline and a blue HP plate.',
+        'Catching a POKéMON plays the short FireRed jingle, then the music comes right back.',
+        'Bosses can no longer be shrugged off by type immunity (e.g. MAROWAK vs a Flying POKéMON): attacks that would do nothing do 70% to you instead.',
+        'Moves no longer show up twice: no offers for moves you know or declined, no duplicate slots, and TMs you passed on come back less often.',
+      ]],
+    ],
+  },
   {
     v: 'v0.0.7',
     sections: [
